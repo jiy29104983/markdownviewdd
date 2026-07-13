@@ -1,0 +1,15 @@
+/build/
+/.vs/
+/.qmake.stash
+/Makefile
+*.obj
+*.o
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.dll
+*.user
+*.vcxproj
+*.vcxproj.filters
+*.vcxproj.user

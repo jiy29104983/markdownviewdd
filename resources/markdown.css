@@ -1,0 +1,69 @@
+body {
+    font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    font-size: 10.5pt;
+    line-height: 1.55;
+    color: @text@;
+    background-color: @base@;
+    margin: 20px 24px 40px 24px;
+}
+
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 600;
+    margin-top: 1.2em;
+    margin-bottom: 0.55em;
+}
+
+h1, h2 {
+    border-bottom: 1px solid @midlight@;
+    padding-bottom: 0.3em;
+}
+
+p, ul, ol, blockquote, pre, table {
+    margin-top: 0.65em;
+    margin-bottom: 0.65em;
+}
+
+code, pre {
+    font-family: Consolas, "Cascadia Mono", monospace;
+    background-color: @alternate-base@;
+}
+
+pre {
+    border: 1px solid @midlight@;
+    padding: 10px;
+    white-space: pre-wrap;
+}
+
+code {
+    padding: 1px 4px;
+}
+
+blockquote {
+    border-left: 4px solid @mid@;
+    color: @mid@;
+    margin-left: 0;
+    padding-left: 12px;
+}
+
+table {
+    border-collapse: collapse;
+}
+
+th, td {
+    border: 1px solid @midlight@;
+    padding: 6px 10px;
+}
+
+th {
+    background-color: @alternate-base@;
+    font-weight: 600;
+}
+
+a {
+    color: @link@;
+    text-decoration: none;
+}
+
+img {
+    max-width: 100%;
+}
