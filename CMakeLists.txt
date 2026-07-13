@@ -40,7 +40,7 @@ else()
 endif()
 
 set_target_properties(markdownview PROPERTIES
-    OUTPUT_NAME "markdownview"
+    OUTPUT_NAME "markdownviewdd"
     RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/plugin"
     RUNTIME_OUTPUT_DIRECTORY_RELEASE "${CMAKE_BINARY_DIR}/plugin"
     RUNTIME_OUTPUT_DIRECTORY_RELWITHDEBINFO "${CMAKE_BINARY_DIR}/plugin"

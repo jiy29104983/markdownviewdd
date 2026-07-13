@@ -34,14 +34,15 @@ VS Code 可以用作编辑器和构建入口，但仍需安装上述编译工具
 
 ## 使用 CMake 构建
 
-在 “x64 Native Tools Command Prompt for VS 2019” 中执行：
+先将 Qt 5.15.2 `msvc2019_64` 的安装目录写入 `QTDIR`，并把 Qt 工具加入 `PATH`。然后在仓库根目录打开 “x64 Native Tools Command Prompt for VS 2019”并执行：
 
 ```bat
-cd /d D:\jiangyang\code\markdownview--
+set "QTDIR=Qt 5.15.2 msvc2019_64 的安装目录"
+set "PATH=%QTDIR%\bin;%PATH%"
 
 cmake -S . -B build ^
   -G "Visual Studio 16 2019" -A x64 ^
-  -DCMAKE_PREFIX_PATH="C:/Qt/5.15.2/msvc2019_64"
+  -DCMAKE_PREFIX_PATH="%QTDIR%"
 
 cmake --build build --config Release
 ```
@@ -49,37 +50,40 @@ cmake --build build --config Release
 生成文件：
 
 ```text
-build\plugin\markdownview.dll
+build\plugin\markdownviewdd.dll
 ```
 
 也可以在 PowerShell 中运行构建脚本：
 
 ```powershell
-.\scripts\build-windows.ps1 `
-  -QtRoot C:\Qt\5.15.2\msvc2019_64
+$env:QTDIR = "Qt 5.15.2 msvc2019_64 的安装目录"
+.\scripts\build-windows.ps1
 ```
 
 ## 使用 qmake 构建
 
 ```bat
-cd /d D:\jiangyang\code\markdownview--
-C:\Qt\5.15.2\msvc2019_64\bin\qmake.exe markdownview.pro
+set "QTDIR=Qt 5.15.2 msvc2019_64 的安装目录"
+set "PATH=%QTDIR%\bin;%PATH%"
+
+qmake markdownview.pro
 nmake release
 ```
 
-生成文件同样位于 `build\plugin\markdownview.dll`。
+生成文件同样位于 `build\plugin\markdownviewdd.dll`。
 
 ## 安装
 
 1. 关闭 notepad--。
-2. 将 `markdownview.dll` 复制到 `Notepad--.exe` 同级的 `plugin` 目录。
-3. 重新启动 notepad--。
+2. 升级旧版本时，先从 `plugin` 目录删除 `markdownview.dll`。
+3. 将 `markdownviewdd.dll` 复制到 `Notepad--.exe` 同级的 `plugin` 目录。
+4. 重新启动 notepad--。
 
 安装到默认目录时，可在管理员 CMD 中执行：
 
 ```bat
-copy /y build\plugin\markdownview.dll ^
-  "C:\Program Files\Notepad--\plugin\markdownview.dll"
+copy /y build\plugin\markdownviewdd.dll ^
+  "%ProgramFiles%\Notepad--\plugin\markdownviewdd.dll"
 ```
 
 ## 使用

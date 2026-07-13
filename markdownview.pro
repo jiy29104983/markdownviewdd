@@ -1,5 +1,5 @@
 TEMPLATE = lib
-TARGET = markdownview
+TARGET = markdownviewdd
 CONFIG += c++14 release warn_on
 QT += core gui widgets
 
