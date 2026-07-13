@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(ndd-markdown-view VERSION 0.2.4 LANGUAGES CXX)
+project(ndd-markdown-view VERSION 0.2.5 LANGUAGES CXX)
 
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)

@@ -6,6 +6,7 @@
 #include <QAbstractScrollArea>
 #include <QAction>
 #include <QApplication>
+#include <QElapsedTimer>
 #include <QEvent>
 #include <QFileInfo>
 #include <QKeySequence>
@@ -22,7 +23,9 @@
 
 namespace {
 constexpr int kEditorPollIntervalMs = 120;
-constexpr int kRenderDebounceMs = 180;
+constexpr int kRenderDebounceMs = 350;
+constexpr int kLargeDocumentDebounceMs = 900;
+constexpr qint64 kLargeDocumentBytes = 64 * 1024;
 constexpr auto kNativePreviewProperty = "_markdownview_native_preview";
 constexpr auto kNativePreviewOwnerHook = "_markdownview_owner_hook";
 constexpr auto kContextActionBridge = "_markdownview_sidebar_bridge";
@@ -71,18 +74,11 @@ PreviewController::PreviewController(QWidget *notepad)
             m_toggleAction->setChecked(visible);
         }
         if (visible) {
-            // QDockWidget emits visibilityChanged while its own show/layout
-            // processing is still on the stack.  Rendering a complete rich
-            // text document there is unnecessarily re-entrant, so wait until
-            // the event loop has completed the dock operation.
-            QTimer::singleShot(0, this, [this]() {
-                if (!m_dock || !m_dock->isVisible()) {
-                    return;
-                }
-                Diagnostics::write(QStringLiteral("deferred initial render entered"));
-                pollEditor();
-                renderNow();
-            });
+            // Defer rich-text layout until the dock has finished showing.
+            // Using the same debounce timer as editor updates also coalesces
+            // a context-menu request with this visibility notification.
+            pollEditor();
+            scheduleRender();
         }
     });
 
@@ -192,10 +188,10 @@ void PreviewController::showPreviewFromNativeAction()
     m_dock->setVisible(true);
     m_dock->raise();
 
-    // The original QAction connection has been removed.  renderNow invokes the
-    // host slot only after checking that the current document is Markdown, then
-    // immediately adopts the resulting MarkdownView.
-    renderNow();
+    // The original QAction connection has been removed.  Route the request
+    // through the debounce timer so showing the dock and triggering the action
+    // cannot render the document twice.
+    scheduleRender();
 }
 
 void PreviewController::pollEditor()
@@ -206,7 +202,7 @@ void PreviewController::pollEditor()
                                .arg(reinterpret_cast<quintptr>(current), 0, 16));
         attachEditor(current);
         if (m_dock && m_dock->isVisible()) {
-            renderNow();
+            scheduleRender();
         }
     }
 
@@ -234,12 +230,20 @@ QWidget *PreviewController::resolveCurrentEditor() const
 void PreviewController::scheduleRender()
 {
     if (m_dock && m_dock->isVisible()) {
-        m_renderTimer->start();
+        int interval = kRenderDebounceMs;
+        const QFileInfo info(currentFilePath());
+        if (info.exists() && info.size() >= kLargeDocumentBytes) {
+            interval = kLargeDocumentDebounceMs;
+        }
+        m_renderTimer->start(interval);
     }
 }
 
 void PreviewController::renderNow()
 {
+    // Manual refreshes and explicit renders supersede any pending automatic
+    // refresh for the same editor state.
+    m_renderTimer->stop();
     Diagnostics::write(QStringLiteral("renderNow entered"));
     if (!m_dock || !m_dock->isVisible()) {
         Diagnostics::write(QStringLiteral("renderNow skipped: dock hidden"));
@@ -263,12 +267,16 @@ void PreviewController::renderNow()
         return;
     }
 
+    QElapsedTimer elapsed;
+    elapsed.start();
     if (!activateNativePreview()) {
         m_dock->showMessage(
             tr("无法打开原生 Markdown 预览"),
             tr("notepad-- 没有响应 on_viewMarkdown 调用，或没有创建 MarkdownView。"));
         return;
     }
+    Diagnostics::write(QStringLiteral("renderNow completed in %1 ms")
+                           .arg(elapsed.elapsed()));
 
     m_dock->setDocumentInfo(filePath, -1);
     m_lastEditorScrollValue = -1;
@@ -376,6 +384,7 @@ bool PreviewController::activateNativePreview()
     QObject *stored = m_editor->property(kNativePreviewProperty).value<QObject *>();
     QWidget *nativePreview = qobject_cast<QWidget *>(stored);
 
+    bool renderedWhileCreating = false;
     if (!nativePreview) {
         nativePreview = m_editor->findChild<QWidget *>(
             QStringLiteral("MarkdownViewClass"));
@@ -390,10 +399,22 @@ bool PreviewController::activateNativePreview()
         if (!invoked) {
             return false;
         }
+        renderedWhileCreating = true;
 
         nativePreview = m_editor->findChild<QWidget *>(
             QStringLiteral("MarkdownViewClass"));
     }
+
+    // on_viewMarkdown() installs a direct editor textChanged ->
+    // on_updataMarkdown() connection.  That bypasses the plugin's debounce and
+    // makes a large document render once per keystroke.  Remove only that host
+    // self-connection; the editor -> PreviewController connection remains.
+    const bool disconnected = QObject::disconnect(
+        m_editor.data(), SIGNAL(textChanged()),
+        m_editor.data(), SLOT(on_updataMarkdown()));
+    Diagnostics::write(QStringLiteral("host immediate refresh disconnected=%1")
+                           .arg(disconnected));
+
     if (!nativePreview) {
         Diagnostics::write(QStringLiteral("host MarkdownView was not found"));
         return false;
@@ -416,6 +437,14 @@ bool PreviewController::activateNativePreview()
 
     if (!m_dock->adoptNativePreview(nativePreview, currentFilePath())) {
         return false;
+    }
+
+    // on_viewMarkdown() has already rendered the initial document.  Reuse that
+    // result instead of immediately parsing and laying out the whole document
+    // a second time.
+    if (renderedWhileCreating) {
+        Diagnostics::write(QStringLiteral("host initial render reused"));
+        return true;
     }
 
     // Render through the host module after embedding.  This is also the only

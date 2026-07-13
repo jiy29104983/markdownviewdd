@@ -32,11 +32,11 @@ notepad-- / CCNotePad
   └─ QMainWindow ─────── MarkdownView ──嵌入──> QDockWidget
 ```
 
-`PreviewController` 从宿主的 `editTabWidget` 取得当前页。由于 API 没有暴露标签切换事件，它定期比较当前指针。实际文本读取、Markdown 渲染和文本变化更新均发生在 notepad-- 宿主模块内部。
+`PreviewController` 从宿主的 `editTabWidget` 取得当前页。由于 API 没有暴露标签切换事件，它定期比较当前指针。插件监听文本变化并合并连续刷新，实际的文本读取和 Markdown 解析仍由 notepad-- 完成。
 
 `MarkdownPreviewDock` 由宿主主窗口持有，使用 `QMainWindow::addDockWidget` 加入右侧停靠区。关闭宿主窗口时 Qt 的父子对象所有权会清理控制器、Dock 和动作。
 
-控制器同时监听编辑器临时创建的右键 `QMenu`。发现原生 Markdown 动作后，插件先断开它与编辑器原生预览槽的连接，再检查文件类型、显示 Dock 并调用宿主槽渲染。这样不会同时打开独立窗口和侧边栏。渲染与内容更新仍由宿主完成。
+控制器同时监听编辑器临时创建的右键 `QMenu`。发现原生 Markdown 动作后，插件先断开它与编辑器原生预览槽的连接，再检查文件类型、显示 Dock 并调用宿主槽渲染。原生预览创建后，插件还会断开宿主注册的即时刷新连接，避免大文档在每次按键时重新排版。
 
 ## 渲染选择
 

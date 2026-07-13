@@ -96,9 +96,9 @@ copy /y build\plugin\markdownviewdd.dll ^
 
 ## 实现方式
 
-notepad-- v3.8.0 已经提供 `ScintillaEditView::on_viewMarkdown()` 和 `MarkdownView`。插件调用宿主的原生预览功能，再把 `MarkdownView` 嵌入 `QDockWidget`。文本读取、Markdown 解析和编辑后的刷新均由 notepad-- 完成。
+notepad-- v3.8.0 已经提供 `ScintillaEditView::on_viewMarkdown()` 和 `MarkdownView`。插件调用宿主的原生预览功能，再把 `MarkdownView` 嵌入 `QDockWidget`。文本读取和 Markdown 解析由 notepad-- 完成；插件负责合并连续的文本变化通知，防止重复渲染。
 
-插件每 120 ms 检查一次当前标签页，用于跟随文档切换。当前文件路径来自编辑器的 `filePath` 属性，主要用于解析相对路径图片。
+插件每 120 ms 检查一次当前标签页，用于跟随文档切换。自动预览会等待输入停顿后再刷新，64 KB 及以上的文件会多等一会儿。当前文件路径来自编辑器的 `filePath` 属性，主要用于解析相对路径图片。
 
 ## 已知限制
 

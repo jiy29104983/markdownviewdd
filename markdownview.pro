@@ -21,7 +21,7 @@ HEADERS += \
 RESOURCES += resources/markdownview.qrc
 
 win32 {
-    DEFINES += UNICODE _UNICODE NDD_MARKDOWN_VIEW_VERSION=\\\"0.2.4\\\"
+    DEFINES += UNICODE _UNICODE NDD_MARKDOWN_VIEW_VERSION=\\\"0.2.5\\\"
     QMAKE_CXXFLAGS += /utf-8
     DESTDIR = $$PWD/build/plugin
 }
