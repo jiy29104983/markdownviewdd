@@ -2,8 +2,6 @@
 
 markdownview-- 是面向 [notepad--](https://github.com/cxasm/notepad--) v3.8 的 Markdown 侧边栏预览插件。它复用 notepad-- 自带的 Markdown 渲染，把原本独立弹出的预览窗口放进编辑器右侧，并随当前标签页和文档内容更新。
 
-交互方式参考了 [MarkdownViewer++](https://nea.github.io/MarkdownViewerPlusPlus/)，插件本身使用 Qt/C++ 编写。
-
 ## 功能
 
 - 在 notepad-- 左侧或右侧停靠 Markdown 预览窗口
