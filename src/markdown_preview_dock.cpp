@@ -2,6 +2,7 @@
 
 #include "diagnostics.h"
 
+#include <QAbstractSlider>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -82,6 +83,13 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
             this, &MarkdownPreviewDock::syncScrollingChanged);
     connect(m_browser, &QTextBrowser::anchorClicked,
             this, &MarkdownPreviewDock::openLink);
+    QScrollBar *browserScrollBar = m_browser->verticalScrollBar();
+    connect(browserScrollBar, &QAbstractSlider::actionTriggered, this,
+            [this, browserScrollBar](int) {
+        QTimer::singleShot(0, this, [this, browserScrollBar]() {
+            emitPreviewScrollRatio(browserScrollBar);
+        });
+    });
 }
 
 bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
@@ -128,12 +136,14 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_contentLayout->addWidget(previewWindow);
         m_nativePreview = previewWindow;
         m_nativeTextEdit = textEdit;
+        connectNativeScrollBar(textEdit->verticalScrollBar());
         if (!previewWindow->property(kDockDestroyHook).toBool()) {
             connect(previewWindow, &QObject::destroyed, this,
                     [this, previewWindow]() {
                 if (m_nativePreview == previewWindow) {
                     m_nativePreview = nullptr;
                     m_nativeTextEdit = nullptr;
+                    m_nativeScrollConnection = QMetaObject::Connection();
                     if (m_browser) {
                         m_browser->show();
                     }
@@ -281,6 +291,44 @@ QAbstractScrollArea *MarkdownPreviewDock::activeScrollArea() const
     return m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()
         ? static_cast<QAbstractScrollArea *>(m_nativeTextEdit.data())
         : static_cast<QAbstractScrollArea *>(m_browser);
+}
+
+void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
+{
+    if (m_nativeScrollConnection) {
+        disconnect(m_nativeScrollConnection);
+    }
+    m_nativeScrollConnection = QMetaObject::Connection();
+
+    if (!scrollBar) {
+        return;
+    }
+
+    m_nativeScrollConnection = connect(
+        scrollBar, &QAbstractSlider::actionTriggered, this,
+        [this, scrollBar](int) {
+        const QPointer<QScrollBar> guardedScrollBar(scrollBar);
+        QTimer::singleShot(0, this, [this, guardedScrollBar]() {
+            if (guardedScrollBar) {
+                emitPreviewScrollRatio(guardedScrollBar.data());
+            }
+        });
+    });
+}
+
+void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
+{
+    QAbstractScrollArea *area = activeScrollArea();
+    if (!m_syncButton || !m_syncButton->isChecked() ||
+        !area || !scrollBar || area->verticalScrollBar() != scrollBar ||
+        scrollBar->maximum() <= scrollBar->minimum()) {
+        return;
+    }
+
+    const double ratio =
+        static_cast<double>(scrollBar->value() - scrollBar->minimum()) /
+        static_cast<double>(scrollBar->maximum() - scrollBar->minimum());
+    emit previewScrollRatioChanged(ratio);
 }
 
 void MarkdownPreviewDock::openLink(const QUrl &url)

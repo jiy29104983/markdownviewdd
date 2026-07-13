@@ -36,7 +36,7 @@ notepad-- / CCNotePad
 
 `MarkdownPreviewDock` 由宿主主窗口持有，使用 `QMainWindow::addDockWidget` 加入右侧停靠区。关闭宿主窗口时 Qt 的父子对象所有权会清理控制器、Dock 和动作。
 
-控制器同时监听编辑器临时创建的右键 `QMenu`。发现原生 Markdown 动作后，不移除宿主已有连接，而是追加显示 Dock 和嵌入 `MarkdownView` 的连接；因此宿主仍负责内容更新，插件只改变展示位置。
+控制器同时监听编辑器临时创建的右键 `QMenu`。发现原生 Markdown 动作后，插件先断开它与编辑器原生预览槽的连接，再检查文件类型、显示 Dock 并调用宿主槽渲染。这样不会同时打开独立窗口和侧边栏。渲染与内容更新仍由宿主完成。
 
 ## 渲染选择
 

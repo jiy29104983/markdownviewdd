@@ -27,6 +27,7 @@ private slots:
     void renderNow();
     void togglePreview(bool visible);
     void setSyncScrolling(bool enabled);
+    void scrollEditorToRatio(double ratio);
     void showAbout();
 
 protected:

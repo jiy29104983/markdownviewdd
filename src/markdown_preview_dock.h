@@ -1,12 +1,14 @@
 #pragma once
 
 #include <QDockWidget>
+#include <QMetaObject>
 #include <QPointer>
 #include <QUrl>
 
 class QAbstractScrollArea;
 class QLabel;
 class QLayout;
+class QScrollBar;
 class QTextBrowser;
 class QTextDocument;
 class QTextEdit;
@@ -32,6 +34,7 @@ public:
 signals:
     void refreshRequested();
     void syncScrollingChanged(bool enabled);
+    void previewScrollRatioChanged(double ratio);
 
 private slots:
     void openLink(const QUrl &url);
@@ -39,6 +42,8 @@ private slots:
 private:
     QTextDocument *activeDocument() const;
     QAbstractScrollArea *activeScrollArea() const;
+    void connectNativeScrollBar(QScrollBar *scrollBar);
+    void emitPreviewScrollRatio(QScrollBar *scrollBar);
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
@@ -48,5 +53,6 @@ private:
     QToolButton *m_syncButton = nullptr;
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;
+    QMetaObject::Connection m_nativeScrollConnection;
     QString m_currentFilePath;
 };

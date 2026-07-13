@@ -13,10 +13,12 @@
 #include <QMenu>
 #include <QMessageBox>
 #include <QScrollBar>
+#include <QSignalBlocker>
 #include <QStringList>
 #include <QTabWidget>
 #include <QTimer>
 #include <QVariant>
+#include <QtMath>
 
 namespace {
 constexpr int kEditorPollIntervalMs = 120;
@@ -54,10 +56,18 @@ PreviewController::PreviewController(QWidget *notepad)
             this, &PreviewController::renderNow);
     connect(m_dock, &MarkdownPreviewDock::syncScrollingChanged,
             this, &PreviewController::setSyncScrolling);
+    connect(m_dock, &MarkdownPreviewDock::previewScrollRatioChanged,
+            this, &PreviewController::scrollEditorToRatio);
     connect(m_dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
         Diagnostics::write(QStringLiteral("dock visibilityChanged=%1")
                                .arg(visible));
-        if (m_toggleAction) {
+        if (m_toggleAction && (visible || m_dock->isHidden())) {
+            // visibilityChanged(false) is also emitted when the main window is
+            // minimized.  In that case the dock is not explicitly hidden, so
+            // keep the user's requested state and let Qt restore it together
+            // with the main window.  Blocking the action also prevents a
+            // visibility notification from calling setVisible() recursively.
+            const QSignalBlocker blocker(m_toggleAction);
             m_toggleAction->setChecked(visible);
         }
         if (visible) {
@@ -155,9 +165,18 @@ void PreviewController::bridgeEditorContextMenu(QMenu *menu)
 
         action->setText(tr("在侧边栏预览 Markdown"));
         action->setProperty(kContextActionBridge, true);
+
+        // notepad-- creates this QAction on every context-menu invocation and
+        // connects it directly to ScintillaEditView::on_viewMarkdown().  The
+        // plugin must be the sole receiver; otherwise the host slot can show a
+        // top-level MarkdownView before (or after) the dock adopts it.
+        const bool disconnected = m_editor && QObject::disconnect(
+            action, nullptr, m_editor.data(), nullptr);
         connect(action, &QAction::triggered,
                 this, &PreviewController::showPreviewFromNativeAction);
-        Diagnostics::write(QStringLiteral("native context Markdown action bridged"));
+        Diagnostics::write(
+            QStringLiteral("native context Markdown action bridged; host disconnected=%1")
+                .arg(disconnected));
         break;
     }
 }
@@ -173,9 +192,9 @@ void PreviewController::showPreviewFromNativeAction()
     m_dock->setVisible(true);
     m_dock->raise();
 
-    // The host's original QAction connection runs first and updates or creates
-    // MarkdownView.  Adopt it immediately, before the event loop can paint a
-    // separate top-level preview window.
+    // The original QAction connection has been removed.  renderNow invokes the
+    // host slot only after checking that the current document is Markdown, then
+    // immediately adopts the resulting MarkdownView.
     renderNow();
 }
 
@@ -286,6 +305,30 @@ void PreviewController::setSyncScrolling(bool enabled)
     if (enabled) {
         updateSynchronizedScroll();
     }
+}
+
+void PreviewController::scrollEditorToRatio(double ratio)
+{
+    if (!m_editor || !m_dock || !m_dock->isVisible() || !m_syncScrolling) {
+        return;
+    }
+
+    QAbstractScrollArea *editorArea =
+        qobject_cast<QAbstractScrollArea *>(m_editor.data());
+    QScrollBar *editorBar = editorArea ? editorArea->verticalScrollBar() : nullptr;
+    if (!editorBar || editorBar->maximum() <= editorBar->minimum()) {
+        return;
+    }
+
+    ratio = qBound(0.0, ratio, 1.0);
+    const int value = editorBar->minimum() +
+        qRound(ratio * static_cast<double>(
+            editorBar->maximum() - editorBar->minimum()));
+    editorBar->setValue(value);
+
+    // The editor-to-preview direction is polled.  Remember the value written
+    // here so the next poll does not immediately echo it back to the preview.
+    m_lastEditorScrollValue = editorBar->value();
 }
 
 void PreviewController::showAbout()
