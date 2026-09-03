@@ -29,6 +29,7 @@
 
 namespace {
 constexpr auto kDockDestroyHook = "_markdownview_dock_destroy_hook";
+constexpr int kLayoutSyncDelayMs = 32;
 }
 
 MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
@@ -65,6 +66,10 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_syncButton->setChecked(true);
     toolbarLayout->addWidget(m_syncButton);
 
+    m_layoutSyncTimer = new QTimer(this);
+    m_layoutSyncTimer->setSingleShot(true);
+    m_layoutSyncTimer->setInterval(kLayoutSyncDelayMs);
+
     m_browser = new QTextBrowser(container);
     m_browser->setObjectName(QStringLiteral("NddMarkdownPreviewBrowser"));
     m_browser->setOpenLinks(false);
@@ -83,6 +88,20 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
             this, &MarkdownPreviewDock::syncScrollingChanged);
     connect(m_browser, &QTextBrowser::anchorClicked,
             this, &MarkdownPreviewDock::openLink);
+    connect(m_layoutSyncTimer, &QTimer::timeout, this, [this]() {
+        if (!isVisible() || !m_syncButton || !m_syncButton->isChecked()) {
+            return;
+        }
+        if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
+            m_nativeTextEdit->viewport()->update();
+        }
+        emit previewScrollRangeChanged();
+    });
+    connect(this, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        if (!visible) {
+            m_layoutSyncTimer->stop();
+        }
+    });
     QScrollBar *browserScrollBar = m_browser->verticalScrollBar();
     connect(browserScrollBar, &QAbstractSlider::actionTriggered, this,
             [this, browserScrollBar](int) {
@@ -144,6 +163,8 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
                     m_nativePreview = nullptr;
                     m_nativeTextEdit = nullptr;
                     m_nativeScrollConnection = QMetaObject::Connection();
+                    m_nativeScrollRangeConnection = QMetaObject::Connection();
+                    m_layoutSyncTimer->stop();
                     if (m_browser) {
                         m_browser->show();
                     }
@@ -212,6 +233,9 @@ void MarkdownPreviewDock::setSyncScrolling(bool enabled)
 {
     const QSignalBlocker blocker(m_syncButton);
     m_syncButton->setChecked(enabled);
+    if (!enabled && m_layoutSyncTimer) {
+        m_layoutSyncTimer->stop();
+    }
 }
 
 void MarkdownPreviewDock::scrollToRatio(double ratio)
@@ -295,10 +319,15 @@ QAbstractScrollArea *MarkdownPreviewDock::activeScrollArea() const
 
 void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
 {
+    m_layoutSyncTimer->stop();
     if (m_nativeScrollConnection) {
         disconnect(m_nativeScrollConnection);
     }
+    if (m_nativeScrollRangeConnection) {
+        disconnect(m_nativeScrollRangeConnection);
+    }
     m_nativeScrollConnection = QMetaObject::Connection();
+    m_nativeScrollRangeConnection = QMetaObject::Connection();
 
     if (!scrollBar) {
         return;
@@ -307,13 +336,24 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
     m_nativeScrollConnection = connect(
         scrollBar, &QAbstractSlider::actionTriggered, this,
         [this, scrollBar](int) {
-        const QPointer<QScrollBar> guardedScrollBar(scrollBar);
-        QTimer::singleShot(0, this, [this, guardedScrollBar]() {
-            if (guardedScrollBar) {
-                emitPreviewScrollRatio(guardedScrollBar.data());
+            const QPointer<QScrollBar> guardedScrollBar(scrollBar);
+            QTimer::singleShot(0, this, [this, guardedScrollBar]() {
+                if (guardedScrollBar) {
+                    emitPreviewScrollRatio(guardedScrollBar.data());
+                }
+            });
+        });
+
+    // QTextDocumentLayout lays out large documents incrementally.  QTextEdit
+    // adjusts its scrollbar range while that work advances, so reapply the
+    // editor ratio after each coalesced range update.
+    m_nativeScrollRangeConnection = connect(
+        scrollBar, &QAbstractSlider::rangeChanged, this,
+        [this](int, int) {
+            if (isVisible() && m_syncButton && m_syncButton->isChecked()) {
+                m_layoutSyncTimer->start();
             }
         });
-    });
 }
 
 void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)

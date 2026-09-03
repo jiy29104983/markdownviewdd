@@ -23,9 +23,9 @@
 
 namespace {
 constexpr int kEditorPollIntervalMs = 120;
-constexpr int kRenderDebounceMs = 350;
-constexpr int kLargeDocumentDebounceMs = 900;
-constexpr qint64 kLargeDocumentBytes = 64 * 1024;
+constexpr int kMinimumRenderDebounceMs = 350;
+constexpr int kMaximumRenderDebounceMs = 2000;
+constexpr int kRenderDurationMultiplier = 3;
 constexpr auto kNativePreviewProperty = "_markdownview_native_preview";
 constexpr auto kNativePreviewOwnerHook = "_markdownview_owner_hook";
 constexpr auto kContextActionBridge = "_markdownview_sidebar_bridge";
@@ -48,7 +48,7 @@ PreviewController::PreviewController(QWidget *notepad)
 
     m_renderTimer = new QTimer(this);
     m_renderTimer->setSingleShot(true);
-    m_renderTimer->setInterval(kRenderDebounceMs);
+    m_renderTimer->setInterval(kMinimumRenderDebounceMs);
 
     m_pollTimer = new QTimer(this);
     m_pollTimer->setInterval(kEditorPollIntervalMs);
@@ -61,6 +61,14 @@ PreviewController::PreviewController(QWidget *notepad)
             this, &PreviewController::setSyncScrolling);
     connect(m_dock, &MarkdownPreviewDock::previewScrollRatioChanged,
             this, &PreviewController::scrollEditorToRatio);
+    connect(m_dock, &MarkdownPreviewDock::previewScrollRangeChanged,
+            this, [this]() {
+        // Qt estimates the scrollbar range while a large rich-text document
+        // is being laid out.  Reapply the ratio when that estimate changes so
+        // the preview cannot remain at an obsolete blank offset.
+        m_lastEditorScrollValue = -1;
+        updateSynchronizedScroll();
+    });
     connect(m_dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
         Diagnostics::write(QStringLiteral("dock visibilityChanged=%1")
                                .arg(visible));
@@ -79,6 +87,12 @@ PreviewController::PreviewController(QWidget *notepad)
             // a context-menu request with this visibility notification.
             pollEditor();
             scheduleRender();
+        } else {
+            m_renderTimer->stop();
+            if (disconnectHostImmediateRefresh()) {
+                Diagnostics::write(
+                    QStringLiteral("host immediate refresh disconnected while dock hidden"));
+            }
         }
     });
 
@@ -211,6 +225,18 @@ void PreviewController::pollEditor()
     }
 }
 
+void PreviewController::onEditorTextChanged()
+{
+    // The plugin connection is installed before the host preview connection.
+    // Recheck on every edit so a host action cannot silently restore its
+    // synchronous full-document renderer.
+    if (disconnectHostImmediateRefresh()) {
+        Diagnostics::write(
+            QStringLiteral("host immediate refresh reconnected; disconnected on edit"));
+    }
+    scheduleRender();
+}
+
 QWidget *PreviewController::resolveCurrentEditor() const
 {
     if (m_notepad) {
@@ -229,14 +255,23 @@ QWidget *PreviewController::resolveCurrentEditor() const
 
 void PreviewController::scheduleRender()
 {
-    if (m_dock && m_dock->isVisible()) {
-        int interval = kRenderDebounceMs;
-        const QFileInfo info(currentFilePath());
-        if (info.exists() && info.size() >= kLargeDocumentBytes) {
-            interval = kLargeDocumentDebounceMs;
-        }
-        m_renderTimer->start(interval);
+    if (!m_renderTimer) {
+        return;
     }
+
+    if (!m_dock || !m_dock->isVisible()) {
+        m_renderTimer->stop();
+        return;
+    }
+
+    // Repeated start() calls form a trailing-edge debounce.  Let expensive
+    // documents remain stale slightly longer so rendering never competes with
+    // a continuous typing burst.
+    const qint64 adaptiveDelay = qBound<qint64>(
+        kMinimumRenderDebounceMs,
+        m_lastRenderDurationMs * kRenderDurationMultiplier,
+        kMaximumRenderDebounceMs);
+    m_renderTimer->start(static_cast<int>(adaptiveDelay));
 }
 
 void PreviewController::renderNow()
@@ -275,8 +310,9 @@ void PreviewController::renderNow()
             tr("notepad-- 没有响应 on_viewMarkdown 调用，或没有创建 MarkdownView。"));
         return;
     }
+    m_lastRenderDurationMs = elapsed.elapsed();
     Diagnostics::write(QStringLiteral("renderNow completed in %1 ms")
-                           .arg(elapsed.elapsed()));
+                           .arg(m_lastRenderDurationMs));
 
     m_dock->setDocumentInfo(filePath, -1);
     m_lastEditorScrollValue = -1;
@@ -358,13 +394,14 @@ void PreviewController::attachEditor(QWidget *editor)
 
     m_editor = editor;
     m_lastEditorScrollValue = -1;
+    m_lastRenderDurationMs = 0;
 
     if (m_editor) {
         Diagnostics::write(QStringLiteral("attaching editor class=%1")
                                .arg(QString::fromLatin1(m_editor->metaObject()->className())));
         const QMetaObject::Connection textChangedConnection = connect(
             m_editor.data(), SIGNAL(textChanged()),
-            this, SLOT(scheduleRender()),
+            this, SLOT(onEditorTextChanged()),
             Qt::UniqueConnection);
         Diagnostics::write(QStringLiteral("runtime textChanged connection=%1")
                                .arg(static_cast<bool>(textChangedConnection)));
@@ -372,7 +409,41 @@ void PreviewController::attachEditor(QWidget *editor)
             m_editor = nullptr;
             scheduleRender();
         });
+        if (disconnectHostImmediateRefresh()) {
+            Diagnostics::write(
+                QStringLiteral("existing host immediate refresh disconnected on attach"));
+        }
     }
+}
+
+QWidget *PreviewController::nativePreviewForEditor() const
+{
+    if (!m_editor) {
+        return nullptr;
+    }
+
+    QObject *stored = m_editor->property(kNativePreviewProperty).value<QObject *>();
+    QWidget *nativePreview = qobject_cast<QWidget *>(stored);
+    if (!nativePreview) {
+        nativePreview = m_editor->findChild<QWidget *>(
+            QStringLiteral("MarkdownViewClass"));
+    }
+    return nativePreview;
+}
+
+bool PreviewController::disconnectHostImmediateRefresh(bool force)
+{
+    if (!m_editor || (!force && !nativePreviewForEditor())) {
+        return false;
+    }
+
+    // notepad-- v3.8.0 has exactly one textChanged connection whose receiver
+    // is the editor itself: on_updataMarkdown().  Disconnecting by receiver
+    // avoids relying on the host's pointer-to-member connection syntax while
+    // preserving the editor -> controller and editor -> main-window signals.
+    return QObject::disconnect(
+        m_editor.data(), SIGNAL(textChanged()),
+        m_editor.data(), nullptr);
 }
 
 bool PreviewController::activateNativePreview()
@@ -381,15 +452,8 @@ bool PreviewController::activateNativePreview()
         return false;
     }
 
-    QObject *stored = m_editor->property(kNativePreviewProperty).value<QObject *>();
-    QWidget *nativePreview = qobject_cast<QWidget *>(stored);
-
+    QWidget *nativePreview = nativePreviewForEditor();
     bool renderedWhileCreating = false;
-    if (!nativePreview) {
-        nativePreview = m_editor->findChild<QWidget *>(
-            QStringLiteral("MarkdownViewClass"));
-    }
-
     if (!nativePreview) {
         Diagnostics::write(QStringLiteral("invoking host on_viewMarkdown"));
         const bool invoked = QMetaObject::invokeMethod(
@@ -405,15 +469,14 @@ bool PreviewController::activateNativePreview()
             QStringLiteral("MarkdownViewClass"));
     }
 
-    // on_viewMarkdown() installs a direct editor textChanged ->
-    // on_updataMarkdown() connection.  That bypasses the plugin's debounce and
-    // makes a large document render once per keystroke.  Remove only that host
-    // self-connection; the editor -> PreviewController connection remains.
-    const bool disconnected = QObject::disconnect(
-        m_editor.data(), SIGNAL(textChanged()),
-        m_editor.data(), SLOT(on_updataMarkdown()));
-    Diagnostics::write(QStringLiteral("host immediate refresh disconnected=%1")
-                           .arg(disconnected));
+    // on_viewMarkdown() installs a direct editor self-connection.  Remove any
+    // such connection before control returns to the event loop.
+    const bool disconnected = disconnectHostImmediateRefresh(
+        renderedWhileCreating || nativePreview);
+    if (renderedWhileCreating || disconnected) {
+        Diagnostics::write(QStringLiteral("host immediate refresh disconnected=%1")
+                               .arg(disconnected));
+    }
 
     if (!nativePreview) {
         Diagnostics::write(QStringLiteral("host MarkdownView was not found"));

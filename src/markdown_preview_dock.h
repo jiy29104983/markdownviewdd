@@ -12,6 +12,7 @@ class QScrollBar;
 class QTextBrowser;
 class QTextDocument;
 class QTextEdit;
+class QTimer;
 class QToolButton;
 class QWidget;
 
@@ -35,6 +36,7 @@ signals:
     void refreshRequested();
     void syncScrollingChanged(bool enabled);
     void previewScrollRatioChanged(double ratio);
+    void previewScrollRangeChanged();
 
 private slots:
     void openLink(const QUrl &url);
@@ -54,5 +56,7 @@ private:
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;
     QMetaObject::Connection m_nativeScrollConnection;
+    QMetaObject::Connection m_nativeScrollRangeConnection;
+    QTimer *m_layoutSyncTimer = nullptr;
     QString m_currentFilePath;
 };

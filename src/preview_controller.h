@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QtGlobal>
 
 class QAction;
 class QEvent;
@@ -23,6 +24,7 @@ public:
 
 private slots:
     void pollEditor();
+    void onEditorTextChanged();
     void scheduleRender();
     void renderNow();
     void togglePreview(bool visible);
@@ -38,6 +40,8 @@ private:
     void showPreviewFromNativeAction();
     QWidget *resolveCurrentEditor() const;
     void attachEditor(QWidget *editor);
+    QWidget *nativePreviewForEditor() const;
+    bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview();
     void updateSynchronizedScroll();
     QString currentFilePath() const;
@@ -53,4 +57,5 @@ private:
     QTimer *m_renderTimer = nullptr;
     bool m_syncScrolling = true;
     int m_lastEditorScrollValue = -1;
+    qint64 m_lastRenderDurationMs = 0;
 };
