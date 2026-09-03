@@ -1,6 +1,6 @@
 # markdownview--
 
-markdownview-- 是面向 [notepad--](https://github.com/cxasm/notepad--) v3.8 的 Markdown 侧边栏预览插件。它复用 notepad-- 自带的 Markdown 渲染，把原本独立弹出的预览窗口放进编辑器右侧，并随当前标签页和文档内容更新。
+markdownview-- 是面向 [notepad--](https://gitee.com/cxasm/notepad--) v3.8.3 的 Markdown 侧边栏预览插件。它复用 notepad-- 自带的 Markdown 渲染，把原本独立弹出的预览窗口放进编辑器右侧，并随当前标签页和文档内容更新。
 
 ## 功能
 
@@ -16,11 +16,11 @@ markdownview-- 是面向 [notepad--](https://github.com/cxasm/notepad--) v3.8 �
 
 ## 运行环境
 
-- notepad-- v3.8.0 插件版，x64
+- notepad-- v3.8.3 插件版，x64
 - Windows 10、Windows 11，或带桌面体验的 Windows Server 2016
 - notepad-- 安装目录中已有的 Qt 5.15.2 运行库
 
-插件按 notepad-- v3.8.0 的窗口结构开发。其他版本如果调整了 Markdown 预览或编辑器界面，可能需要重新适配。
+插件按 notepad-- v3.8.3 的窗口结构和插件 ABI 开发。其他版本如果调整了 Markdown 预览、编辑器界面或插件回调签名，可能需要重新适配。
 
 ## Windows 构建环境
 
@@ -111,7 +111,7 @@ copy /y build\plugin\markdownviewdd.dll ^
 
 ## 实现方式
 
-notepad-- v3.8.0 已经提供 `ScintillaEditView::on_viewMarkdown()` 和 `MarkdownView`。插件调用宿主的原生预览功能，再把 `MarkdownView` 嵌入 `QDockWidget`。文本读取和 Markdown 解析由 notepad-- 完成；插件负责合并连续的文本变化通知，防止重复渲染。
+notepad-- v3.8.3 已经提供 `ScintillaEditView::on_viewMarkdown()` 和 `MarkdownView`。插件调用宿主的原生预览功能，再把 `MarkdownView` 嵌入 `QDockWidget`。文本读取和 Markdown 解析由 notepad-- 完成；插件负责合并连续的文本变化通知，防止重复渲染。
 
 插件每 120 ms 检查一次当前标签页，用于跟随文档切换。插件会阻止宿主在每次按键时同步重排全文，只在输入停顿后刷新一次；等待时间会根据上一次渲染耗时在 350 ms 到 2 秒之间自动调整。Qt 分步排版大文档时，插件会合并预览区滚动范围变化，并仅在侧栏可见时重新计算同步位置。当前文件路径来自编辑器的 `filePath` 属性，主要用于解析相对路径图片。
 
@@ -119,7 +119,7 @@ notepad-- v3.8.0 已经提供 `ScintillaEditView::on_viewMarkdown()` 和 `Markdo
 
 - Qt 5.15 的 Markdown 渲染不是完整浏览器，不支持 Mermaid、数学公式、JavaScript 和复杂网页样式。
 - 滚动同步按两侧滚动条比例估算，无法精确对应 Markdown 源代码行和预览节点。
-- 当前版本只针对 notepad-- v3.8.0 x64 测试和适配。
+- 当前版本按 notepad-- v3.8.3 x64 的源码和插件 ABI 适配。
 
 遇到加载或预览问题时，可以查看诊断日志：
 
@@ -129,4 +129,4 @@ type "%TEMP%\markdownview.log"
 
 ## 许可
 
-本项目采用 GNU GPL v3.0 or later。参考项目 MarkdownViewer++ 使用 MIT License；本项目没有复制其 C#/.NET 渲染代码。
+本项目采用 GNU GPL v3.0 or later。

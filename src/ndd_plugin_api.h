@@ -5,11 +5,12 @@
 
 #include <functional>
 
+class QAction;
 class QsciScintilla;
 class QWidget;
 
 #ifndef NDD_MARKDOWN_VIEW_VERSION
-#define NDD_MARKDOWN_VIEW_VERSION "0.2.6"
+#define NDD_MARKDOWN_VIEW_VERSION "0.2.7"
 #endif
 
 // This structure mirrors notepad--/src/include/pluginGl.h.  Keep field order
@@ -23,16 +24,17 @@ struct NddProcData
     QString author;
     int menuType;
     QMenu *rootMenu;
+    QAction *action;
 
     NddProcData()
-        : menuType(0), rootMenu(nullptr)
+        : menuType(0), rootMenu(nullptr), action(nullptr)
     {
     }
 };
 
 using NDD_PROC_DATA = NddProcData;
-using NddGetCurrentEditor = std::function<QsciScintilla *()>;
-using NddHostCallback = std::function<bool(int, void *)>;
+using NddGetCurrentEditor = std::function<QsciScintilla *(QWidget *)>;
+using NddHostCallback = std::function<bool(QWidget *, int, void *)>;
 
 #if defined(Q_OS_WIN)
 #define NDD_PLUGIN_EXPORT __declspec(dllexport)

@@ -437,7 +437,7 @@ bool PreviewController::disconnectHostImmediateRefresh(bool force)
         return false;
     }
 
-    // notepad-- v3.8.0 has exactly one textChanged connection whose receiver
+    // notepad-- v3.8.3 has exactly one textChanged connection whose receiver
     // is the editor itself: on_updataMarkdown().  Disconnecting by receiver
     // avoids relying on the host's pointer-to-member connection syntax while
     // preserving the editor -> controller and editor -> main-window signals.

@@ -10,12 +10,12 @@ bool NDD_PROC_IDENTIFY(NDD_PROC_DATA *data);
 int NDD_PROC_MAIN(
     QWidget *notepad,
     const QString &pluginFilePath,
-    std::function<QsciScintilla *()> getCurrentEditor,
-    std::function<bool(int, void *)> hostCallback,
+    std::function<QsciScintilla *(QWidget *)> getCurrentEditor,
+    std::function<bool(QWidget *, int, void *)> hostCallback,
     NDD_PROC_DATA *data);
 ```
 
-`NDD_PROC_IDENTIFY` 返回插件元数据和菜单类型。此插件使用 `menuType = 1`，因此宿主会先创建插件根菜单，再调用一次 `NDD_PROC_MAIN` 让插件注册子菜单。入口 ABI 来自 notepad-- 官方仓库中的 `src/include/pluginGl.h`、`src/plugin.h` 和《插件编程开发说明.docx》。本项目在 `src/ndd_plugin_api.h` 中保留同样的字段类型和顺序。
+`NDD_PROC_IDENTIFY` 返回插件元数据和菜单类型。此插件使用 `menuType = 1`，因此宿主会先创建插件根菜单，再调用一次 `NDD_PROC_MAIN` 让插件注册子菜单。入口 ABI 来自 notepad-- v3.8.3 官方 Gitee 标签中的 `src/include/pluginGl.h` 和 `src/plugin.h`。本项目在 `src/ndd_plugin_api.h` 中保留相同的字段类型与顺序，包括末尾的 `QAction *`；两个回调也保留宿主要求的 `QWidget *` 参数。
 
 ## 组件关系
 
@@ -44,7 +44,7 @@ Qt 5.15 会分步排版较长的富文本，期间预览滚动条的范围可能
 
 ## 渲染选择
 
-MarkdownViewer++ 使用 Markdig 将 Markdown 转换为 HTML，再由 WinForms HTMLRenderer 展示。notepad-- v3.8 已有 `MarkdownView`，内部使用 `QTextEdit::setMarkdown()`。插件通过 Qt 元对象调用宿主的 `on_viewMarkdown`，再把宿主创建的窗口嵌入 `QDockWidget`，避免复制渲染逻辑，也避免从插件模块调用静态链接的 QScintilla 实现。
+notepad-- v3.8.3 已有 `MarkdownView`，内部使用 `QTextEdit::setMarkdown()`。插件通过 Qt 元对象调用宿主的 `on_viewMarkdown`，再把宿主创建的窗口嵌入 `QDockWidget`，避免复制渲染逻辑，也避免从插件模块调用静态链接的 QScintilla 实现。
 
 ## 文件路径与资源
 
@@ -57,6 +57,6 @@ notepad-- 给每个编辑器对象设置了名为 `filePath` 的 Qt 动态属性
 - CPU 架构；
 - MSVC 工具链和运行库；
 - Qt 主次版本；
-- notepad-- v3.8 的窗口对象名和 `on_viewMarkdown` 元对象槽。
+- notepad-- v3.8.3 的插件 ABI、窗口对象名和 `on_viewMarkdown` 元对象槽。
 
-插件不再需要 `qmyedit_qt5.lib`。当前实现明确以 notepad-- v3.8 为目标；若宿主以后重命名相关窗口或槽函数，需要更新适配层。
+插件不再需要 `qmyedit_qt5.lib`。当前实现明确以 notepad-- v3.8.3 为目标；若宿主以后修改插件回调、结构体、窗口对象名或槽函数，需要更新适配层。
