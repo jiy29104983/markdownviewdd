@@ -30,6 +30,38 @@ markdownview-- 是面向 [notepad--](https://gitee.com/cxasm/notepad--) v3.8.3 �
 
 VS Code 可以用作编辑器和构建入口，但仍需安装上述编译工具和 Qt。
 
+## GitHub Actions 云端构建与发布
+
+仓库通过 `.github/workflows/windows-release.yml` 在 GitHub 托管的
+`windows-2022` 环境中构建插件，因此发布者不需要在本机安装 Visual Studio、
+Qt 或 CMake。
+
+- 向 `main` 推送代码或创建拉取请求时，工作流构建 Release DLL，并在对应的
+  Actions 运行页面提供 14 天有效的下载产物。
+- 在 Actions 页面手工运行工作流时，也会生成可下载的构建产物。
+- 推送 `vMAJOR.MINOR.PATCH` 标签时，工作流会校验标签与项目版本一致，随后创建
+  GitHub Release，并上传 Windows x64 压缩包和 SHA256 校验文件。
+
+发布包中包含 `plugin/markdownviewdd.dll`、`README.md` 和 `LICENSE`。notepad--
+已经提供 Qt 5.15.2 运行库，因此发布包不重复附带 Qt DLL。
+
+发布前应同步修改以下三处版本号：
+
+- `CMakeLists.txt` 中的 `project(... VERSION ...)`
+- `markdownview.pro` 中的 `NDD_MARKDOWN_VIEW_VERSION`
+- `src/ndd_plugin_api.h` 中的后备 `NDD_MARKDOWN_VIEW_VERSION`
+
+当前版本为 `0.2.7`，首次自动发布可执行：
+
+```bash
+git tag -a v0.2.7 -m "Release v0.2.7"
+git push origin v0.2.7
+```
+
+GitHub 会使用仓库自动生成的 `GITHUB_TOKEN` 创建 Release，不需要配置个人访问令牌
+或其他 Actions Secret。云端构建成功只代表 DLL 编译和打包成功；正式发布前仍应将
+下载的 DLL 加载到 notepad-- v3.8.3 x64，完成下文列出的手工测试。
+
 ## 一键构建
 
 把代码下载到 Windows 后，双击仓库根目录的 `build-windows.bat`。脚本默认使用：

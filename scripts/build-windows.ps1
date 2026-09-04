@@ -3,6 +3,8 @@ param(
 
     [string]$Generator = "Visual Studio 16 2019",
 
+    [string]$Toolset = "",
+
     [string]$InstallDir = "",
 
     [switch]$Clean
@@ -29,6 +31,10 @@ $CMakeCommand = Get-Command "cmake.exe" -ErrorAction SilentlyContinue
 $CMakeExe = if ($CMakeCommand) { $CMakeCommand.Source } else { $null }
 if (-not $CMakeExe) {
     $CMakeCandidates = @(
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"),
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"),
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022\Enterprise\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"),
+        (Join-Path $env:ProgramFiles "Microsoft Visual Studio\2022\BuildTools\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"),
         (Join-Path $env:ProgramFiles "CMake\bin\cmake.exe"),
         (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2019\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"),
         (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\2019\Professional\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe"),
@@ -40,7 +46,7 @@ if (-not $CMakeExe) {
         Select-Object -First 1
 }
 if (-not $CMakeExe) {
-    throw "cmake.exe was not found. Install CMake or the CMake tools included with Visual Studio 2019."
+    throw "cmake.exe was not found. Install CMake or the CMake tools included with Visual Studio."
 }
 
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
@@ -57,15 +63,28 @@ $env:PATH = "$(Join-Path $QtRoot 'bin');$env:PATH"
 Write-Host "Project:   $ProjectRoot"
 Write-Host "Qt:        $QtRoot"
 Write-Host "Generator: $Generator"
+if (-not [string]::IsNullOrWhiteSpace($Toolset)) {
+    Write-Host "Toolset:   $Toolset"
+}
 Write-Host "CMake:     $CMakeExe"
 Write-Host ""
 
-& $CMakeExe `
-    -S $ProjectRoot `
-    -B $BuildDir `
-    -G $Generator `
-    -A x64 `
+$ConfigureArguments = @(
+    "-S"
+    $ProjectRoot
+    "-B"
+    $BuildDir
+    "-G"
+    $Generator
+    "-A"
+    "x64"
     "-DCMAKE_PREFIX_PATH=$QtRoot"
+)
+if (-not [string]::IsNullOrWhiteSpace($Toolset)) {
+    $ConfigureArguments += @("-T", $Toolset)
+}
+
+& $CMakeExe @ConfigureArguments
 
 if ($LASTEXITCODE -ne 0) {
     throw "CMake configure failed with exit code $LASTEXITCODE"

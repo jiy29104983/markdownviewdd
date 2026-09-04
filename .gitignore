@@ -1,4 +1,5 @@
 /build/
+/dist/
 /notepad--/
 /.vs/
 /.qmake.stash

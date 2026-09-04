@@ -1,0 +1,199 @@
+name: Windows build and release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  QT_VERSION: "5.15.2"
+  QT_ARCH: "win64_msvc2019_64"
+
+jobs:
+  build:
+    name: Build plugin
+    runs-on: windows-2022
+    timeout-minutes: 30
+    outputs:
+      artifact_name: ${{ steps.package.outputs.artifact_name }}
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@48d3ad6db93f3627c8ee7a0454bc6f3744f7e730 # v4.3.1
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: windows
+          target: desktop
+          arch: ${{ env.QT_ARCH }}
+          cache: true
+
+      - name: Validate release version
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tagMatch = [regex]::Match(
+              $env:GITHUB_REF_NAME,
+              '^v(?<version>\d+\.\d+\.\d+)$')
+          if (-not $tagMatch.Success) {
+              throw "Release tags must use the vMAJOR.MINOR.PATCH format. Received '$env:GITHUB_REF_NAME'."
+          }
+
+          $tagVersion = $tagMatch.Groups["version"].Value
+          $checks = @(
+              [PSCustomObject]@{
+                  Path = "CMakeLists.txt"
+                  Pattern = 'project\(ndd-markdown-view VERSION\s+(\d+\.\d+\.\d+)'
+              },
+              [PSCustomObject]@{
+                  Path = "markdownview.pro"
+                  Pattern = 'NDD_MARKDOWN_VIEW_VERSION=.*?(\d+\.\d+\.\d+)'
+              },
+              [PSCustomObject]@{
+                  Path = "src/ndd_plugin_api.h"
+                  Pattern = '#define\s+NDD_MARKDOWN_VIEW_VERSION\s+"(\d+\.\d+\.\d+)"'
+              }
+          )
+
+          foreach ($check in $checks) {
+              $content = Get-Content -Raw -Path $check.Path
+              $match = [regex]::Match($content, $check.Pattern)
+              if (-not $match.Success) {
+                  throw "Could not read the project version from '$($check.Path)'."
+              }
+
+              $fileVersion = $match.Groups[1].Value
+              if ($fileVersion -ne $tagVersion) {
+                  throw "Tag version '$tagVersion' does not match '$fileVersion' in '$($check.Path)'."
+              }
+          }
+
+          Write-Host "Release version $tagVersion is consistent across all build files."
+
+      - name: Build Release DLL
+        shell: pwsh
+        run: |
+          & ".\scripts\build-windows.ps1" `
+              -QtRoot $env:QT_ROOT_DIR `
+              -Generator "Visual Studio 17 2022" `
+              -Toolset "v142" `
+              -Clean
+
+      - name: Package plugin
+        id: package
+        shell: pwsh
+        run: |
+          $projectContent = Get-Content -Raw -Path "CMakeLists.txt"
+          $versionMatch = [regex]::Match(
+              $projectContent,
+              'project\(ndd-markdown-view VERSION\s+(\d+\.\d+\.\d+)')
+          if (-not $versionMatch.Success) {
+              throw "Could not read the project version from CMakeLists.txt."
+          }
+
+          $dllPath = "build\plugin\markdownviewdd.dll"
+          if (-not (Test-Path $dllPath -PathType Leaf)) {
+              throw "Expected plugin DLL was not found at '$dllPath'."
+          }
+
+          $projectVersion = $versionMatch.Groups[1].Value
+          $artifactName = "markdownviewdd-v$projectVersion-windows-x64"
+          if ($env:GITHUB_REF_TYPE -ne "tag") {
+              $shortCommit = $env:GITHUB_SHA.Substring(0, 7)
+              $artifactName = "$artifactName-$shortCommit"
+          }
+
+          $packageRoot = Join-Path $env:RUNNER_TEMP "markdownviewdd-package"
+          $pluginDir = Join-Path $packageRoot "plugin"
+          New-Item -ItemType Directory -Force -Path $pluginDir | Out-Null
+          Copy-Item -Path $dllPath -Destination $pluginDir
+          Copy-Item -Path "README.md", "LICENSE" -Destination $packageRoot
+
+          New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+          $archivePath = Join-Path "dist" "$artifactName.zip"
+          Compress-Archive `
+              -Path (Join-Path $packageRoot "*") `
+              -DestinationPath $archivePath `
+              -CompressionLevel Optimal
+
+          $archiveFileName = Split-Path -Leaf $archivePath
+          $checksumPath = "$archivePath.sha256"
+          $checksum = (Get-FileHash -Path $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$checksum  $archiveFileName" |
+              Set-Content -Path $checksumPath -Encoding ascii
+
+          $dll = Get-Item $dllPath
+          Write-Host "Built DLL: $($dll.FullName) ($($dll.Length) bytes)"
+          Write-Host "Archive:   $archivePath"
+          Write-Host "SHA256:    $checksum"
+
+          "artifact_name=$artifactName" >> $env:GITHUB_OUTPUT
+          "archive_path=$archivePath" >> $env:GITHUB_OUTPUT
+          "checksum_path=$checksumPath" >> $env:GITHUB_OUTPUT
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ steps.package.outputs.artifact_name }}
+          path: |
+            ${{ steps.package.outputs.archive_path }}
+            ${{ steps.package.outputs.checksum_path }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ needs.build.outputs.artifact_name }}
+          path: dist
+
+      - name: Create or update GitHub Release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          shopt -s nullglob
+          assets=(dist/*.zip dist/*.sha256)
+          if (( ${#assets[@]} != 2 )); then
+              printf 'Expected one ZIP and one SHA256 file, found %d assets.\n' "${#assets[@]}" >&2
+              exit 1
+          fi
+
+          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+              gh release upload "$TAG_NAME" "${assets[@]}" --clobber
+          else
+              gh release create "$TAG_NAME" "${assets[@]}" \
+                  --verify-tag \
+                  --title "$TAG_NAME" \
+                  --generate-notes
+          fi
