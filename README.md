@@ -21,6 +21,8 @@ markdownview-- 是面向 [notepad--](https://gitee.com/cxasm/notepad--) v3.8.3 �
 - notepad-- 安装目录中已有的 Qt 5.15.2 运行库
 
 插件按 notepad-- v3.8.3 的窗口结构和插件 ABI 开发。其他版本如果调整了 Markdown 预览、编辑器界面或插件回调签名，可能需要重新适配。
+详细的宿主版本、固定提交和 ABI 验证边界见
+[`docs/host-compatibility.md`](docs/host-compatibility.md)。
 
 ## Windows 构建环境
 
@@ -36,31 +38,14 @@ VS Code 可以用作编辑器和构建入口，但仍需安装上述编译工具
 `windows-2022` 环境中构建插件，因此发布者不需要在本机安装 Visual Studio、
 Qt 或 CMake。
 
-- 向 `main` 推送代码或创建拉取请求时，工作流构建 Release DLL，并在对应的
-  Actions 运行页面提供 14 天有效的下载产物。
-- 在 Actions 页面手工运行工作流时，也会生成可下载的构建产物。
-- 推送 `vMAJOR.MINOR.PATCH` 标签时，工作流会校验标签与项目版本一致，随后创建
-  GitHub Release，并上传 Windows x64 压缩包和 SHA256 校验文件。
+向 `main` 推送代码、创建 Pull Request 或手工运行工作流时，会生成带 SHA256 校验文件
+的 Windows x64 Artifact。推送格式为 `vMAJOR.MINOR.PATCH` 的标签时，工作流会校验
+源码版本并创建 GitHub Release。发布包包含 `plugin/markdownviewdd.dll`、`README.md`
+和 `LICENSE`，不重复附带宿主已经提供的 Qt 运行库。
 
-发布包中包含 `plugin/markdownviewdd.dll`、`README.md` 和 `LICENSE`。notepad--
-已经提供 Qt 5.15.2 运行库，因此发布包不重复附带 Qt DLL。
-
-发布前应同步修改以下三处版本号：
-
-- `CMakeLists.txt` 中的 `project(... VERSION ...)`
-- `markdownview.pro` 中的 `NDD_MARKDOWN_VIEW_VERSION`
-- `src/ndd_plugin_api.h` 中的后备 `NDD_MARKDOWN_VIEW_VERSION`
-
-当前版本为 `0.2.7`，首次自动发布可执行：
-
-```bash
-git tag -a v0.2.7 -m "Release v0.2.7"
-git push origin v0.2.7
-```
-
-GitHub 会使用仓库自动生成的 `GITHUB_TOKEN` 创建 Release，不需要配置个人访问令牌
-或其他 Actions Secret。云端构建成功只代表 DLL 编译和打包成功；正式发布前仍应将
-下载的 DLL 加载到 notepad-- v3.8.3 x64，完成下文列出的手工测试。
+云端构建和打包成功不能替代 notepad-- 中的真实加载与功能测试。版本同步、候选
+Artifact 验证、标签创建、失败处理和发布检查步骤见
+[`docs/releasing.md`](docs/releasing.md)。
 
 ## 一键构建
 
