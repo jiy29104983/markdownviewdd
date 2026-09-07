@@ -55,5 +55,5 @@ ctest --test-dir build -C Release -L multi-window --output-on-failure
 8. 隐藏 Dock 后导出最新 HTML，检查相对图片已嵌入，取消与失败保存不破坏既有文件。
 9. 使用超过 1 MiB 及图片／表格密集文档记录首次打开、连续输入、停顿和手工刷新耗时。
 
-失败时保存 `%TEMP%\markdownview.log`，并分别标注静态检查、自动化测试、Windows Release
+失败时保存 `%TEMP%\markdownview-<进程号>.log` 及适用的 `.1`～`.3` 轮转文件，并分别标注静态检查、自动化测试、Windows Release
 编译、Artifact 校验和真实宿主测试为 `passed`、`blocked`、`not run` 或 `not verified`。

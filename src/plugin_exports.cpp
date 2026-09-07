@@ -27,11 +27,12 @@ NDD_PLUGIN_EXPORT int NDD_PROC_MAIN(QWidget *notepad,
 {
     Q_UNUSED(pluginFilePath);
 
-    Diagnostics::resetLog();
-    Diagnostics::write(QStringLiteral("NDD_PROC_MAIN entered"));
+    Diagnostics::initialize();
+    Diagnostics::write(notepad, QStringLiteral("NDD_PROC_MAIN entered"));
 
     if (!notepad || !data || !data->rootMenu || !getCurrentEditor) {
-        Diagnostics::write(QStringLiteral("NDD_PROC_MAIN rejected invalid arguments"));
+        Diagnostics::write(notepad, QStringLiteral("NDD_PROC_MAIN rejected invalid arguments"),
+                           Diagnostics::Level::Error);
         return -1;
     }
 
@@ -39,23 +40,24 @@ NDD_PLUGIN_EXPORT int NDD_PROC_MAIN(QWidget *notepad,
         QString(), Qt::FindDirectChildrenOnly);
     const bool createdController = !controller;
     if (!controller) {
-        Diagnostics::write(QStringLiteral("creating PreviewController for host window"));
+        Diagnostics::write(notepad, QStringLiteral("creating PreviewController for host window"));
         Q_UNUSED(getCurrentEditor);
         Q_UNUSED(hostCallback);
         controller = new PreviewController(notepad);
     } else {
-        Diagnostics::write(QStringLiteral(
+        Diagnostics::write(notepad, QStringLiteral(
             "reusing PreviewController for repeated host-window initialization"));
     }
 
     if (!controller->installMenu(data->rootMenu)) {
-        Diagnostics::write(QStringLiteral("installMenu failed"));
+        Diagnostics::write(notepad, QStringLiteral("installMenu failed"),
+                           Diagnostics::Level::Error);
         if (createdController) {
             delete controller;
         }
         return -2;
     }
-    Diagnostics::write(QStringLiteral("PreviewController and menu ready"));
+    Diagnostics::write(notepad, QStringLiteral("PreviewController and menu ready"));
 
     return 0;
 }

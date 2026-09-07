@@ -37,7 +37,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
       m_ownsHostAdapter(!hostAdapter),
       m_mainWindow(qobject_cast<QMainWindow *>(notepad))
 {
-    Diagnostics::write(QStringLiteral("PreviewController constructor entered"));
+    Diagnostics::write(this, QStringLiteral("PreviewController constructor entered"));
     m_dock = new MarkdownPreviewDock(notepad);
     if (m_mainWindow) {
         m_mainWindow->addDockWidget(Qt::RightDockWidgetArea, m_dock);
@@ -78,7 +78,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         updateSynchronizedScroll();
     });
     connect(m_dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
-        Diagnostics::write(QStringLiteral("dock visibilityChanged=%1")
+        Diagnostics::write(this, QStringLiteral("dock visibilityChanged=%1")
                                .arg(visible));
         if (m_toggleAction && (visible || m_dock->isHidden())) {
             // visibilityChanged(false) is also emitted when the main window is
@@ -98,7 +98,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         } else {
             m_renderTimer->stop();
             if (disconnectHostImmediateRefresh()) {
-                Diagnostics::write(
+                Diagnostics::write(this,
                     QStringLiteral("host immediate refresh disconnected while dock hidden"));
             }
         }
@@ -109,7 +109,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     pollEditor();
     updatePollTimerState();
     qApp->installEventFilter(this);
-    Diagnostics::write(QStringLiteral("PreviewController constructor completed"));
+    Diagnostics::write(this, QStringLiteral("PreviewController constructor completed"));
 }
 
 PreviewController::~PreviewController()
@@ -200,7 +200,7 @@ void PreviewController::bridgeEditorContextMenu(QMenu *menu)
             action, m_editor.data());
         connect(action, &QAction::triggered,
                 this, &PreviewController::showPreviewFromNativeAction);
-        Diagnostics::write(
+        Diagnostics::write(this,
             QStringLiteral("native context Markdown action bridged; host disconnected=%1")
                 .arg(disconnected));
         break;
@@ -209,7 +209,7 @@ void PreviewController::bridgeEditorContextMenu(QMenu *menu)
 
 void PreviewController::showPreviewFromNativeAction()
 {
-    Diagnostics::write(QStringLiteral("native context Markdown action triggered"));
+    Diagnostics::write(this, QStringLiteral("native context Markdown action triggered"));
     pollEditor();
     if (!m_dock || !m_editor) {
         return;
@@ -262,7 +262,7 @@ void PreviewController::onEditorTextChanged()
     // Recheck on every edit so a host action cannot silently restore its
     // synchronous full-document renderer.
     if (disconnectHostImmediateRefresh()) {
-        Diagnostics::write(
+        Diagnostics::write(this,
             QStringLiteral("host immediate refresh reconnected; disconnected on edit"));
     }
     markPreviewPending();
@@ -308,7 +308,7 @@ void PreviewController::scheduleAutomaticRender()
                 tr("预览已暂停自动刷新，待手工刷新"),
                 tr("为避免输入卡顿，自动全文渲染已暂停；点击“刷新”应用最新内容。"));
         }
-        Diagnostics::write(QStringLiteral(
+        Diagnostics::write(this, QStringLiteral(
             "automatic render deferred: manual refresh policy active"));
         return;
     }
@@ -320,7 +320,7 @@ void PreviewController::renderScheduled()
 {
     synchronizeActiveEditor();
     if (isPreviewCurrent()) {
-        Diagnostics::write(QStringLiteral(
+        Diagnostics::write(this, QStringLiteral(
             "scheduled render skipped: preview version already current"));
         return;
     }
@@ -339,9 +339,10 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     // refresh for the same editor state.
     synchronizeActiveEditor();
     m_renderTimer->stop();
-    Diagnostics::write(QStringLiteral("renderNow entered"));
+    Diagnostics::write(this, QStringLiteral("renderNow entered"),
+                       Diagnostics::Level::Debug);
     if (!m_dock || (!allowHiddenDock && !m_dock->isVisible())) {
-        Diagnostics::write(QStringLiteral("renderNow skipped: dock hidden"));
+        Diagnostics::write(this, QStringLiteral("renderNow skipped: dock hidden"));
         return false;
     }
 
@@ -349,7 +350,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         m_previewState = PreviewState::NoDocument;
         m_previewEditor = nullptr;
         m_renderedVersion = 0;
-        Diagnostics::write(QStringLiteral("renderNow: no active editor"));
+        Diagnostics::write(this, QStringLiteral("renderNow: no active editor"));
         m_dock->showMessage(tr("没有活动文档"),
                             tr("打开一个 Markdown 文件后即可预览。"));
         updateExportActionState();
@@ -357,7 +358,9 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     }
 
     const QString filePath = currentFilePath();
-    Diagnostics::write(QStringLiteral("filePath read: %1").arg(filePath));
+    Diagnostics::write(this, QStringLiteral("filePath read: %1")
+                                 .arg(Diagnostics::pathIdentity(filePath)),
+                       Diagnostics::Level::Debug);
     if (!isMarkdownDocument(filePath)) {
         m_previewState = PreviewState::Unsupported;
         m_previewEditor = nullptr;
@@ -381,7 +384,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     if (!activateNativePreview(forceHostUpdate)) {
         synchronizeActiveEditor();
         if (m_editor != renderEditor || m_contentVersion != renderVersion) {
-            Diagnostics::write(QStringLiteral(
+            Diagnostics::write(this, QStringLiteral(
                 "renderNow failure discarded: editor state changed"));
             scheduleRender();
             return false;
@@ -401,12 +404,12 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     }
     m_lastRenderDurationMs = elapsed.elapsed();
     updateLargeDocumentPolicy(m_lastRenderDurationMs);
-    Diagnostics::write(QStringLiteral("renderNow completed in %1 ms")
+    Diagnostics::write(this, QStringLiteral("renderNow completed in %1 ms")
                            .arg(m_lastRenderDurationMs));
 
     synchronizeActiveEditor();
     if (m_editor != renderEditor || m_contentVersion != renderVersion) {
-        Diagnostics::write(QStringLiteral("renderNow discarded: editor state changed"));
+        Diagnostics::write(this, QStringLiteral("renderNow discarded: editor state changed"));
         scheduleRender();
         return false;
     }
@@ -429,16 +432,16 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
 
 void PreviewController::togglePreview(bool visible)
 {
-    Diagnostics::write(QStringLiteral("togglePreview entered: %1").arg(visible));
+    Diagnostics::write(this, QStringLiteral("togglePreview entered: %1").arg(visible));
     if (!m_dock) {
         return;
     }
     m_dock->setVisible(visible);
-    Diagnostics::write(QStringLiteral("dock setVisible returned"));
+    Diagnostics::write(this, QStringLiteral("dock setVisible returned"));
     if (visible) {
-        Diagnostics::write(QStringLiteral("calling dock raise"));
+        Diagnostics::write(this, QStringLiteral("calling dock raise"));
         m_dock->raise();
-        Diagnostics::write(QStringLiteral("dock raise returned"));
+        Diagnostics::write(this, QStringLiteral("dock raise returned"));
     }
 }
 
@@ -512,7 +515,7 @@ bool PreviewController::currentHtmlSnapshot(QByteArray *html,
 
     synchronizeActiveEditor();
     if (!isPreviewCurrent()) {
-        Diagnostics::write(
+        Diagnostics::write(this,
             QStringLiteral("export snapshot discarded: editor state changed"));
         return false;
     }
@@ -523,7 +526,7 @@ bool PreviewController::currentHtmlSnapshot(QByteArray *html,
     const QByteArray snapshot = m_dock->htmlSnapshotFor(
         snapshotEditor.data(), snapshotVersion);
     if (snapshot.isEmpty()) {
-        Diagnostics::write(QStringLiteral("export snapshot unavailable"));
+        Diagnostics::write(this, QStringLiteral("export snapshot unavailable"));
         return false;
     }
 
@@ -587,13 +590,13 @@ void PreviewController::attachEditor(QWidget *editor)
     m_manualRefreshOnly = fileExceedsAutomaticRefreshLimit();
 
     if (m_editor) {
-        Diagnostics::write(QStringLiteral("attaching editor class=%1")
+        Diagnostics::write(this, QStringLiteral("attaching editor class=%1")
                                .arg(QString::fromLatin1(m_editor->metaObject()->className())));
         const QMetaObject::Connection textChangedConnection = connect(
             m_editor.data(), SIGNAL(textChanged()),
             this, SLOT(onEditorTextChanged()),
             Qt::UniqueConnection);
-        Diagnostics::write(QStringLiteral("runtime textChanged connection=%1")
+        Diagnostics::write(this, QStringLiteral("runtime textChanged connection=%1")
                                .arg(static_cast<bool>(textChangedConnection)));
         connect(m_editor, &QObject::destroyed, this, [this]() {
             m_editor = nullptr;
@@ -620,7 +623,7 @@ void PreviewController::attachEditor(QWidget *editor)
         m_editorScrollValueConnection = scrollConnections.valueChanged;
         m_editorScrollRangeConnection = scrollConnections.rangeChanged;
         if (disconnectHostImmediateRefresh()) {
-            Diagnostics::write(
+            Diagnostics::write(this,
                 QStringLiteral("existing host immediate refresh disconnected on attach"));
         }
     }
@@ -638,8 +641,9 @@ void PreviewController::handleFilePathChanged()
         return;
     }
 
-    Diagnostics::write(QStringLiteral("editor filePath changed: %1 -> %2")
-                           .arg(m_editorFilePath, filePath));
+    Diagnostics::write(this, QStringLiteral("editor filePath changed: %1 -> %2")
+                           .arg(Diagnostics::pathIdentity(m_editorFilePath),
+                                Diagnostics::pathIdentity(filePath)));
     m_editorFilePath = filePath;
     markPreviewPending();
     if (m_dock) {
@@ -656,7 +660,7 @@ void PreviewController::updateLargeDocumentPolicy(qint64 renderDurationMs)
     const bool renderWasSlow = renderDurationMs >= kSlowRenderThresholdMs;
     m_manualRefreshOnly = fileIsLarge || renderWasSlow;
     if (m_manualRefreshOnly) {
-        Diagnostics::write(
+        Diagnostics::write(this,
             QStringLiteral("manual refresh policy enabled: fileBytes=%1, renderMs=%2")
                 .arg(QFileInfo(currentFilePath()).size())
                 .arg(renderDurationMs));
@@ -681,7 +685,7 @@ void PreviewController::synchronizeActiveEditor()
         return;
     }
 
-    Diagnostics::write(QStringLiteral("active editor changed: 0x%1")
+    Diagnostics::write(this, QStringLiteral("active editor changed: 0x%1")
                            .arg(reinterpret_cast<quintptr>(current), 0, 16));
     attachEditor(current);
     if (m_dock && m_dock->isVisible()) {
@@ -737,7 +741,7 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
 
     m_lastHostError.clear();
     HostAdapter::PreviewResult preview = m_hostAdapter->ensurePreview(m_editor.data());
-    Diagnostics::write(
+    Diagnostics::write(this,
         QStringLiteral("host preview ensure created=%1, duration=%2 ms, error=%3")
             .arg(preview.created).arg(preview.durationMs).arg(preview.error));
     if (!preview.isValid()) {
@@ -766,12 +770,12 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
             }
         }
         enforcePreviewCacheLimit();
-        Diagnostics::write(QStringLiteral("host initial render reused"));
+        Diagnostics::write(this, QStringLiteral("host initial render reused"));
         return true;
     }
     if (reusablePreview && !forceHostUpdate) {
         enforcePreviewCacheLimit();
-        Diagnostics::write(QStringLiteral(
+        Diagnostics::write(this, QStringLiteral(
             "existing current host preview reused without full render"));
         return true;
     }
@@ -782,7 +786,7 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
     QString hostError;
     const bool updated = m_hostAdapter->refreshPreview(
         m_editor.data(), &hostRenderDuration, &hostError);
-    Diagnostics::write(
+    Diagnostics::write(this,
         QStringLiteral("host preview refresh returned: %1, duration=%2 ms, error=%3")
             .arg(updated)
             .arg(hostRenderDuration)
@@ -791,7 +795,7 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
         QElapsedTimer styleElapsed;
         styleElapsed.start();
         m_dock->refreshDocumentStyle(m_editor.data(), m_contentVersion);
-        Diagnostics::write(QStringLiteral("document style refresh duration=%1 ms")
+        Diagnostics::write(this, QStringLiteral("document style refresh duration=%1 ms")
                                .arg(styleElapsed.elapsed()));
     }
     if (!updated) {
@@ -870,7 +874,7 @@ void PreviewController::enforcePreviewCacheLimit()
             entry.hasNativePreview = false;
             --cachedPreviewCount;
         }
-        Diagnostics::write(
+        Diagnostics::write(this,
             QStringLiteral("native preview cache evicted: released=%1, remaining=%2, error=%3")
                 .arg(released).arg(cachedPreviewCount).arg(error));
         if (!released) {

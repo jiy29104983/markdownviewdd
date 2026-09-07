@@ -158,12 +158,12 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document)
         const int bodyEnd = html.lastIndexOf(QStringLiteral("</body>"), -1,
                                              Qt::CaseInsensitive);
         html.insert(bodyEnd >= 0 ? bodyEnd : html.size(), comment);
-        Diagnostics::write(
+        Diagnostics::write(this,
             QStringLiteral("HTML export kept %1 unavailable local image reference(s): %2")
                 .arg(missingResources.size())
                 .arg(missingResources.join(QStringLiteral(", "))));
     }
-    Diagnostics::write(
+    Diagnostics::write(this,
         QStringLiteral("HTML export embedded %1 local image(s), source bytes=%2")
             .arg(replacements.size())
             .arg(embeddedBytes));
@@ -350,7 +350,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     applyDocumentStyle(textEdit);
     m_browser->hide();
     previewWindow->show();
-    Diagnostics::write(QStringLiteral("native MarkdownView embedded in dock"));
+    Diagnostics::write(this, QStringLiteral("native MarkdownView embedded in dock"));
     return true;
 }
 
@@ -438,18 +438,18 @@ void MarkdownPreviewDock::disconnectNativePreviews()
 void MarkdownPreviewDock::renderMarkdown(const QString &markdown,
                                          const QString &filePath)
 {
-    Diagnostics::write(QStringLiteral("renderMarkdown entered"));
+    Diagnostics::write(this, QStringLiteral("renderMarkdown entered"));
     const double previousRatio = scrollRatio();
     m_currentFilePath = filePath;
 
     QTextDocument *document = m_browser->document();
-    Diagnostics::write(QStringLiteral("setting document base URL"));
+    Diagnostics::write(this, QStringLiteral("setting document base URL"));
     document->setBaseUrl(baseUrlForFile(filePath));
-    Diagnostics::write(QStringLiteral("setting document style sheet"));
+    Diagnostics::write(this, QStringLiteral("setting document style sheet"));
     document->setDefaultStyleSheet(loadStyleSheet());
-    Diagnostics::write(QStringLiteral("calling QTextDocument::setMarkdown"));
+    Diagnostics::write(this, QStringLiteral("calling QTextDocument::setMarkdown"));
     document->setMarkdown(markdown, QTextDocument::MarkdownDialectGitHub);
-    Diagnostics::write(QStringLiteral("QTextDocument::setMarkdown returned"));
+    Diagnostics::write(this, QStringLiteral("QTextDocument::setMarkdown returned"));
 
     if (!m_syncButton->isChecked()) {
         QTimer::singleShot(0, this, [this, previousRatio]() {
@@ -947,7 +947,7 @@ bool MarkdownPreviewDock::scrollNativeToAnchor(const QString &anchor)
 void MarkdownPreviewDock::showLinkFailure(const QUrl &url,
                                           const QString &reason)
 {
-    Diagnostics::write(
+    Diagnostics::write(this,
         QStringLiteral("link open rejected or failed: %1 (%2)")
             .arg(url.toDisplayString(), reason));
     if (m_documentLabel) {

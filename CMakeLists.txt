@@ -76,6 +76,9 @@ if(BUILD_TESTING)
         Qt5::Widgets
         Qt5::Test)
 
+    target_compile_definitions(markdownview_lifecycle_tests PRIVATE
+        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+
     if(MSVC)
         target_compile_options(markdownview_lifecycle_tests PRIVATE /utf-8 /W4)
     else()
@@ -165,5 +168,34 @@ if(BUILD_TESTING)
         COMMAND markdownview_multi_window_tests -platform offscreen)
     set_tests_properties(markdownview_multi_window_tests PROPERTIES
         LABELS "behavior;multi-window"
+        TIMEOUT 60)
+
+    add_executable(markdownview_diagnostics_tests
+        tests/diagnostics_test.cpp
+        src/diagnostics.cpp
+        src/diagnostics.h)
+
+    target_include_directories(markdownview_diagnostics_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+    target_link_libraries(markdownview_diagnostics_tests PRIVATE
+        Qt5::Core
+        Qt5::Widgets
+        Qt5::Test)
+
+    target_compile_definitions(markdownview_diagnostics_tests PRIVATE
+        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+
+    if(MSVC)
+        target_compile_options(markdownview_diagnostics_tests PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_diagnostics_tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
+
+    add_test(NAME markdownview_diagnostics_tests
+        COMMAND markdownview_diagnostics_tests -platform offscreen)
+    set_tests_properties(markdownview_diagnostics_tests PROPERTIES
+        LABELS "behavior;diagnostics"
         TIMEOUT 60)
 endif()

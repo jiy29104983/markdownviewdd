@@ -1251,3 +1251,80 @@ Qt Test 尚未编译运行；Windows Release DLL、Artifact 和真实宿主验�
 只是 Dock 可见期间的兼容兜底，不是标签切换主路径。若宿主未来替换 `editTabWidget` 或编辑器
 不再继承 `QAbstractScrollArea`，需要更新 `HostAdapter`。滚动仍按比例映射，不提供精确源行或
 Markdown 节点定位，因此保持“修复完成／待验证”。
+
+## BUG-016：诊断日志缺少容量限制和实例隔离
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`4d364b190e5855a71996f221933ecb333deb96c7`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-004 `9121b4b85b97b621b503ae1ba171d486eba051d0`
+- **修改文件**：`CMakeLists.txt`、`README.md`、`docs/architecture.md`、
+  `docs/testing.md`、`docs/bug-backlog-2026-09-07.md`、
+  `docs/bug-fix-handoffs-2026-09-07.md`、`src/diagnostics.cpp`、
+  `src/diagnostics.h`、`src/markdown_preview_dock.cpp`、`src/plugin_exports.cpp`、
+  `src/preview_controller.cpp`、`tests/diagnostics_test.cpp`
+
+### 问题核实与根因
+
+静态确认原日志固定写入 `%TEMP%/markdownview.log`，每次 `NDD_PROC_MAIN` 都调用 `resetLog()`
+截断文件。因此同进程第二窗口会删除首窗记录，不同 notepad-- 进程也会混写同一目标。日志
+没有容量上限、轮转或窗口身份，并会记录完整应用路径和编辑器路径。
+
+### 实际修改方案
+
+初始化改为进程内幂等；日志使用 `markdownview-<pid>.log`，每行同时记录 PID 和稳定的
+`window-N`。单文件限制为 1 MiB，超限轮转并保留 `.1`～`.3`；同 PID 遗留文件在进程首次
+初始化时也先轮转。初始化、编号、轮转和追加由互斥保护，目录或文件不可写时静默放弃诊断，
+不向插件功能传播失败。关键记录仍逐条刷新；日志级别分为 Debug、Info、Warning、Error，默认
+过滤高频 Debug 跟踪。完整编辑器路径改为文件名和 SHA-256 短摘要，应用只记录可执行文件名。
+
+新增 `markdownview_diagnostics_tests`，覆盖重复初始化不截断、两个窗口身份不同、文件名包含
+PID、小容量轮转与保留数量、不可写目标不崩溃、路径摘要不暴露父目录。
+
+### 相较计划的偏差
+
+没有引入异步缓冲或独立日志服务，因为当前没有测量证明同步写入值得增加退出丢日志与线程
+协作复杂度。多进程通过独立 PID 文件隔离，不再需要跨进程锁。测试配置入口只在独立诊断测试
+中使用，用于设置临时目录和缩小轮转阈值。
+
+### 验收标准逐项结果
+
+1. **第二窗口不丢已有日志**：幂等初始化完成，测试源码断言两窗标记共存；静态 `passed`，
+   Qt 运行 `blocked`。
+2. **两个进程可区分且不截断**：文件名和日志行包含 PID；静态 `passed`，真实双进程
+   `not verified`。
+3. **超出容量正确轮转**：1 MiB、3 份保留策略及 512 字节阈值测试源码完成；静态 `passed`，
+   运行 `blocked`。
+4. **不可写目录不崩溃**：目录创建和文件打开失败均返回，测试以普通文件充当目录；源码覆盖，
+   运行 `blocked`。
+5. **关键失败和耗时仍可诊断**：错误入口使用 Error，宿主渲染、样式和控制器总耗时继续以
+   Info 立即刷新；静态 `passed`，真实日志 `not verified`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check`；BUG-004 祖先关系；旧固定文件名和 `resetLog` 引用清除；PID/窗口、轮转、互斥、失败返回、脱敏和 CTest 注册复核；ABI 与宿主目录未修改 |
+| 自动化测试 | `partial` | `./tests/release_publish_test.sh` passed；Qt 配置缺少 `Qt5Config.cmake` blocked；新增诊断 Qt Test 未运行 |
+| Windows Release 编译 | `blocked` | 当前 Linux 环境没有 Qt 5.15.2、MSVC v142 和 Windows runner |
+| Artifact 校验 | `not run` | 未生成 DLL、ZIP、SHA256 或 GitHub Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- v3.8.3 x64 执行双窗口、双进程、轮转和不可写目录测试 |
+
+### 实际环境与未验证项
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake**：3.28.3
+- **编译器探测**：GNU C++ 13.3.0
+- **CMake 配置目录**：`/tmp/markdownview-bug016-build`
+- **可用测试输出**：`release publishing tests: passed`
+- **新增测试源码**：`tests/diagnostics_test.cpp`
+
+Qt Test、Windows Release DLL、Artifact 和真实宿主验证仍未完成。真实 Windows 下两个进程的
+文件隔离、双窗口标识、1 MiB 轮转、临时目录权限失败及关键错误即时落盘均待复核。PID 极端
+复用时会先轮转同名遗留文件而不是覆盖；日志仍可能包含宿主错误文本或外部 URL，本单主动
+收敛的是应用路径与编辑器文件路径，因此保持“修复完成／待验证”。
