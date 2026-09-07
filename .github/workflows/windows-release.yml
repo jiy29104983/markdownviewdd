@@ -109,7 +109,13 @@ jobs:
               $text = Get-Content -Raw $log.FullName
               Write-Host $text
               if ($text -match '(?m)^(FAIL!|QFATAL)') {
-                  $annotation = $text `
+                  $failureLines = Select-String -Path $log.FullName `
+                      -Pattern '^(FAIL!|QFATAL|Totals:)' -Context 0,4
+                  $details = ($failureLines | ForEach-Object {
+                      $_.Line
+                      $_.Context.PostContext
+                  }) -join "`n"
+                  $annotation = $details `
                       -replace '%', '%25' `
                       -replace "`r", '%0D' `
                       -replace "`n", '%0A'

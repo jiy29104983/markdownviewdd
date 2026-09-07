@@ -202,4 +202,19 @@ if(BUILD_TESTING)
     set_tests_properties(markdownview_diagnostics_tests PROPERTIES
         LABELS "behavior;diagnostics"
         TIMEOUT 60)
+
+    if(WIN32)
+        # Qt 5.15's offscreen backend uses the basic font database, which
+        # otherwise searches Qt's empty lib/fonts directory on Windows.
+        file(TO_CMAKE_PATH "$ENV{SystemRoot}/Fonts" windows_font_directory)
+        if(NOT IS_DIRECTORY "${windows_font_directory}")
+            message(FATAL_ERROR "Windows test fonts not found: ${windows_font_directory}")
+        endif()
+        set_tests_properties(
+            markdownview_lifecycle_tests
+            markdownview_document_identity_tests
+            markdownview_multi_window_tests
+            markdownview_diagnostics_tests
+            PROPERTIES ENVIRONMENT "QT_QPA_FONTDIR=${windows_font_directory}")
+    endif()
 endif()

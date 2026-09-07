@@ -139,6 +139,9 @@ void MarkdownPreviewDockLifecycleTest::editorDestructionDeleteLaterIsSafe()
 
 void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
 {
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QDir root(directory.path());
     MarkdownPreviewDock dock;
     QWidget *preview = createNativePreview();
     QWidget editor;
@@ -148,7 +151,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
         "<p><a href=\"https://example.com/path\">External</a></p>"
         "<p><a href=\"guide/next.md\">Relative</a></p>"));
     QVERIFY(dock.adoptNativePreview(
-        preview, textEdit, QStringLiteral("/tmp/docs/current.md"), &editor, 1));
+        preview, textEdit, root.filePath(QStringLiteral("current.md")), &editor, 1));
     dock.resize(600, 400);
     dock.show();
     QTest::qWait(1);
@@ -161,6 +164,11 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
 
     QTextCursor external = textEdit->document()->find(QStringLiteral("External"));
     QVERIFY(!external.isNull());
+    // find() leaves the cursor just past the link. Click inside the text so
+    // font metrics and platform hit-testing cannot place the click outside it.
+    external.setPosition(external.selectionStart() + 1);
+    QTRY_COMPARE(textEdit->anchorAt(textEdit->cursorRect(external).center()),
+                 QStringLiteral("https://example.com/path"));
     QTest::mouseClick(textEdit->viewport(), Qt::LeftButton, Qt::NoModifier,
                       textEdit->cursorRect(external).center());
     QCOMPARE(openedUrls.size(), 1);
@@ -171,7 +179,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
         Q_ARG(QUrl, QUrl(QStringLiteral("guide/next.md")))));
     QCOMPARE(openedUrls.size(), 2);
     QCOMPARE(openedUrls.constLast(),
-             QUrl::fromLocalFile(QStringLiteral("/tmp/docs/guide/next.md")));
+             QUrl::fromLocalFile(root.filePath(QStringLiteral("guide/next.md"))));
 }
 
 void MarkdownPreviewDockLifecycleTest::nativePreviewScrollsToAnchors()
@@ -188,7 +196,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewScrollsToAnchors()
     html += QStringLiteral("<a name=\"target\"></a><h2>Target</h2>");
     textEdit->setHtml(html);
     QVERIFY(dock.adoptNativePreview(
-        preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 1));
+        preview, textEdit, QDir::temp().filePath(QStringLiteral("current.md")), &editor, 1));
     dock.resize(500, 250);
     dock.show();
     QTest::qWait(1);
@@ -234,7 +242,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewSelectionDoesNotOpenLink()
     textEdit->setHtml(QStringLiteral(
         "<p><a href=\"https://example.com\">Selectable link text</a></p>"));
     QVERIFY(dock.adoptNativePreview(
-        preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 1));
+        preview, textEdit, QDir::temp().filePath(QStringLiteral("current.md")), &editor, 1));
     dock.resize(600, 300);
     dock.show();
     QTest::qWait(1);
@@ -245,6 +253,10 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewSelectionDoesNotOpenLink()
         return true;
     });
     QTextCursor link = textEdit->document()->find(QStringLiteral("Selectable"));
+    QVERIFY(!link.isNull());
+    link.setPosition(link.selectionStart() + 1);
+    QTRY_COMPARE(textEdit->anchorAt(textEdit->cursorRect(link).center()),
+                 QStringLiteral("https://example.com"));
     const QPoint start = textEdit->cursorRect(link).center();
     const QPoint end = start + QPoint(80, 0);
     QTest::mousePress(textEdit->viewport(), Qt::LeftButton, Qt::NoModifier, start);
@@ -315,7 +327,7 @@ void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChan
         "```cpp\nint value = 1;\n```\n\n| A | B |\n| - | - |\n| 1 | 2 |") +
         QStringLiteral("\n\nA paragraph for scrolling.").repeated(100));
     QVERIFY(dock.adoptNativePreview(
-        preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 9));
+        preview, textEdit, QDir::temp().filePath(QStringLiteral("current.md")), &editor, 9));
     dock.resize(600, 260);
     dock.show();
     QTest::qWait(100);

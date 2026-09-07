@@ -27,6 +27,12 @@ CTest 显式将 QtTest 文本结果写入 `build/markdownview_*_tests.txt`，统
 一同作为独立诊断 Artifact 上传。直接调用 CTest 时，应同时查看这些 QtTest 文本记录。
 任一回归失败仍会阻止插件打包和发布。
 
+Windows 的 Qt 5.15 offscreen 后端使用基础字体数据库，CTest 将 `QT_QPA_FONTDIR` 指向
+系统 `Fonts` 目录，避免 Qt 安装包未携带 `lib/fonts` 时缺失字体并影响文字命中测试。
+链接测试在实际链接文字内部点击，并先断言 `anchorAt()` 命中目标；路径使用 Qt 临时目录，
+避免把 Linux 的 `/tmp` 根路径假设带入 Windows。失败注释只摘录断言及其上下文，完整警告
+保留在日志 Artifact 中，防止大量环境警告截断真正的错误。
+
 需要定位单组测试时，可在完成配置后执行：
 
 ```powershell
