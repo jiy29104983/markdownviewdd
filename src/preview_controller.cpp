@@ -21,7 +21,7 @@
 #include <QtMath>
 
 namespace {
-constexpr int kEditorPollIntervalMs = 120;
+constexpr int kEditorFallbackPollIntervalMs = 1500;
 constexpr int kMinimumRenderDebounceMs = 350;
 constexpr int kMaximumRenderDebounceMs = 2000;
 constexpr int kRenderDurationMultiplier = 3;
@@ -52,11 +52,17 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     m_renderTimer->setInterval(kMinimumRenderDebounceMs);
 
     m_pollTimer = new QTimer(this);
-    m_pollTimer->setInterval(kEditorPollIntervalMs);
+    m_pollTimer->setInterval(kEditorFallbackPollIntervalMs);
+
+    m_hostEventTimer = new QTimer(this);
+    m_hostEventTimer->setSingleShot(true);
+    m_hostEventTimer->setInterval(0);
 
     connect(m_renderTimer, &QTimer::timeout,
             this, &PreviewController::renderScheduled);
     connect(m_pollTimer, &QTimer::timeout, this, &PreviewController::pollEditor);
+    connect(m_hostEventTimer, &QTimer::timeout,
+            this, &PreviewController::synchronizeFromHostEvent);
     connect(m_dock, &MarkdownPreviewDock::refreshRequested,
             this, &PreviewController::renderNow);
     connect(m_dock, &MarkdownPreviewDock::syncScrollingChanged,
@@ -68,7 +74,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         // Qt estimates the scrollbar range while a large rich-text document
         // is being laid out.  Reapply the ratio when that estimate changes so
         // the preview cannot remain at an obsolete blank offset.
-        m_lastEditorScrollValue = -1;
+        m_hasLastEditorScrollState = false;
         updateSynchronizedScroll();
     });
     connect(m_dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
@@ -96,10 +102,12 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
                     QStringLiteral("host immediate refresh disconnected while dock hidden"));
             }
         }
+        updatePollTimerState();
     });
 
-    m_pollTimer->start();
+    ensureHostEventConnection();
     pollEditor();
+    updatePollTimerState();
     qApp->installEventFilter(this);
     Diagnostics::write(QStringLiteral("PreviewController constructor completed"));
 }
@@ -218,8 +226,31 @@ void PreviewController::showPreviewFromNativeAction()
 
 void PreviewController::pollEditor()
 {
+    ensureHostEventConnection();
     synchronizeActiveEditor();
 
+    if (m_dock && m_dock->isVisible() && m_syncScrolling) {
+        updateSynchronizedScroll();
+    }
+}
+
+void PreviewController::ensureHostEventConnection()
+{
+    if (m_activeEditorConnection || !m_hostAdapter) {
+        return;
+    }
+    m_activeEditorConnection = m_hostAdapter->connectActiveEditorChanged(
+        this, [this]() {
+            // The host can emit currentChanged before it finishes updating
+            // the new page's dynamic properties. Coalesce the event and read
+            // the complete state after the current event has returned.
+            m_hostEventTimer->start();
+        });
+}
+
+void PreviewController::synchronizeFromHostEvent()
+{
+    synchronizeActiveEditor();
     if (m_dock && m_dock->isVisible() && m_syncScrolling) {
         updateSynchronizedScroll();
     }
@@ -385,7 +416,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     m_previewState = PreviewState::Ready;
     m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
     m_dock->setDocumentInfo(filePath, -1);
-    m_lastEditorScrollValue = -1;
+    m_hasLastEditorScrollState = false;
     if (m_syncScrolling) {
         QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
     } else if (preserveScroll) {
@@ -420,7 +451,7 @@ void PreviewController::setSyncScrolling(bool enabled)
     if (m_dock) {
         m_dock->setSyncScrolling(enabled);
     }
-    m_lastEditorScrollValue = -1;
+    m_hasLastEditorScrollState = false;
     if (enabled) {
         updateSynchronizedScroll();
     }
@@ -444,11 +475,20 @@ void PreviewController::scrollEditorToRatio(double ratio)
     const int value = editorBar->minimum() +
         qRound(ratio * static_cast<double>(
             editorBar->maximum() - editorBar->minimum()));
-    editorBar->setValue(value);
+    m_syncingEditorScroll = true;
+    {
+        const QSignalBlocker blocker(editorBar);
+        editorBar->setValue(value);
+    }
+    m_syncingEditorScroll = false;
 
-    // The editor-to-preview direction is polled.  Remember the value written
-    // here so the next poll does not immediately echo it back to the preview.
+    // Remember the complete programmatic state so the event callback and the
+    // fallback poll cannot echo this write back to the preview.
+    m_lastScrollEditor = m_editor;
+    m_lastEditorScrollMinimum = editorBar->minimum();
+    m_lastEditorScrollMaximum = editorBar->maximum();
     m_lastEditorScrollValue = editorBar->value();
+    m_hasLastEditorScrollState = true;
 }
 
 bool PreviewController::currentHtmlSnapshot(QByteArray *html,
@@ -523,6 +563,14 @@ void PreviewController::attachEditor(QWidget *editor)
     if (m_editor) {
         disconnect(m_editor, nullptr, this, nullptr);
     }
+    if (m_editorScrollValueConnection) {
+        disconnect(m_editorScrollValueConnection);
+        m_editorScrollValueConnection = QMetaObject::Connection();
+    }
+    if (m_editorScrollRangeConnection) {
+        disconnect(m_editorScrollRangeConnection);
+        m_editorScrollRangeConnection = QMetaObject::Connection();
+    }
 
     m_editor = editor;
     m_editorFilePath = currentFilePath();
@@ -533,7 +581,8 @@ void PreviewController::attachEditor(QWidget *editor)
     if (m_dock) {
         m_dock->invalidatePreview();
     }
-    m_lastEditorScrollValue = -1;
+    m_lastScrollEditor = nullptr;
+    m_hasLastEditorScrollState = false;
     m_lastRenderDurationMs = 0;
     m_manualRefreshOnly = fileExceedsAutomaticRefreshLimit();
 
@@ -553,12 +602,23 @@ void PreviewController::attachEditor(QWidget *editor)
             m_previewEditor = nullptr;
             m_renderedVersion = 0;
             m_previewState = PreviewState::NoDocument;
+            m_lastScrollEditor = nullptr;
+            m_hasLastEditorScrollState = false;
             if (m_dock) {
                 m_dock->invalidatePreview();
             }
             updateExportActionState();
             scheduleRender();
         });
+        const HostAdapter::ScrollConnections scrollConnections =
+            m_hostAdapter->connectEditorScrollChanged(
+            m_editor.data(), this, [this]() {
+                if (!m_syncingEditorScroll) {
+                    updateSynchronizedScroll();
+                }
+            });
+        m_editorScrollValueConnection = scrollConnections.valueChanged;
+        m_editorScrollRangeConnection = scrollConnections.rangeChanged;
         if (disconnectHostImmediateRefresh()) {
             Diagnostics::write(
                 QStringLiteral("existing host immediate refresh disconnected on attach"));
@@ -854,15 +914,38 @@ void PreviewController::updateSynchronizedScroll()
         return;
     }
 
+    const int scrollMinimum = editorBar->minimum();
+    const int scrollMaximum = editorBar->maximum();
     const int scrollValue = editorBar->value();
-    if (scrollValue == m_lastEditorScrollValue) {
+    if (m_hasLastEditorScrollState && m_lastScrollEditor == m_editor &&
+        scrollMinimum == m_lastEditorScrollMinimum &&
+        scrollMaximum == m_lastEditorScrollMaximum &&
+        scrollValue == m_lastEditorScrollValue) {
         return;
     }
 
+    m_lastScrollEditor = m_editor;
+    m_lastEditorScrollMinimum = scrollMinimum;
+    m_lastEditorScrollMaximum = scrollMaximum;
     m_lastEditorScrollValue = scrollValue;
+    m_hasLastEditorScrollState = true;
     const double ratio = static_cast<double>(scrollValue - editorBar->minimum()) /
         static_cast<double>(editorBar->maximum() - editorBar->minimum());
     m_dock->scrollToRatio(ratio);
+}
+
+void PreviewController::updatePollTimerState()
+{
+    if (!m_pollTimer || !m_dock) {
+        return;
+    }
+    if (m_dock->isVisible()) {
+        if (!m_pollTimer->isActive()) {
+            m_pollTimer->start();
+        }
+    } else {
+        m_pollTimer->stop();
+    }
 }
 
 QString PreviewController::currentFilePath() const

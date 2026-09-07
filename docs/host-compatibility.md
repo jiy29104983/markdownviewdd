@@ -54,7 +54,10 @@ notepad-- v3.8.3 会为每个 `CCNotePad` 窗口分别加载插件菜单并调�
 
 这些宿主专用约定集中在 `src/host_adapter.cpp`：`editTabWidget`、`filePath`、
 `MarkdownViewClass`、`textEdit`、`on_viewMarkdown`、`on_updataMarkdown`，以及宿主原生
-预览的连接和所有权协作。控制器和 Dock 不应重新直接探测这些名称。升级宿主基线时优先修改
+预览的连接和所有权协作。适配器还负责把 `editTabWidget::currentChanged` 和当前编辑器
+滚动条的数值／范围变化转换为控制器事件；若未来宿主替换标签容器或编辑器不再继承
+`QAbstractScrollArea`，低频轮询只能作为可见期间的兼容兜底，升级时必须补齐新的事件绑定。
+控制器和 Dock 不应重新直接探测这些名称。升级宿主基线时优先修改
 并验证默认适配器；适配器返回的失败原因必须保留到诊断记录，不能静默退回另一套状态来源。
 缓存淘汰同样必须经过该适配器：notepad-- v3.8.3 的 `ScintillaEditView::m_markdownWin` 是
 `QPointer<MarkdownView>`，因此受控 `deleteLater()` 后能够安全归零并在下次

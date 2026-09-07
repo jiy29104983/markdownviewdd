@@ -9,6 +9,8 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QStatusBar>
+#include <QAbstractScrollArea>
+#include <QScrollBar>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QToolBar>
@@ -44,6 +46,41 @@ public:
             QString::fromLatin1(kEditorTabsObjectName));
         QWidget *page = tabs ? tabs->currentWidget() : nullptr;
         return page && page->inherits("QsciScintilla") ? page : nullptr;
+    }
+
+    QMetaObject::Connection connectActiveEditorChanged(
+        QObject *context, std::function<void()> callback) override
+    {
+        if (!m_notepad || !context || !callback) {
+            return QMetaObject::Connection();
+        }
+        QTabWidget *tabs = m_notepad->findChild<QTabWidget *>(
+            QString::fromLatin1(kEditorTabsObjectName));
+        if (!tabs) {
+            return QMetaObject::Connection();
+        }
+        return QObject::connect(
+            tabs, &QTabWidget::currentChanged, context,
+            [callback](int) { callback(); });
+    }
+
+    ScrollConnections connectEditorScrollChanged(
+        QWidget *editor, QObject *context,
+        std::function<void()> callback) override
+    {
+        ScrollConnections connections;
+        QAbstractScrollArea *area = qobject_cast<QAbstractScrollArea *>(editor);
+        QScrollBar *bar = area ? area->verticalScrollBar() : nullptr;
+        if (!bar || !context || !callback) {
+            return connections;
+        }
+        connections.valueChanged = QObject::connect(
+            bar, &QAbstractSlider::valueChanged, context,
+            [callback](int) { callback(); });
+        connections.rangeChanged = QObject::connect(
+            bar, &QAbstractSlider::rangeChanged, context,
+            [callback](int, int) { callback(); });
+        return connections;
     }
 
     QString filePath(QWidget *editor) const override

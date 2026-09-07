@@ -4,6 +4,7 @@
 
 #include <QByteArray>
 #include <QList>
+#include <QMetaObject>
 #include <QObject>
 #include <QPointer>
 #include <QtGlobal>
@@ -29,6 +30,7 @@ public:
 
 private slots:
     void pollEditor();
+    void synchronizeFromHostEvent();
     void onEditorTextChanged();
     void scheduleRender();
     void renderScheduled();
@@ -80,6 +82,8 @@ private:
     PreviewCacheEntry *previewCacheEntry(QWidget *editor);
     void prunePreviewCache();
     void updateSynchronizedScroll();
+    void ensureHostEventConnection();
+    void updatePollTimerState();
     QString currentFilePath() const;
     bool isMarkdownDocument(const QString &filePath) const;
 
@@ -95,9 +99,18 @@ private:
     QPointer<QAction> m_syncAction;
     QPointer<QAction> m_exportAction;
     QTimer *m_pollTimer = nullptr;
+    QTimer *m_hostEventTimer = nullptr;
     QTimer *m_renderTimer = nullptr;
     bool m_syncScrolling = true;
-    int m_lastEditorScrollValue = -1;
+    QPointer<QWidget> m_lastScrollEditor;
+    int m_lastEditorScrollMinimum = 0;
+    int m_lastEditorScrollMaximum = 0;
+    int m_lastEditorScrollValue = 0;
+    bool m_hasLastEditorScrollState = false;
+    bool m_syncingEditorScroll = false;
+    QMetaObject::Connection m_activeEditorConnection;
+    QMetaObject::Connection m_editorScrollValueConnection;
+    QMetaObject::Connection m_editorScrollRangeConnection;
     qint64 m_lastRenderDurationMs = 0;
     bool m_manualRefreshOnly = false;
     QString m_editorFilePath;

@@ -367,7 +367,7 @@
 
 ## BUG-015：轮询依赖过重且滚动缓存忽略范围变化
 
-- **优先级／状态**：P3／待处理。
+- **优先级／状态**：P3／修复完成／待验证。
 - **证据性质**：当前实现已静态确认；事件驱动改造属于架构改进。
 - **代码位置**：[preview_controller.cpp](../src/preview_controller.cpp) 的
   `m_pollTimer` 初始化、`pollEditor()`（211）、`updateSynchronizedScroll()`（522）；
@@ -726,4 +726,27 @@ Artifact 校验：not run（未生成 DLL、ZIP、SHA256 或 GitHub Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64；CMake 3.28.3；GNU C++ 13.3.0
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug014-build；发布测试终端输出 release publishing tests: passed；容量测试源码 tests/preview_controller_document_identity_test.cpp；未生成 Qt、Windows、Artifact、RSS 或宿主截图报告
 未验证项与已知限制：Qt Test 未编译运行；Windows Release DLL 和 Artifact 未生成；容量 3 在真实宿主上的内存收益及切换体验尚未测量；真实宿主 QPointer 归零、重新创建、关闭标签、隐藏 Dock、图片缓存释放、阅读位置恢复和无逐键宿主刷新均待验证。轻量滚动比例状态会保留到编辑器销毁或控制器销毁，不保存精确 Markdown 节点位置。
+```
+
+## BUG-015 交回验证
+
+```text
+单据编号：BUG-015
+状态：修复完成／待验证
+基于的提交：7734d85f49bae954fd54acda5ebdb83e2f513802
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-002，e71f14f4c067b271711c128259cf4f6e164025bb；BUG-006，1868f3e6a117a794297cd538215df7d8b0dda635；BUG-013，3c78fa6f04b96a72e5aeb93097d6eaedadc9f600
+修改文件：docs/architecture.md；docs/host-compatibility.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/host_adapter.cpp；src/host_adapter.h；src/preview_controller.cpp；src/preview_controller.h；tests/preview_controller_document_identity_test.cpp
+问题复现与根因：静态确认控制器无条件运行 120 ms 计时器，即使 Dock 隐藏也持续通过对象树查询当前标签；标签切换最快只能等待下一次轮询。编辑器到预览的滚动缓存只保存 value，rangeChanged 在 value 不变时会被误判为无变化，导致比例仍按旧范围显示。事件化后若直接监听双向滚动而不区分程序写入，还会形成回声风险。
+实际修改方案：在 HostAdapter 增加宿主无关的活动编辑器变化和编辑器滚动状态连接接口；notepad-- 默认适配器集中连接 editTabWidget::currentChanged 及当前 QAbstractScrollArea 垂直滚动条的 valueChanged/rangeChanged。标签事件通过零延迟单次计时器合并后统一读取完整状态；连接暂不可用时由兜底同步重新尝试绑定。固定 120 ms 轮询改为仅 Dock 可见时启用的 1500 ms 低频兼容兜底，隐藏即停止、显示即同步。切换编辑器时显式解绑旧滚动条的两个连接。滚动缓存扩展为编辑器身份、minimum、maximum、value；任一范围字段变化均重新计算比例。预览写回编辑器时使用 QSignalBlocker，并同步更新完整缓存，阻止双向事件回声。
+相较本单计划的偏差及原因：保留 1500 ms 可见期轮询，不完全移除轮询，因为宿主没有插件级稳定事件 ABI，且标签控件可能在初始化时尚不可发现；轮询只作为事件丢失或绑定晚于初始化的兼容兜底。未实现精确行级或 Markdown 节点映射，符合本单范围。
+验收标准逐项结果：切换响应不依赖固定轮询窗口——新增不调用 pollEditor、直接切换标签并等待新文档渲染的测试源码，静态 passed、Qt 运行 blocked；滚动范围变化及时更新——新增 value 保持 50、范围从 0..100 变为 0..200 后预览从 50 调整到 25 的测试源码，静态 passed、运行 blocked；两侧无振荡——编辑器写入使用 QSignalBlocker 和完整状态缓存，旧滚动连接切换时全部解绑，静态 passed、真实交互 not verified；隐藏期间无高频查询——兜底周期由 120 ms 降为 1500 ms 且 Dock 隐藏停止，新增计时器启停断言源码，静态 passed、运行 blocked；初始化和宿主更新顺序不漏绑——标签事件延迟到当前事件返回后统一读取，轮询会在连接缺失时重试绑定，静态 passed、真实宿主 not verified。
+静态检查：passed（git diff --check；BUG-002/BUG-006/BUG-013 祖先关系；事件连接集中在 HostAdapter；滚动缓存包含 editor/minimum/maximum/value；旧 value/range 连接均解绑；120 ms 常驻轮询已移除；src/ndd_plugin_api.h、plugin_exports.cpp、notepad--/ 未修改）
+自动化测试：partial（./tests/release_publish_test.sh passed；cmake -S . -B /tmp/markdownview-bug015-build -DBUILD_TESTING=ON 因缺少 Qt5Config.cmake blocked；新增标签事件、范围变化和隐藏轮询 Qt Test 未运行）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2、MSVC v142 和 Windows runner）
+Artifact 校验：not run（未生成 DLL、ZIP、SHA256 或 GitHub Artifact）
+真实宿主测试：not verified（未在 notepad-- v3.8.3 x64 验证标签事件时序、编辑器范围变化、双向滚动无振荡及隐藏期间查询行为）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64；CMake 3.28.3；GNU C++ 13.3.0
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug015-build；发布测试终端输出 release publishing tests: passed；新增测试源码 tests/preview_controller_document_identity_test.cpp；未生成 Qt、Windows、Artifact 或宿主报告
+未验证项与已知限制：Qt Test 未编译运行；Windows Release DLL、Artifact 和真实宿主均待验证。1500 ms 轮询是可见期间的兼容兜底，不是标签切换主路径；若未来宿主替换 editTabWidget 或编辑器不再继承 QAbstractScrollArea，需要更新 HostAdapter。滚动仍按比例映射，不提供精确源行或 Markdown 节点定位。
 ```

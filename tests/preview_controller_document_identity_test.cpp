@@ -132,6 +132,9 @@ private slots:
     void slowRenderEnablesManualRefreshPolicy();
     void injectedHostAdapterAvoidsHostObjectNameAssumptions();
     void nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument();
+    void tabChangeSynchronizesWithoutPollingDelay();
+    void editorRangeChangeUpdatesPreviewRatio();
+    void hiddenDockStopsFallbackPolling();
 };
 
 class TestHostAdapter final : public HostAdapter
@@ -143,6 +146,16 @@ public:
     }
 
     QWidget *currentEditor() const override { return m_editor; }
+    QMetaObject::Connection connectActiveEditorChanged(
+        QObject *, std::function<void()>) override
+    {
+        return QMetaObject::Connection();
+    }
+    ScrollConnections connectEditorScrollChanged(
+        QWidget *, QObject *, std::function<void()>) override
+    {
+        return ScrollConnections();
+    }
     QString filePath(QWidget *) const override
     {
         return QStringLiteral("/virtual/injected.md");
@@ -771,6 +784,79 @@ void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreates
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QCoreApplication::processEvents();
     QVERIFY(closingPreview.isNull());
+}
+
+void PreviewControllerDocumentIdentityTest::tabChangeSynchronizesWithoutPollingDelay()
+{
+    Fixture fixture;
+    auto *editorA = new QsciScintilla(QStringLiteral("a.md"),
+                                     QStringLiteral("# A"));
+    auto *editorB = new QsciScintilla(QStringLiteral("b.md"),
+                                     QStringLiteral("# B"));
+    fixture.tabs.addTab(editorA, QStringLiteral("A"));
+    fixture.tabs.addTab(editorB, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(editorA);
+    fixture.renderNow();
+
+    fixture.tabs.setCurrentWidget(editorB);
+    QTRY_COMPARE_WITH_TIMEOUT(editorB->renderCount(), 1, 1000);
+    QTextEdit *activePreview = nullptr;
+    const QList<QTextEdit *> previews =
+        fixture.dock()->findChildren<QTextEdit *>(QStringLiteral("textEdit"));
+    for (QTextEdit *preview : previews) {
+        if (preview && preview->isVisible()) {
+            activePreview = preview;
+            break;
+        }
+    }
+    QVERIFY(activePreview);
+    QVERIFY(activePreview->toPlainText().contains(QStringLiteral("B")));
+}
+
+void PreviewControllerDocumentIdentityTest::editorRangeChangeUpdatesPreviewRatio()
+{
+    Fixture fixture;
+    auto *editor = new QsciScintilla(QStringLiteral("range.md"),
+                                    QStringLiteral("# Range"));
+    fixture.tabs.addTab(editor, QStringLiteral("Range"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+
+    QTextEdit *preview = fixture.dock()->findChild<QTextEdit *>(
+        QStringLiteral("textEdit"));
+    QVERIFY(preview);
+    preview->verticalScrollBar()->setRange(0, 100);
+
+    editor->verticalScrollBar()->setRange(0, 100);
+    editor->verticalScrollBar()->setValue(50);
+    QTRY_COMPARE_WITH_TIMEOUT(preview->verticalScrollBar()->value(), 50, 250);
+
+    // Keep value=50 but expand the editor range. The ratio changes from 0.5
+    // to 0.25 and must be propagated even though valueChanged is not emitted.
+    editor->verticalScrollBar()->setRange(0, 200);
+    QTRY_COMPARE_WITH_TIMEOUT(preview->verticalScrollBar()->value(), 25, 250);
+}
+
+void PreviewControllerDocumentIdentityTest::hiddenDockStopsFallbackPolling()
+{
+    Fixture fixture;
+    fixture.dock()->show();
+    QCoreApplication::processEvents();
+
+    QTimer *fallbackTimer = nullptr;
+    const QList<QTimer *> timers = fixture.controller.findChildren<QTimer *>();
+    for (QTimer *timer : timers) {
+        if (timer && timer->interval() == 1500 && !timer->isSingleShot()) {
+            fallbackTimer = timer;
+            break;
+        }
+    }
+    QVERIFY(fallbackTimer);
+    QVERIFY(fallbackTimer->isActive());
+
+    fixture.dock()->hide();
+    QCoreApplication::processEvents();
+    QVERIFY(!fallbackTimer->isActive());
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)
