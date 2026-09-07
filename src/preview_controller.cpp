@@ -327,6 +327,10 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock)
 
     QPointer<QWidget> renderEditor = m_editor;
     const quint64 renderVersion = m_contentVersion;
+    double preservedScrollRatio = 0.0;
+    const bool preserveScroll = !m_syncScrolling &&
+        m_dock->nativeScrollRatioFor(renderEditor.data(),
+                                     &preservedScrollRatio);
     QElapsedTimer elapsed;
     elapsed.start();
     if (!activateNativePreview()) {
@@ -366,6 +370,9 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock)
     m_lastEditorScrollValue = -1;
     if (m_syncScrolling) {
         QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
+    } else if (preserveScroll) {
+        m_dock->preserveNativeScrollRatio(
+            renderEditor.data(), renderVersion, preservedScrollRatio);
     }
     updateExportActionState();
     return true;

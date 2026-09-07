@@ -35,6 +35,9 @@ public:
     void showMessage(const QString &title, const QString &message);
     void setDocumentInfo(const QString &filePath, int characterCount);
     void setSyncScrolling(bool enabled);
+    bool nativeScrollRatioFor(QWidget *editor, double *ratio) const;
+    void preserveNativeScrollRatio(QWidget *editor, quint64 contentVersion,
+                                   double ratio);
     void scrollToRatio(double ratio);
     double scrollRatio() const;
     bool saveHtmlSnapshot(QWidget *dialogParent, const QByteArray &html,
@@ -59,6 +62,7 @@ private:
     void handleNativePreviewDestroyed(QObject *previewObject);
     void disconnectNativePreviews();
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
+    void restorePreservedScrollRatio();
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
@@ -69,6 +73,8 @@ private:
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;
     QPointer<QWidget> m_previewEditor;
+    QPointer<QWidget> m_nativePreviewEditor;
+    QPointer<QWidget> m_preservedScrollEditor;
     QObject *m_currentNativePreviewObject = nullptr;
     QMetaObject::Connection m_nativeScrollConnection;
     QMetaObject::Connection m_nativeScrollRangeConnection;
@@ -76,5 +82,8 @@ private:
     QTimer *m_layoutSyncTimer = nullptr;
     QString m_currentFilePath;
     quint64 m_previewContentVersion = 0;
+    quint64 m_preservedScrollVersion = 0;
+    double m_preservedScrollRatio = 0.0;
+    bool m_hasPreservedScrollRatio = false;
     bool m_isDestroying = false;
 };

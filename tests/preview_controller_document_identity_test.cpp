@@ -12,6 +12,8 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextEdit>
+#include <QTimer>
+#include <QToolButton>
 #include <QUrl>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -46,6 +48,11 @@ public:
         setProperty("filePath", filePath);
     }
 
+    void setSimulateDelayedLayout(bool enabled)
+    {
+        m_simulateDelayedLayout = enabled;
+    }
+
 signals:
     void textChanged();
 
@@ -69,6 +76,20 @@ public slots:
         if (m_textEdit) {
             m_textEdit->setMarkdown(m_markdown);
             m_textEdit->verticalScrollBar()->setRange(0, 100);
+            m_textEdit->verticalScrollBar()->setValue(0);
+            if (m_simulateDelayedLayout) {
+                QPointer<QTextEdit> textEdit = m_textEdit;
+                QTimer::singleShot(10, m_textEdit, [textEdit]() {
+                    if (textEdit) {
+                        textEdit->verticalScrollBar()->setRange(0, 160);
+                    }
+                });
+                QTimer::singleShot(45, m_textEdit, [textEdit]() {
+                    if (textEdit) {
+                        textEdit->verticalScrollBar()->setRange(0, 240);
+                    }
+                });
+            }
         }
     }
 
@@ -77,6 +98,7 @@ private:
     QWidget *m_preview = nullptr;
     QTextEdit *m_textEdit = nullptr;
     int m_renderCount = 0;
+    bool m_simulateDelayedLayout = false;
 };
 
 class PreviewControllerDocumentIdentityTest final : public QObject
@@ -92,6 +114,7 @@ private slots:
     void messageAndMismatchedPreviewCannotBeExported();
     void snapshotWriterHandlesCancelAndAtomicReplacement();
     void filePathChangeRefreshesTypeMetadataAndResources();
+    void refreshPreservesReadingPositionOnlyWhenSyncIsDisabled();
 };
 
 namespace {
@@ -403,6 +426,74 @@ void PreviewControllerDocumentIdentityTest::filePathChangeRefreshesTypeMetadataA
     QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &sourceFilePath));
     QCOMPARE(sourceFilePath,
              root.filePath(QStringLiteral("新 目录/未命名.md")));
+}
+
+void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyWhenSyncIsDisabled()
+{
+    Fixture fixture;
+    auto *editorA = new QsciScintilla(QStringLiteral("a.md"),
+                                     QStringLiteral("# A"));
+    auto *editorB = new QsciScintilla(QStringLiteral("b.md"),
+                                     QStringLiteral("# B"));
+    editorA->setSimulateDelayedLayout(true);
+    fixture.tabs.addTab(editorA, QStringLiteral("A"));
+    fixture.tabs.addTab(editorB, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(editorA);
+    fixture.renderNow();
+
+    QTextEdit *previewTextEdit = fixture.dock()->findChild<QTextEdit *>(
+        QStringLiteral("textEdit"));
+    QVERIFY(previewTextEdit);
+    QScrollBar *previewBar = previewTextEdit->verticalScrollBar();
+    QVERIFY(previewBar);
+    QTRY_COMPARE_WITH_TIMEOUT(previewBar->maximum(), 240, 500);
+
+    QToolButton *syncButton = nullptr;
+    const QList<QToolButton *> buttons = fixture.dock()->findChildren<QToolButton *>();
+    for (QToolButton *button : buttons) {
+        if (button && button->text() == QStringLiteral("同步滚动")) {
+            syncButton = button;
+            break;
+        }
+    }
+    QVERIFY(syncButton);
+    QVERIFY(syncButton->isChecked());
+    syncButton->click();
+    QVERIFY(!syncButton->isChecked());
+
+    previewBar->setValue(180);
+    editorA->edit(QStringLiteral("# A updated"));
+    QTRY_COMPARE_WITH_TIMEOUT(editorA->renderCount(), 2, 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(previewBar->maximum(), 240, 500);
+    QTRY_COMPARE_WITH_TIMEOUT(previewBar->value(), 180, 500);
+
+    QAction *refreshAction = fixture.action(QStringLiteral("立即刷新"));
+    QVERIFY(refreshAction);
+    previewBar->setValue(120);
+    refreshAction->trigger();
+    QCOMPARE(editorA->renderCount(), 3);
+    QTRY_COMPARE_WITH_TIMEOUT(previewBar->value(), 120, 500);
+
+    fixture.tabs.setCurrentWidget(editorB);
+    fixture.renderNow();
+    QTextEdit *previewB = nullptr;
+    const QList<QTextEdit *> previewEditors =
+        fixture.dock()->findChildren<QTextEdit *>(QStringLiteral("textEdit"));
+    for (QTextEdit *candidate : previewEditors) {
+        if (candidate && candidate->isVisible()) {
+            previewB = candidate;
+            break;
+        }
+    }
+    QVERIFY(previewB);
+    QCOMPARE(previewB->verticalScrollBar()->value(), 0);
+
+    syncButton->click();
+    QVERIFY(syncButton->isChecked());
+    editorB->verticalScrollBar()->setValue(80);
+    editorB->edit(QStringLiteral("# B updated"));
+    QTRY_COMPARE_WITH_TIMEOUT(editorB->renderCount(), 2, 1000);
+    QTRY_COMPARE_WITH_TIMEOUT(previewB->verticalScrollBar()->value(), 80, 500);
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

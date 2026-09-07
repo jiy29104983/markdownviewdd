@@ -182,7 +182,7 @@
 
 ## BUG-006：关闭同步滚动后刷新丢失阅读位置
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：实际渲染路径缺少恢复逻辑已静态确认，跳动程度需运行验证。
 - **代码位置**：[preview_controller.cpp](../src/preview_controller.cpp) 的
   `renderNow()`（277）、`activateNativePreview()`（515）；
@@ -519,4 +519,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug005-build；测试源码 tests/preview_controller_document_identity_test.cpp、tests/plugin_multi_window_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主中的文件重命名／另存为、同名相对图片目录切换、中文／空格路径和多窗口隔离均待复核。跨目录 HTML 导出资源打包仍按 BUG-008 处理；本单不能仅凭静态检查标记为已关闭。
+```
+
+## BUG-006 交回验证
+
+```text
+单据编号：BUG-006
+状态：修复完成／待验证
+基于的提交：b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-002，e71f14f4c067b271711c128259cf4f6e164025bb
+修改文件：docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/markdown_preview_dock.cpp；src/markdown_preview_dock.h；src/preview_controller.cpp；tests/preview_controller_document_identity_test.cpp
+问题复现与根因：静态确认实际预览通过宿主 on_updataMarkdown 调用 QTextEdit::setMarkdown，文档重建会重置预览滚动位置；原有 previousRatio 恢复仅存在于未被正常原生渲染链路调用的备用 renderMarkdown，因此关闭同步滚动后自动或手工刷新可能跳回顶部，富文本延迟布局还会再次改变滚动范围。
+实际修改方案：控制器在原生渲染前按当前编辑器捕获预览滚动比例；渲染成功且身份和内容版本仍匹配时交给 Dock 保存恢复目标。Dock 在短计时器到期时恢复位置，并在 QTextEdit 滚动范围因延迟布局继续变化时重新应用；比例限制在 0～1。切换文档、预览销毁或重新开启同步会取消旧目标；恢复时屏蔽滚动条信号，避免形成反向反馈。新增测试覆盖自动刷新、手工刷新、两阶段延迟布局、文档切换隔离及重新开启同步后的编辑器主导行为。
+相较本单计划的偏差及原因：保留备用 renderMarkdown 的现有恢复逻辑，因为它仍是错误提示之外的独立备用渲染能力；本次明确把等价且带身份门控的恢复接入真实原生路径，没有引入精确源行到 Markdown 节点映射。
+验收标准逐项结果：同步关闭刷新不跳顶——自动与手工刷新测试源码覆盖，运行 blocked；同步开启保持原功能——重新开启后编辑器 80% 位置驱动预览的测试源码覆盖，运行 blocked；切换文档不继承位置——A 的 50% 目标不会应用到 B，测试源码覆盖，运行 blocked；长文档布局后稳定——模拟两次延迟 rangeChanged 后仍恢复 75%，测试源码覆盖，运行 blocked；恢复不造成反向反馈——恢复使用 QSignalBlocker 且预览到编辑器仍只响应 actionTriggered，静态 passed，真实交互 not verified。
+静态检查：passed（git diff --check；真实原生 on_updataMarkdown 路径已接入；身份／版本门控、范围限制和旧目标取消已复核；ABI 与 notepad--/ 未修改）
+自动化测试：blocked（扩展 markdownview_document_identity_tests；CMake 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 配置失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 执行同步关闭后的自动刷新、手工刷新、图片延迟布局、内容缩短、标签切换和重新开启同步测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug006-build；测试源码 tests/preview_controller_document_identity_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主中的阅读位置保持和图片延迟布局均待复核。阅读位置按滚动比例保持，不提供精确源行或 Markdown 节点映射；后续 BUG-015 仍需处理更广泛的滚动缓存与范围变化架构问题。
 ```

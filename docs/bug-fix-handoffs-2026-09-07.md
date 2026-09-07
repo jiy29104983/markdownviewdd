@@ -435,3 +435,79 @@ Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实
 Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实宿主中的文件重命名／另存为、
 同名相对图片目录切换、中文／空格路径和多窗口隔离均待复核。跨目录 HTML 导出资源打包仍按
 BUG-008 处理；后续复核不能仅凭静态检查关闭 BUG-005。
+
+## BUG-006：关闭同步滚动后刷新丢失阅读位置
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-002，`e71f14f4c067b271711c128259cf4f6e164025bb`
+- **修改文件**：
+  - `docs/architecture.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `src/markdown_preview_dock.cpp`
+  - `src/markdown_preview_dock.h`
+  - `src/preview_controller.cpp`
+  - `tests/preview_controller_document_identity_test.cpp`
+
+### 问题核实与根因
+
+静态确认正常预览由宿主 `on_updataMarkdown` 调用 `QTextEdit::setMarkdown()`，重建文档时会
+重置预览滚动位置。原有 `previousRatio` 恢复只存在于未被正常原生渲染链路调用的备用
+`renderMarkdown()`，所以关闭同步滚动后，自动刷新和手工刷新都可能跳回顶部；图片或长富文本
+触发的延迟布局还会在首次恢复之后继续改变滚动范围。
+
+### 实际修改方案
+
+控制器在调用真实原生渲染前，按当前编辑器捕获原生预览滚动比例。渲染成功且编辑器身份与
+内容版本仍匹配时，Dock 保存恢复目标，通过现有短计时器在当前布局完成后恢复，并在后续
+`rangeChanged` 到来时再次按新范围应用相同比例。比例统一限制在 0～1，内容缩短时不会越界。
+
+Dock 单独记录当前原生预览所属编辑器，避免 BUG-002 的内容身份失效后无法在渲染前取到旧位置。
+切换到其他编辑器、预览销毁或重新开启同步滚动时会取消旧恢复目标。程序恢复滚动条时使用
+`QSignalBlocker`，而预览到编辑器方向仍只响应用户滚动动作，因此不会把恢复写入反向反馈给编辑器。
+
+扩展现有文档身份 Qt Test，模拟宿主每次渲染先归零，并在 10 ms、45 ms 两次扩大滚动范围；
+覆盖自动刷新、手工刷新、跨文档隔离及重新开启同步后的编辑器主导行为。
+
+### 相较计划的偏差
+
+保留备用 `renderMarkdown()` 的现有恢复逻辑，因为该函数仍是独立备用渲染能力；本单把等价且
+带身份／版本门控的恢复明确接入真实原生路径，没有引入精确源代码行到 Markdown 节点映射。
+
+### 验收标准逐项结果
+
+1. **同步关闭时刷新不无故跳顶**：自动刷新和手工刷新测试源码均覆盖；运行 `blocked`。
+2. **同步开启时保持原有功能**：重新开启同步后由编辑器 80% 位置驱动预览；运行 `blocked`。
+3. **切换文档不继承其他文档位置**：A 的恢复目标在采用 B 时取消；运行 `blocked`。
+4. **长文档布局后位置稳定**：模拟两次延迟范围变化后仍恢复 75%；运行 `blocked`。
+5. **恢复不造成反向滚动反馈**：恢复写入由 `QSignalBlocker` 屏蔽，静态检查 `passed`；真实交互 `not verified`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check` 通过；原生 `on_updataMarkdown` 路径已接入；身份／版本门控、范围限制及旧目标取消已复核；ABI 与 `notepad--/` 未修改 |
+| 自动化测试 | `blocked` | 扩展 `markdownview_document_identity_tests`；CMake 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 配置失败 |
+| Windows Release 编译 | `blocked` | 当前 Linux 环境没有 Qt 5.15.2 与 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或打包 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 中执行同步关闭后的自动／手工刷新、图片延迟布局、内容缩短、标签切换和重新开启同步测试 |
+
+### 实际环境
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake 配置目录**：`/tmp/markdownview-bug006-build`
+- **测试源码**：`tests/preview_controller_document_identity_test.cpp`
+- **截图或二进制报告**：未生成
+
+### 未验证项与已知限制
+
+Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实宿主中的阅读位置保持、
+内容缩短和图片延迟布局均待复核。阅读位置按滚动比例保持，不提供精确源行或 Markdown 节点映射；
+后续 BUG-015 仍需处理更广泛的滚动缓存与范围变化架构问题，不能仅凭静态检查关闭 BUG-006。

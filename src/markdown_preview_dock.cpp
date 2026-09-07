@@ -88,7 +88,11 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     connect(m_browser, &QTextBrowser::anchorClicked,
             this, &MarkdownPreviewDock::openLink);
     connect(m_layoutSyncTimer, &QTimer::timeout, this, [this]() {
-        if (!isVisible() || !m_syncButton || !m_syncButton->isChecked()) {
+        if (!isVisible() || !m_syncButton) {
+            return;
+        }
+        if (!m_syncButton->isChecked()) {
+            restorePreservedScrollRatio();
             return;
         }
         if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
@@ -128,7 +132,11 @@ MarkdownPreviewDock::~MarkdownPreviewDock()
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
     m_previewEditor = nullptr;
+    m_nativePreviewEditor = nullptr;
+    m_preservedScrollEditor = nullptr;
     m_previewContentVersion = 0;
+    m_preservedScrollVersion = 0;
+    m_hasPreservedScrollRatio = false;
     m_currentNativePreviewObject = nullptr;
 }
 
@@ -183,6 +191,12 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         trackNativePreview(previewWindow);
     }
 
+    if (m_hasPreservedScrollRatio && m_preservedScrollEditor != editor) {
+        m_preservedScrollEditor = nullptr;
+        m_preservedScrollVersion = 0;
+        m_hasPreservedScrollRatio = false;
+    }
+    m_nativePreviewEditor = editor;
     m_currentFilePath = filePath;
     m_previewEditor = editor;
     m_previewContentVersion = contentVersion;
@@ -248,7 +262,11 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
     m_previewEditor = nullptr;
+    m_nativePreviewEditor = nullptr;
+    m_preservedScrollEditor = nullptr;
     m_previewContentVersion = 0;
+    m_preservedScrollVersion = 0;
+    m_hasPreservedScrollRatio = false;
     m_currentNativePreviewObject = nullptr;
     if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();
@@ -321,9 +339,46 @@ void MarkdownPreviewDock::setSyncScrolling(bool enabled)
 {
     const QSignalBlocker blocker(m_syncButton);
     m_syncButton->setChecked(enabled);
-    if (!enabled && m_layoutSyncTimer) {
+    if (enabled) {
+        m_preservedScrollEditor = nullptr;
+        m_preservedScrollVersion = 0;
+        m_hasPreservedScrollRatio = false;
+    } else if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();
     }
+}
+
+bool MarkdownPreviewDock::nativeScrollRatioFor(QWidget *editor,
+                                               double *ratio) const
+{
+    if (!editor || !ratio || m_nativePreviewEditor != editor ||
+        !m_nativePreview || !m_nativeTextEdit) {
+        return false;
+    }
+
+    const QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
+    if (!bar || bar->maximum() <= bar->minimum()) {
+        return false;
+    }
+
+    *ratio = static_cast<double>(bar->value() - bar->minimum()) /
+        static_cast<double>(bar->maximum() - bar->minimum());
+    return true;
+}
+
+void MarkdownPreviewDock::preserveNativeScrollRatio(
+    QWidget *editor, quint64 contentVersion, double ratio)
+{
+    if (!editor || m_nativePreviewEditor != editor || !m_nativeTextEdit ||
+        !m_syncButton || m_syncButton->isChecked()) {
+        return;
+    }
+
+    m_preservedScrollEditor = editor;
+    m_preservedScrollVersion = contentVersion;
+    m_preservedScrollRatio = qBound(0.0, ratio, 1.0);
+    m_hasPreservedScrollRatio = true;
+    m_layoutSyncTimer->start();
 }
 
 void MarkdownPreviewDock::scrollToRatio(double ratio)
@@ -461,10 +516,33 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
     m_nativeScrollRangeConnection = connect(
         scrollBar, &QAbstractSlider::rangeChanged, this,
         [this](int, int) {
-            if (isVisible() && m_syncButton && m_syncButton->isChecked()) {
+            if (isVisible() && m_syncButton &&
+                (m_syncButton->isChecked() || m_hasPreservedScrollRatio)) {
                 m_layoutSyncTimer->start();
             }
         });
+}
+
+void MarkdownPreviewDock::restorePreservedScrollRatio()
+{
+    if (!m_hasPreservedScrollRatio || !m_nativeTextEdit || !m_nativePreview ||
+        !m_nativePreview->isVisible() ||
+        m_nativePreviewEditor != m_preservedScrollEditor ||
+        m_previewEditor != m_preservedScrollEditor ||
+        m_previewContentVersion != m_preservedScrollVersion) {
+        return;
+    }
+
+    QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
+    if (!bar || bar->maximum() <= bar->minimum()) {
+        return;
+    }
+
+    const int value = bar->minimum() + qRound(
+        m_preservedScrollRatio *
+        static_cast<double>(bar->maximum() - bar->minimum()));
+    const QSignalBlocker blocker(bar);
+    bar->setValue(value);
 }
 
 void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
