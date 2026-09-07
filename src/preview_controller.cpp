@@ -719,6 +719,9 @@ bool PreviewController::activateNativePreview()
         m_editor.data(), "on_updataMarkdown", Qt::DirectConnection);
     Diagnostics::write(QStringLiteral("host on_updataMarkdown returned: %1")
                            .arg(updated));
+    if (updated) {
+        m_dock->refreshDocumentStyle(m_editor.data(), m_contentVersion);
+    }
     return updated;
 }
 

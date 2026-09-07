@@ -1,12 +1,14 @@
 #include "markdown_preview_dock.h"
 
 #include <QCoreApplication>
+#include <QColor>
 #include <QDir>
 #include <QEvent>
 #include <QFile>
 #include <QImage>
 #include <QLabel>
 #include <QPointer>
+#include <QPalette>
 #include <QScrollBar>
 #include <QTextBrowser>
 #include <QTextCursor>
@@ -43,6 +45,7 @@ private slots:
     void nativePreviewRejectsUnsupportedSchemes();
     void nativePreviewSelectionDoesNotOpenLink();
     void htmlSnapshotEmbedsLocalImagesWithoutChangingPreview();
+    void documentStyleRefreshesForThemeWithoutChangingPosition();
 };
 
 void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback()
@@ -283,6 +286,46 @@ void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsLocalImagesWithoutChang
     QFile exported(targetPath);
     QVERIFY(exported.open(QIODevice::ReadOnly));
     QVERIFY(exported.readAll().contains("data:image/png;base64,"));
+}
+
+void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChangingPosition()
+{
+    MarkdownPreviewDock dock;
+    QWidget *preview = createNativePreview();
+    QWidget editor;
+    QTextEdit *textEdit = preview->findChild<QTextEdit *>(QStringLiteral("textEdit"));
+    QVERIFY(textEdit);
+    textEdit->setMarkdown(QStringLiteral(
+        "# Heading\n\n> Quote\n\n`inline` and [link](https://example.com)\n\n"
+        "```cpp\nint value = 1;\n```\n\n| A | B |\n| - | - |\n| 1 | 2 |"));
+    QVERIFY(dock.adoptNativePreview(
+        preview, QStringLiteral("/tmp/current.md"), &editor, 9));
+    dock.resize(600, 260);
+    dock.show();
+    QTest::qWait(1);
+    textEdit->verticalScrollBar()->setRange(0, 100);
+    textEdit->verticalScrollBar()->setValue(60);
+
+    QTextBlock heading = textEdit->document()->begin();
+    QVERIFY(heading.charFormat().fontWeight() >= QFont::DemiBold);
+    QTextCursor linkCursor = textEdit->document()->find(QStringLiteral("link"));
+    QVERIFY(!linkCursor.isNull());
+    QVERIFY(linkCursor.charFormat().isAnchor());
+
+    QPalette dark = dock.palette();
+    dark.setColor(QPalette::Base, QColor(QStringLiteral("#202124")));
+    dark.setColor(QPalette::Text, QColor(QStringLiteral("#f1f3f4")));
+    dark.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#303134")));
+    dark.setColor(QPalette::Link, QColor(QStringLiteral("#8ab4f8")));
+    dock.setPalette(dark);
+    QCoreApplication::processEvents();
+    QTest::qWait(1);
+
+    QCOMPARE(textEdit->palette().color(QPalette::Base), dark.color(QPalette::Base));
+    linkCursor = textEdit->document()->find(QStringLiteral("link"));
+    QCOMPARE(linkCursor.charFormat().foreground().color(),
+             dark.color(QPalette::Link));
+    QCOMPARE(textEdit->verticalScrollBar()->value(), 60);
 }
 
 QTEST_MAIN(MarkdownPreviewDockLifecycleTest)

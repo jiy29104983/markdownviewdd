@@ -664,3 +664,87 @@ HTML 完全不变。
 Qt Test 尚未实际编译运行。Windows Release DLL、Artifact 和真实宿主跨目录导出均待复核。
 远程图片仍依赖打开 HTML 时的网络可达性；缺失本地图片不会使整个导出失败，而是保留引用并
 明确记录；大型图片会按 Base64 编码增大 HTML 文件。不能仅凭静态检查关闭 BUG-008。
+
+## BUG-009：文档样式应用与主题刷新不完整
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`6d47180c3a10fae8ae18720d63e4af53e8851625`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-005，`b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3`；BUG-006，`1868f3e6a117a794297cd538215df7d8b0dda635`
+- **修改文件**：
+  - `docs/architecture.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `src/markdown_preview_dock.cpp`
+  - `src/markdown_preview_dock.h`
+  - `src/preview_controller.cpp`
+  - `tests/markdown_preview_dock_lifecycle_test.cpp`
+
+### 问题核实与根因
+
+静态确认主路径由宿主 `QTextEdit::setMarkdown()` 先生成文档，首次 `adoptNativePreview()`
+随后才设置默认样式表；`setDefaultStyleSheet()` 不能追溯性地把浏览器 CSS 全面应用到已经生成的
+Markdown 字符与块格式。复用原生预览时，原实现又在 `on_updataMarkdown()` 之前设置样式，随后
+文档重建会覆盖格式。代码没有处理 palette 或 style 变化，因此主题切换只可能改变外层控件，
+正文、链接、代码、引用和表格没有一致的刷新保证。
+
+### 实际修改方案
+
+保留宿主 Qt 5.15.2 Markdown 解析器，在其生成的 `QTextDocument` 上增加不重新解析源文本的格式
+后处理。实现按 Qt Markdown 写入的标题级别、引用级别、代码围栏／语言属性、等宽字符片段和
+锚点设置标题、引用、围栏代码、行内代码及链接格式；递归处理 `QTextTable` 的边框、单元格留白
+和首行背景；控件 palette 统一正文、背景、替代背景、边框和链接颜色。
+
+首次创建原生预览时在宿主初次渲染之后处理；复用预览并调用 `on_updataMarkdown()` 时在宿主更新
+返回后调用相同入口。Dock 合并 `PaletteChange`、`ApplicationPaletteChange` 和 `StyleChange`，
+零延迟计时器只刷新当前编辑器身份和内容版本仍匹配的文档，不调用宿主 Markdown 解析。刷新前
+记录当前滚动比例，完成后通过身份／版本门控恢复，避免主题切换串文档或跳动。
+
+扩展 `markdownview_lifecycle_tests`，输入标题、引用、行内代码、围栏代码、链接和表格，验证首次
+后处理存在、暗色 palette 能更新原生预览和链接颜色，并验证主题刷新前后的阅读位置保持不变。
+
+### 相较计划的偏差
+
+没有替换宿主渲染器，也不承诺完整浏览器 CSS；支持范围明确限定为 Qt 富文本文档公开格式可表达
+的控件 palette、标题、引用、代码、表格和链接。当前环境缺少 Qt 运行条件与 Windows 宿主，未能
+生成验收要求中的前后截图，已保留为真实宿主待验证项。
+
+### 验收标准逐项结果
+
+1. **首次与刷新后样式一致**：首次 adopt 与后续 `on_updataMarkdown()` 返回后共用
+   `applyDocumentStyle()`；静态 `passed`，自动化运行 `blocked`。
+2. **明暗主题下文字、链接和代码可读**：使用 palette 的 `Base`、`Text`、`AlternateBase`、
+   `Midlight` 和 `Link`，暗色主题测试源码已覆盖；运行 `blocked`，真实视觉 `not verified`。
+3. **相关块格式符合明确支持范围**：标题、引用、围栏／行内代码、表格和链接后处理已实现，
+   代表性 Markdown 测试源码已添加；运行 `blocked`。
+4. **提供前后截图**：`not verified`；当前 Linux 环境缺少 Qt 5.15.2，且未运行真实宿主。
+5. **主题切换不串文档、不改变阅读位置**：样式刷新由编辑器身份和内容版本门控，并按滚动比例
+   恢复；位置保持测试源码已覆盖，运行 `blocked`；真实多标签切换 `not verified`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check`；首次／后续渲染时序、主题事件合并、身份／版本门控和不调用宿主解析路径已复核；ABI 与 `notepad--/` 未修改 |
+| 自动化测试 | `blocked` | 扩展 `markdownview_lifecycle_tests`；CMake 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 配置失败 |
+| Windows Release 编译 | `blocked` | 当前 Linux 环境没有 Qt 5.15.2 与 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或打包 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 检查首次打开、手工刷新、明暗主题、多标签和阅读位置，也未生成前后截图 |
+
+### 实际环境
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake 配置目录**：`/tmp/markdownview-bug009-build`
+- **测试源码**：`tests/markdown_preview_dock_lifecycle_test.cpp`
+- **截图或二进制报告**：未生成
+
+### 未验证项与已知限制
+
+Qt Test 尚未实际编译运行。Windows Release DLL、Artifact、真实宿主明暗主题视觉、嵌入 HTML
+细节与前后截图均待复核。支持范围不等价于完整浏览器 CSS；后续 BUG-011 仍需单独测量大文档
+格式遍历和总体渲染耗时，不能仅凭静态检查关闭 BUG-009。

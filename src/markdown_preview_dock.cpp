@@ -9,6 +9,7 @@
 #include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMainWindow>
@@ -26,7 +27,9 @@
 #include <QTextBlock>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QTextFrame>
 #include <QTextFragment>
+#include <QTextTable>
 #include <QtMath>
 #include <QTimer>
 #include <QToolButton>
@@ -37,6 +40,39 @@
 
 namespace {
 constexpr int kLayoutSyncDelayMs = 32;
+
+void applyFrameStyle(QTextFrame *frame, const QPalette &palette)
+{
+    if (!frame) {
+        return;
+    }
+
+    if (QTextTable *table = dynamic_cast<QTextTable *>(frame)) {
+        QTextTableFormat format = table->format();
+        format.setBorder(1.0);
+        format.setBorderBrush(palette.brush(QPalette::Midlight));
+        format.setCellPadding(6.0);
+        format.setCellSpacing(0.0);
+        table->setFormat(format);
+
+        for (int row = 0; row < table->rows(); ++row) {
+            for (int column = 0; column < table->columns(); ++column) {
+                QTextTableCell cell = table->cellAt(row, column);
+                QTextTableCellFormat cellFormat = cell.format().toTableCellFormat();
+                cellFormat.setBackground(row == 0
+                    ? palette.brush(QPalette::AlternateBase)
+                    : palette.brush(QPalette::Base));
+                cell.setFormat(cellFormat);
+            }
+        }
+    }
+
+    for (QTextFrame::iterator it = frame->begin(); !it.atEnd(); ++it) {
+        if (QTextFrame *child = it.currentFrame()) {
+            applyFrameStyle(child, palette);
+        }
+    }
+}
 
 QString decodeHtmlAttribute(const QString &value)
 {
@@ -180,6 +216,10 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_layoutSyncTimer->setSingleShot(true);
     m_layoutSyncTimer->setInterval(kLayoutSyncDelayMs);
 
+    m_themeStyleTimer = new QTimer(this);
+    m_themeStyleTimer->setSingleShot(true);
+    m_themeStyleTimer->setInterval(0);
+
     m_browser = new QTextBrowser(container);
     m_browser->setObjectName(QStringLiteral("NddMarkdownPreviewBrowser"));
     m_browser->setOpenLinks(false);
@@ -211,6 +251,14 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         }
         emit previewScrollRangeChanged();
     });
+    connect(m_themeStyleTimer, &QTimer::timeout, this, [this]() {
+        if (m_nativeTextEdit && m_previewEditor && m_previewContentVersion != 0) {
+            refreshDocumentStyle(m_previewEditor.data(), m_previewContentVersion);
+        }
+        if (m_browser) {
+            applyDocumentStyle(m_browser);
+        }
+    });
     connect(this, &QDockWidget::visibilityChanged, this, [this](bool visible) {
         if (!visible) {
             m_layoutSyncTimer->stop();
@@ -230,6 +278,9 @@ MarkdownPreviewDock::~MarkdownPreviewDock()
     m_isDestroying = true;
     if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();
+    }
+    if (m_themeStyleTimer) {
+        m_themeStyleTimer->stop();
     }
     if (m_nativeScrollConnection) {
         disconnect(m_nativeScrollConnection);
@@ -273,7 +324,6 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     }
 
     textEdit->document()->setBaseUrl(baseUrlForFile(filePath));
-    textEdit->document()->setDefaultStyleSheet(loadStyleSheet());
 
     if (m_nativePreview && m_nativePreview != previewWindow) {
         m_contentLayout->removeWidget(m_nativePreview);
@@ -320,6 +370,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     m_currentFilePath = filePath;
     m_previewEditor = editor;
     m_previewContentVersion = contentVersion;
+    applyDocumentStyle(textEdit);
     m_browser->hide();
     previewWindow->show();
     Diagnostics::write(QStringLiteral("native MarkdownView embedded in dock"));
@@ -500,6 +551,123 @@ void MarkdownPreviewDock::preserveNativeScrollRatio(
     m_preservedScrollRatio = qBound(0.0, ratio, 1.0);
     m_hasPreservedScrollRatio = true;
     m_layoutSyncTimer->start();
+}
+
+void MarkdownPreviewDock::refreshDocumentStyle(QWidget *editor,
+                                               quint64 contentVersion)
+{
+    if (!hasPreviewFor(editor, contentVersion) || !m_nativeTextEdit) {
+        return;
+    }
+
+    const double ratio = scrollRatio();
+    applyDocumentStyle(m_nativeTextEdit);
+    QTimer::singleShot(0, this, [this, editor = QPointer<QWidget>(editor),
+                                 contentVersion, ratio]() {
+        if (hasPreviewFor(editor.data(), contentVersion)) {
+            scrollToRatio(ratio);
+        }
+    });
+}
+
+void MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
+{
+    if (!textEdit || !textEdit->document()) {
+        return;
+    }
+
+    const QPalette colors = palette();
+    if (textEdit->palette() != colors) {
+        textEdit->setPalette(colors);
+    }
+    QTextDocument *document = textEdit->document();
+    document->setDefaultStyleSheet(loadStyleSheet());
+
+    for (QTextBlock block = document->begin(); block.isValid(); block = block.next()) {
+        QTextBlockFormat blockFormat = block.blockFormat();
+        const int headingLevel = blockFormat.property(QTextFormat::HeadingLevel).toInt();
+        const int quoteLevel = blockFormat.property(QTextFormat::BlockQuoteLevel).toInt();
+        const bool codeBlock = blockFormat.hasProperty(QTextFormat::BlockCodeFence) ||
+            blockFormat.hasProperty(QTextFormat::BlockCodeLanguage);
+
+        if (headingLevel > 0) {
+            QTextCharFormat headingFormat;
+            headingFormat.setFontWeight(QFont::DemiBold);
+            headingFormat.setFontPointSize(qMax(11.0, 22.0 - headingLevel * 2.0));
+            headingFormat.setForeground(colors.brush(QPalette::Text));
+            QTextCursor cursor(block);
+            cursor.select(QTextCursor::BlockUnderCursor);
+            cursor.mergeCharFormat(headingFormat);
+            blockFormat.setTopMargin(12.0);
+            blockFormat.setBottomMargin(6.0);
+        }
+        if (quoteLevel > 0) {
+            blockFormat.setLeftMargin(12.0 * quoteLevel);
+            blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
+        }
+        if (codeBlock) {
+            blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
+            blockFormat.setLeftMargin(10.0);
+            blockFormat.setRightMargin(10.0);
+            blockFormat.setTopMargin(6.0);
+            blockFormat.setBottomMargin(6.0);
+            QTextCharFormat codeFormat;
+            codeFormat.setFontFamily(QStringLiteral("Consolas"));
+            codeFormat.setFontFixedPitch(true);
+            codeFormat.setForeground(colors.brush(QPalette::Text));
+            QTextCursor cursor(block);
+            cursor.select(QTextCursor::BlockUnderCursor);
+            cursor.mergeCharFormat(codeFormat);
+        }
+        QTextCursor blockCursor(block);
+        blockCursor.setBlockFormat(blockFormat);
+
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (!fragment.isValid()) {
+                continue;
+            }
+            QTextCharFormat format = fragment.charFormat();
+            bool changed = false;
+            if (format.isAnchor()) {
+                format.setForeground(colors.brush(QPalette::Link));
+                format.setFontUnderline(true);
+                changed = true;
+            }
+            if (!codeBlock && format.fontFixedPitch()) {
+                format.setBackground(colors.brush(QPalette::AlternateBase));
+                format.setForeground(colors.brush(QPalette::Text));
+                changed = true;
+            }
+            if (changed) {
+                QTextCursor cursor(document);
+                cursor.setPosition(fragment.position());
+                cursor.setPosition(fragment.position() + fragment.length(),
+                                   QTextCursor::KeepAnchor);
+                cursor.mergeCharFormat(format);
+            }
+        }
+    }
+
+    applyFrameStyle(document->rootFrame(), colors);
+    textEdit->viewport()->update();
+}
+
+void MarkdownPreviewDock::scheduleThemeStyleRefresh()
+{
+    if (m_themeStyleTimer) {
+        m_themeStyleTimer->start();
+    }
+}
+
+void MarkdownPreviewDock::changeEvent(QEvent *event)
+{
+    QDockWidget::changeEvent(event);
+    if (event && (event->type() == QEvent::PaletteChange ||
+                  event->type() == QEvent::ApplicationPaletteChange ||
+                  event->type() == QEvent::StyleChange)) {
+        scheduleThemeStyleRefresh();
+    }
 }
 
 void MarkdownPreviewDock::scrollToRatio(double ratio)
@@ -715,6 +883,11 @@ void MarkdownPreviewDock::openLink(const QUrl &url)
 
 bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event && (event->type() == QEvent::PaletteChange ||
+                  event->type() == QEvent::ApplicationPaletteChange ||
+                  event->type() == QEvent::StyleChange)) {
+        scheduleThemeStyleRefresh();
+    }
     if (!m_nativeTextEdit || watched != m_nativeTextEdit->viewport()) {
         return QDockWidget::eventFilter(watched, event);
     }

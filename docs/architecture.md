@@ -95,6 +95,22 @@ Qt 5.15 会分步排版较长的富文本，期间预览滚动条的范围可能
 Dock 文档栏显示反馈。系统 URL 打开函数封装为可替换回调，自动化测试只记录请求，不启动外部
 程序。
 
+## 文档样式与主题刷新
+
+Qt 5.15.2 的主渲染链路仍由宿主 `QTextEdit::setMarkdown()` 负责 Markdown 解析，不把浏览器
+CSS 当作完整样式保证。插件在宿主生成 `QTextDocument` 后执行一次不重新解析源文本的格式
+后处理：控件 palette 负责正文与背景，Qt Markdown 写入的标题级别、引用级别和代码围栏属性
+用于设置块格式，等宽片段用于设置行内代码，锚点使用 palette 的链接色，`QTextTable` 使用
+边框、单元格留白和表头背景。`markdown.css` 继续服务备用 `QTextBrowser`、HTML 片段及默认
+导出样式；它不代表原生 Markdown 支持完整浏览器 CSS 盒模型、选择器或脚本。
+
+首次调用宿主 `on_viewMarkdown` 时，格式后处理发生在宿主初次渲染之后；复用已有原生预览
+并调用 `on_updataMarkdown` 时，则在宿主更新返回后再次执行同一入口。因此首次打开、手工刷新
+和防抖刷新不会因样式设置时序不同而产生两套结果。Dock 合并处理 `PaletteChange`、
+`ApplicationPaletteChange` 和 `StyleChange`，主题变化只更新已有富文本文档和控件 palette，
+不会再次读取 Markdown 或调用宿主全文解析。样式刷新前后按当前预览滚动比例恢复位置，并以
+编辑器身份和内容版本门控零延迟恢复，避免主题切换把旧文档位置应用到新标签。
+
 ## 渲染选择
 
 notepad-- v3.8.3 已有 `MarkdownView`，内部使用 `QTextEdit::setMarkdown()`。插件通过 Qt 元对象调用宿主的 `on_viewMarkdown`，再把宿主创建的窗口嵌入 `QDockWidget`，避免复制渲染逻辑，也避免从插件模块调用静态链接的 QScintilla 实现。

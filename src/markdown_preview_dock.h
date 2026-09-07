@@ -43,6 +43,7 @@ public:
     bool nativeScrollRatioFor(QWidget *editor, double *ratio) const;
     void preserveNativeScrollRatio(QWidget *editor, quint64 contentVersion,
                                    double ratio);
+    void refreshDocumentStyle(QWidget *editor, quint64 contentVersion);
     void scrollToRatio(double ratio);
     double scrollRatio() const;
     bool saveHtmlSnapshot(QWidget *dialogParent, const QByteArray &html,
@@ -58,6 +59,9 @@ signals:
     void previewScrollRatioChanged(double ratio);
     void previewScrollRangeChanged();
 
+protected:
+    void changeEvent(QEvent *event) override;
+
 private slots:
     void openLink(const QUrl &url);
 
@@ -70,6 +74,8 @@ private:
     void disconnectNativePreviews();
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
     void restorePreservedScrollRatio();
+    void applyDocumentStyle(QTextEdit *textEdit);
+    void scheduleThemeStyleRefresh();
     bool scrollNativeToAnchor(const QString &anchor);
     void showLinkFailure(const QUrl &url, const QString &reason);
     QString loadStyleSheet() const;
@@ -89,6 +95,7 @@ private:
     QMetaObject::Connection m_nativeScrollRangeConnection;
     QHash<QObject *, QMetaObject::Connection> m_nativePreviewDestroyConnections;
     QTimer *m_layoutSyncTimer = nullptr;
+    QTimer *m_themeStyleTimer = nullptr;
     QString m_currentFilePath;
     UrlOpener m_urlOpener;
     QUrl m_pressedLink;

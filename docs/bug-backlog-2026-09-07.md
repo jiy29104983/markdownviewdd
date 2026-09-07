@@ -243,7 +243,7 @@
 
 ## BUG-009：文档样式应用与主题刷新不完整
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：样式应用路径和主题事件缺失已静态确认，具体视觉差异需截图验证。
 - **代码位置**：[markdown_preview_dock.cpp](../src/markdown_preview_dock.cpp) 的
   `adoptNativePreview()`（128）、`loadStyleSheet()`（395）；
@@ -588,4 +588,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug008-build；测试源码 tests/markdown_preview_dock_lifecycle_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 和真实宿主跨目录导出均待复核。远程图片仍依赖查看 HTML 时的网络可达性；缺失本地图片不会使整个导出失败，而是保留引用并明确记录；大型图片会按 Base64 增大 HTML 文件。
+```
+
+## BUG-009 交回验证
+
+```text
+单据编号：BUG-009
+状态：修复完成／待验证
+基于的提交：6d47180c3a10fae8ae18720d63e4af53e8851625
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-005，b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3；BUG-006，1868f3e6a117a794297cd538215df7d8b0dda635
+修改文件：docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/markdown_preview_dock.cpp；src/markdown_preview_dock.h；src/preview_controller.cpp；tests/markdown_preview_dock_lifecycle_test.cpp
+问题复现与根因：静态确认主路径由宿主 QTextEdit::setMarkdown() 先生成文档，adoptNativePreview() 随后才调用 setDefaultStyleSheet()；该 API 不能追溯性地把浏览器 CSS 完整应用到已经生成的 Markdown 字符与块格式。复用预览时样式又发生在 on_updataMarkdown() 之前，随后文档重建会覆盖格式。代码未处理 palette 或 style 变化，因此主题切换只可能改变外层控件，正文链接、代码、引用和表格没有一致刷新保证。
+实际修改方案：保留宿主 Qt 5.15.2 Markdown 解析器，在其渲染结果上增加不重解析源文本的文档格式后处理。按 QTextFormat 的标题级别、引用级别、代码围栏／语言属性、等宽片段和锚点设置标题、引用、代码与链接；递归处理 QTextTable 的边框、留白和首行背景；控件 palette 统一正文、背景及明暗主题颜色。首次创建在 adopt 时处理，已有预览在 on_updataMarkdown 返回后处理。Dock 合并 PaletteChange、ApplicationPaletteChange、StyleChange，在零延迟计时器中仅刷新当前身份／版本匹配的文档；刷新前后保存并恢复滚动比例。新增 Qt Test 输入标题、引用、行内／围栏代码、链接和表格，并验证暗色 palette 更新及阅读位置不变。
+相较本单计划的偏差及原因：没有替换宿主渲染器，也不承诺完整浏览器 CSS；采用 Qt 富文本文档公开属性可表达的明确支持范围。未生成前后截图，因为当前环境缺少 Qt 运行与 Windows 宿主条件，截图和实际视觉差异保留为真实宿主待验证项。
+验收标准逐项结果：首次与刷新后样式一致——初次 adopt 与 on_updataMarkdown 后共用 applyDocumentStyle，静态 passed，自动化运行 blocked；明暗主题下文字、链接和代码可读——palette 驱动 Base/Text/AlternateBase/Link 并有暗色测试源码，运行 blocked、真实视觉 not verified；相关块格式符合支持范围——标题、引用、围栏／行内代码、表格和链接后处理已实现，测试源码覆盖代表性文档，运行 blocked；提供前后截图——not verified，当前环境无法生成真实宿主截图；主题切换不串文档、不改变阅读位置——身份／版本门控且按比例恢复，测试源码覆盖位置保持，运行 blocked，真实多标签主题切换 not verified。
+静态检查：passed（git diff --check；首次／后续渲染时序、主题事件合并、身份／版本门控和不调用宿主解析路径已复核；ABI 与 notepad--/ 未修改）
+自动化测试：blocked（扩展 markdownview_lifecycle_tests；cmake -S . -B /tmp/markdownview-bug009-build -DBUILD_TESTING=ON 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 检查首次打开、手工刷新、明暗主题、多标签和阅读位置，也未生成前后截图）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug009-build；测试源码 tests/markdown_preview_dock_lifecycle_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact、真实宿主明暗主题视觉、嵌入 HTML 细节及前后截图均待复核。支持范围限于 Qt QTextDocument 可表达的标题、引用、代码、表格、链接和控件 palette，不等价于完整浏览器 CSS；后续 BUG-011 仍需单独测量大文档格式遍历与总体渲染耗时。
 ```
