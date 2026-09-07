@@ -100,7 +100,17 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
-          ctest --test-dir build -C Release -L lifecycle --output-on-failure --no-tests=error
+          $output = ctest --test-dir build -C Release -L lifecycle --output-on-failure --no-tests=error 2>&1
+          $exitCode = $LASTEXITCODE
+          $output | ForEach-Object { Write-Host $_ }
+          if ($exitCode -ne 0) {
+              $annotation = ($output -join "%0A") `
+                  -replace '%', '%25' `
+                  -replace "`r", '%0D' `
+                  -replace "`n", '%0A'
+              Write-Host "::error title=Lifecycle regression failed::$annotation"
+              exit $exitCode
+          }
 
       - name: Run document regression tests
         shell: pwsh
