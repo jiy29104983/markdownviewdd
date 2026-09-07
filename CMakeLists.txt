@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(ndd-markdown-view VERSION 0.2.7 LANGUAGES CXX)
+project(ndd-markdown-view VERSION 0.2.8 LANGUAGES CXX)
 
 include(CTest)
 

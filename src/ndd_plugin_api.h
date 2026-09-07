@@ -10,7 +10,7 @@ class QsciScintilla;
 class QWidget;
 
 #ifndef NDD_MARKDOWN_VIEW_VERSION
-#define NDD_MARKDOWN_VIEW_VERSION "0.2.7"
+#define NDD_MARKDOWN_VIEW_VERSION "0.2.8"
 #endif
 
 // This structure mirrors notepad--/src/include/pluginGl.h.  Keep field order
