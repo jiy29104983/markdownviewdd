@@ -76,6 +76,7 @@ private:
     void disconnectNativePreviews();
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
     void restorePreservedScrollRatio();
+    void cancelPreservedScroll();
     void applyDocumentStyle(QTextEdit *textEdit);
     void scheduleThemeStyleRefresh();
     bool scrollNativeToAnchor(const QString &anchor);
@@ -104,6 +105,7 @@ private:
     QPoint m_linkPressPosition;
     quint64 m_previewContentVersion = 0;
     quint64 m_preservedScrollVersion = 0;
+    quint64 m_scrollInteractionGeneration = 0;
     double m_preservedScrollRatio = 0.0;
     bool m_hasPreservedScrollRatio = false;
     bool m_isDestroying = false;

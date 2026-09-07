@@ -7,11 +7,14 @@
 #include <QFile>
 #include <QImage>
 #include <QLabel>
+#include <QMouseEvent>
 #include <QPointer>
 #include <QPalette>
 #include <QScrollBar>
 #include <QTextBrowser>
+#include <QTextBlock>
 #include <QTextCursor>
+#include <QTextFragment>
 #include <QTextEdit>
 #include <QTemporaryDir>
 #include <QTimer>
@@ -26,6 +29,7 @@ QWidget *createNativePreview()
     auto *layout = new QVBoxLayout(preview);
     auto *textEdit = new QTextEdit(preview);
     textEdit->setObjectName(QStringLiteral("textEdit"));
+    textEdit->setReadOnly(true);
     layout->addWidget(textEdit);
     return preview;
 }
@@ -46,6 +50,7 @@ private slots:
     void nativePreviewSelectionDoesNotOpenLink();
     void htmlSnapshotEmbedsLocalImagesWithoutChangingPreview();
     void documentStyleRefreshesForThemeWithoutChangingPosition();
+    void userScrollCancelsOldReadingPosition();
 };
 
 void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback()
@@ -243,7 +248,11 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewSelectionDoesNotOpenLink()
     const QPoint start = textEdit->cursorRect(link).center();
     const QPoint end = start + QPoint(80, 0);
     QTest::mousePress(textEdit->viewport(), Qt::LeftButton, Qt::NoModifier, start);
-    QTest::mouseMove(textEdit->viewport(), end, 10);
+    // Supply held-button state explicitly: offscreen QTest::mouseMove does
+    // not synthesize a drag with the left button held down.
+    QMouseEvent move(QEvent::MouseMove, end, Qt::NoButton,
+                     Qt::LeftButton, Qt::NoModifier);
+    QCoreApplication::sendEvent(textEdit->viewport(), &move);
     QTest::mouseRelease(textEdit->viewport(), Qt::LeftButton, Qt::NoModifier, end);
 
     QCOMPARE(openCount, 0);
@@ -303,17 +312,19 @@ void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChan
     QVERIFY(textEdit);
     textEdit->setMarkdown(QStringLiteral(
         "# Heading\n\n> Quote\n\n`inline` and [link](https://example.com)\n\n"
-        "```cpp\nint value = 1;\n```\n\n| A | B |\n| - | - |\n| 1 | 2 |"));
+        "```cpp\nint value = 1;\n```\n\n| A | B |\n| - | - |\n| 1 | 2 |") +
+        QStringLiteral("\n\nA paragraph for scrolling.").repeated(100));
     QVERIFY(dock.adoptNativePreview(
         preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 9));
     dock.resize(600, 260);
     dock.show();
-    QTest::qWait(1);
-    textEdit->verticalScrollBar()->setRange(0, 100);
-    textEdit->verticalScrollBar()->setValue(60);
+    QTest::qWait(100);
+    QVERIFY(textEdit->verticalScrollBar()->maximum() > 0);
+    textEdit->verticalScrollBar()->setValue(
+        qRound(textEdit->verticalScrollBar()->maximum() * 0.6));
 
     QTextBlock heading = textEdit->document()->begin();
-    QVERIFY(heading.charFormat().fontWeight() >= QFont::DemiBold);
+    QVERIFY(heading.begin().fragment().charFormat().fontWeight() >= QFont::DemiBold);
     QTextCursor linkCursor = textEdit->document()->find(QStringLiteral("link"));
     QVERIFY(!linkCursor.isNull());
     QVERIFY(linkCursor.charFormat().isAnchor());
@@ -331,7 +342,33 @@ void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChan
     linkCursor = textEdit->document()->find(QStringLiteral("link"));
     QCOMPARE(linkCursor.charFormat().foreground().color(),
              dark.color(QPalette::Link));
-    QCOMPARE(textEdit->verticalScrollBar()->value(), 60);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(dock.scrollRatio() - 0.6) < 0.01, 1000);
+}
+
+void MarkdownPreviewDockLifecycleTest::userScrollCancelsOldReadingPosition()
+{
+    MarkdownPreviewDock dock;
+    QWidget editor;
+    QWidget *preview = createNativePreview();
+    QTextEdit *textEdit = preview->findChild<QTextEdit *>();
+    textEdit->setMarkdown(QStringLiteral("Paragraph\n\n").repeated(300));
+    QVERIFY(dock.adoptNativePreview(preview, textEdit, QStringLiteral("a.md"), &editor, 1));
+    dock.resize(600, 400);
+    dock.show();
+    dock.setSyncScrolling(false);
+    QTest::qWait(100);
+    QScrollBar *bar = textEdit->verticalScrollBar();
+    QVERIFY(bar->maximum() > 0);
+    dock.preserveNativeScrollRatio(&editor, 1, 0.3);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(dock.scrollRatio() - 0.3) < 0.01, 1000);
+
+    bar->setPageStep(bar->maximum() / 3);
+    bar->triggerAction(QAbstractSlider::SliderPageStepAdd);
+    QVERIFY(dock.scrollRatio() > 0.5);
+    dock.resize(600, 650);
+    QTest::qWait(150);
+    QVERIFY2(dock.scrollRatio() > 0.5,
+             "A layout change must not restore the obsolete 30% position after user scrolling");
 }
 
 QTEST_MAIN(MarkdownPreviewDockLifecycleTest)

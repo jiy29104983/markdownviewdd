@@ -32,6 +32,7 @@ private slots:
     void pollEditor();
     void synchronizeFromHostEvent();
     void onEditorTextChanged();
+    void onEditorDestroyed(QObject *editor);
     void scheduleRender();
     void renderScheduled();
     void renderNow();
@@ -47,6 +48,10 @@ protected:
 private:
     struct PreviewCacheEntry {
         QPointer<QWidget> editor;
+        QString filePath;
+        QMetaObject::Connection textConnection;
+        QMetaObject::Connection destroyedConnection;
+        qint64 lastFullRenderDurationMs = 0;
         double scrollRatio = 0.0;
         bool hasScrollRatio = false;
         bool hasNativePreview = false;
@@ -64,6 +69,7 @@ private:
     void showPreviewFromNativeAction();
     QWidget *resolveCurrentEditor() const;
     void attachEditor(QWidget *editor);
+    void observeEditor(QWidget *editor);
     void synchronizeActiveEditor();
     void handleFilePathChanged();
     void markPreviewPending();
@@ -75,7 +81,7 @@ private:
                                bool forceHostUpdate = false);
     void updateExportActionState();
     bool disconnectHostImmediateRefresh(bool force = false);
-    bool activateNativePreview(bool forceHostUpdate);
+    bool activateNativePreview(bool forceHostUpdate, bool *performedFullRender);
     void rememberCurrentPreviewScroll();
     void touchPreviewCache(QWidget *editor);
     void enforcePreviewCacheLimit();

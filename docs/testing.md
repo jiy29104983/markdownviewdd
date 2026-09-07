@@ -1,5 +1,8 @@
 # 回归测试与手工验证
 
+2026 年 9 月 7 日二次审查修复的临时 Linux Release 编译及回归结果见
+[verification-2026-09-07.md](verification-2026-09-07.md)。该记录与 Windows 实际宿主验证分开。
+
 ## 统一自动化入口
 
 Windows、Qt 5.15.2 `msvc2019_64` 和 MSVC v142 环境中，从仓库根目录执行：
@@ -31,9 +34,10 @@ ctest --test-dir build -C Release -L multi-window --output-on-failure
 
 | 测试 | 主要覆盖 | 不证明的事项 |
 | --- | --- | --- |
-| `markdownview_lifecycle_tests` | Dock／预览销毁顺序、链接与锚点、相对图片导出、主题格式和位置 | notepad-- 真实控件销毁顺序、系统 URL 打开器、真实主题视觉 |
-| `markdownview_document_identity_tests` | 快速切换、防抖、路径变化、隐藏 Dock 导出、原子保存、滚动恢复、大文档手工刷新 | 真实宿主 ABI、真实磁盘对话框、设备性能结论 |
+| `markdownview_lifecycle_tests` | Dock／预览销毁顺序、链接与锚点、相对图片导出、主题格式和位置、用户滚动取消旧恢复目标 | notepad-- 真实控件销毁顺序、系统 URL 打开器、真实主题视觉 |
+| `markdownview_document_identity_tests` | 快速切换、防抖、后台内容／路径变化后的缓存失效、隐藏 Dock 导出、原子保存、滚动信号传递与位置恢复、慢文档策略跨标签保存 | 真实宿主 ABI、真实磁盘对话框、设备性能结论 |
 | `markdownview_multi_window_tests` | 每窗口控制器、重复初始化、窗口关闭和右键菜单隔离 | notepad-- 多进程或非基线窗口结构 |
+| `markdownview_diagnostics_tests` | 日志初始化幂等、窗口标识、容量轮转、不可写目录和路径脱敏 | Windows 多进程日志与长期使用情况 |
 | `release_publish_test.sh` | Release 不存在、相同附件、缺失附件、内容冲突和查询错误 | GitHub 在线权限、网络、并发和生产 Release |
 
 这些测试使用可替换的宿主窗口、编辑器和原生预览，仅证明插件侧行为。Windows Release DLL
@@ -54,6 +58,9 @@ ctest --test-dir build -C Release -L multi-window --output-on-failure
 7. 明暗主题下检查标题、引用、代码、表格和链接，并记录切换前后截图。
 8. 隐藏 Dock 后导出最新 HTML，检查相对图片已嵌入，取消与失败保存不破坏既有文件。
 9. 使用超过 1 MiB 及图片／表格密集文档记录首次打开、连续输入、停顿和手工刷新耗时。
+10. 在 B 标签活动时使用“替换所有已打开文档”修改已预览的 A，返回 A 并导出，确认内容最新。
+11. 关闭同步滚动，刷新后主动滚到其他位置，再调整 Dock 大小，确认不会回到旧的恢复位置。
+12. 慢文档进入手工刷新状态后，切到普通文档再返回，确认继续暂停自动刷新，普通文档不受影响。
 
 失败时保存 `%TEMP%\markdownview-<进程号>.log` 及适用的 `.1`～`.3` 轮转文件，并分别标注静态检查、自动化测试、Windows Release
 编译、Artifact 校验和真实宿主测试为 `passed`、`blocked`、`not run` 或 `not verified`。

@@ -114,6 +114,11 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
 
 PreviewController::~PreviewController()
 {
+    qApp->removeEventFilter(this);
+    for (const PreviewCacheEntry &entry : m_previewCache) {
+        disconnect(entry.textConnection);
+        disconnect(entry.destroyedConnection);
+    }
     if (m_ownsHostAdapter) {
         delete m_hostAdapter;
     }
@@ -160,8 +165,14 @@ bool PreviewController::installMenu(QMenu *rootMenu)
 
 bool PreviewController::eventFilter(QObject *watched, QEvent *event)
 {
-    if (watched == m_editor && m_hostAdapter->isFilePathChangeEvent(event)) {
-        handleFilePathChanged();
+    if (m_hostAdapter->isFilePathChangeEvent(event)) {
+        if (watched == m_editor) {
+            handleFilePathChanged();
+        } else if (PreviewCacheEntry *entry = previewCacheEntry(
+                       qobject_cast<QWidget *>(watched))) {
+            entry->filePath = m_hostAdapter->filePath(entry->editor.data());
+            m_hostAdapter->setPreviewCurrent(entry->editor.data(), false);
+        }
     }
 
     if (event && event->type() == QEvent::Show) {
@@ -258,12 +269,22 @@ void PreviewController::synchronizeFromHostEvent()
 
 void PreviewController::onEditorTextChanged()
 {
+    QWidget *changedEditor = qobject_cast<QWidget *>(sender());
+    if (!changedEditor) {
+        return;
+    }
     // The plugin connection is installed before the host preview connection.
     // Recheck on every edit so a host action cannot silently restore its
     // synchronous full-document renderer.
-    if (disconnectHostImmediateRefresh()) {
+    if (m_hostAdapter->disconnectImmediateRefresh(changedEditor)) {
         Diagnostics::write(this,
             QStringLiteral("host immediate refresh reconnected; disconnected on edit"));
+    }
+    m_hostAdapter->setPreviewCurrent(changedEditor, false);
+    if (changedEditor != m_editor) {
+        // Cached documents can change through the host's replace-all or
+        // background update paths. Keep them dirty without rendering them.
+        return;
     }
     markPreviewPending();
     scheduleAutomaticRender();
@@ -381,7 +402,8 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
                                      &preservedScrollRatio);
     QElapsedTimer elapsed;
     elapsed.start();
-    if (!activateNativePreview(forceHostUpdate)) {
+    bool performedFullRender = false;
+    if (!activateNativePreview(forceHostUpdate, &performedFullRender)) {
         synchronizeActiveEditor();
         if (m_editor != renderEditor || m_contentVersion != renderVersion) {
             Diagnostics::write(this, QStringLiteral(
@@ -402,10 +424,9 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         updateExportActionState();
         return false;
     }
-    m_lastRenderDurationMs = elapsed.elapsed();
-    updateLargeDocumentPolicy(m_lastRenderDurationMs);
+    const qint64 operationDurationMs = elapsed.elapsed();
     Diagnostics::write(this, QStringLiteral("renderNow completed in %1 ms")
-                           .arg(m_lastRenderDurationMs));
+                           .arg(operationDurationMs));
 
     synchronizeActiveEditor();
     if (m_editor != renderEditor || m_contentVersion != renderVersion) {
@@ -413,6 +434,14 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         scheduleRender();
         return false;
     }
+
+    if (performedFullRender) {
+        m_lastRenderDurationMs = operationDurationMs;
+        if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor.data())) {
+            entry->lastFullRenderDurationMs = m_lastRenderDurationMs;
+        }
+    }
+    updateLargeDocumentPolicy(m_lastRenderDurationMs);
 
     m_previewEditor = renderEditor;
     m_renderedVersion = renderVersion;
@@ -479,10 +508,9 @@ void PreviewController::scrollEditorToRatio(double ratio)
         qRound(ratio * static_cast<double>(
             editorBar->maximum() - editorBar->minimum()));
     m_syncingEditorScroll = true;
-    {
-        const QSignalBlocker blocker(editorBar);
-        editorBar->setValue(value);
-    }
+    // QScintilla consumes valueChanged to scroll its document. Only suppress
+    // our own feedback callback, never the host's scrollbar signal receivers.
+    editorBar->setValue(value);
     m_syncingEditorScroll = false;
 
     // Remember the complete programmatic state so the event callback and the
@@ -563,9 +591,6 @@ void PreviewController::showAbout()
 void PreviewController::attachEditor(QWidget *editor)
 {
     rememberCurrentPreviewScroll();
-    if (m_editor) {
-        disconnect(m_editor, nullptr, this, nullptr);
-    }
     if (m_editorScrollValueConnection) {
         disconnect(m_editorScrollValueConnection);
         m_editorScrollValueConnection = QMetaObject::Connection();
@@ -576,6 +601,7 @@ void PreviewController::attachEditor(QWidget *editor)
     }
 
     m_editor = editor;
+    observeEditor(editor);
     m_editorFilePath = currentFilePath();
     ++m_contentVersion;
     m_previewEditor = nullptr;
@@ -586,33 +612,14 @@ void PreviewController::attachEditor(QWidget *editor)
     }
     m_lastScrollEditor = nullptr;
     m_hasLastEditorScrollState = false;
-    m_lastRenderDurationMs = 0;
-    m_manualRefreshOnly = fileExceedsAutomaticRefreshLimit();
+    const PreviewCacheEntry *entry = previewCacheEntry(editor);
+    m_lastRenderDurationMs = entry ? entry->lastFullRenderDurationMs : 0;
+    m_manualRefreshOnly = fileExceedsAutomaticRefreshLimit() ||
+        m_lastRenderDurationMs >= kSlowRenderThresholdMs;
 
     if (m_editor) {
         Diagnostics::write(this, QStringLiteral("attaching editor class=%1")
                                .arg(QString::fromLatin1(m_editor->metaObject()->className())));
-        const QMetaObject::Connection textChangedConnection = connect(
-            m_editor.data(), SIGNAL(textChanged()),
-            this, SLOT(onEditorTextChanged()),
-            Qt::UniqueConnection);
-        Diagnostics::write(this, QStringLiteral("runtime textChanged connection=%1")
-                               .arg(static_cast<bool>(textChangedConnection)));
-        connect(m_editor, &QObject::destroyed, this, [this]() {
-            m_editor = nullptr;
-            m_editorFilePath.clear();
-            ++m_contentVersion;
-            m_previewEditor = nullptr;
-            m_renderedVersion = 0;
-            m_previewState = PreviewState::NoDocument;
-            m_lastScrollEditor = nullptr;
-            m_hasLastEditorScrollState = false;
-            if (m_dock) {
-                m_dock->invalidatePreview();
-            }
-            updateExportActionState();
-            scheduleRender();
-        });
         const HostAdapter::ScrollConnections scrollConnections =
             m_hostAdapter->connectEditorScrollChanged(
             m_editor.data(), this, [this]() {
@@ -630,6 +637,60 @@ void PreviewController::attachEditor(QWidget *editor)
     updateExportActionState();
 }
 
+void PreviewController::observeEditor(QWidget *editor)
+{
+    if (!editor) {
+        return;
+    }
+    if (PreviewCacheEntry *entry = previewCacheEntry(editor)) {
+        const QString filePath = m_hostAdapter->filePath(editor);
+        if (entry->filePath != filePath) {
+            entry->filePath = filePath;
+            m_hostAdapter->setPreviewCurrent(editor, false);
+        }
+        return;
+    }
+
+    PreviewCacheEntry entry;
+    entry.editor = editor;
+    entry.filePath = m_hostAdapter->filePath(editor);
+    entry.textConnection = connect(editor, SIGNAL(textChanged()),
+                                   this, SLOT(onEditorTextChanged()),
+                                   Qt::UniqueConnection);
+    entry.destroyedConnection = connect(editor, &QObject::destroyed,
+                                        this, &PreviewController::onEditorDestroyed);
+    m_previewCache.append(entry);
+    Diagnostics::write(this, QStringLiteral("runtime textChanged connection=%1")
+                               .arg(static_cast<bool>(entry.textConnection)));
+}
+
+void PreviewController::onEditorDestroyed(QObject *editor)
+{
+    // QWidget can emit destroyed before its QPointer is cleared. Remove both
+    // that exact entry and entries whose guards have already become null.
+    for (int i = m_previewCache.size() - 1; i >= 0; --i) {
+        if (!m_previewCache.at(i).editor || m_previewCache.at(i).editor == editor) {
+            m_previewCache.removeAt(i);
+        }
+    }
+    if (m_editor && m_editor != editor) {
+        return;
+    }
+    m_editor = nullptr;
+    m_editorFilePath.clear();
+    ++m_contentVersion;
+    m_previewEditor = nullptr;
+    m_renderedVersion = 0;
+    m_previewState = PreviewState::NoDocument;
+    m_lastScrollEditor = nullptr;
+    m_hasLastEditorScrollState = false;
+    if (m_dock) {
+        m_dock->invalidatePreview();
+    }
+    updateExportActionState();
+    scheduleRender();
+}
+
 void PreviewController::handleFilePathChanged()
 {
     if (!m_editor) {
@@ -645,6 +706,9 @@ void PreviewController::handleFilePathChanged()
                            .arg(Diagnostics::pathIdentity(m_editorFilePath),
                                 Diagnostics::pathIdentity(filePath)));
     m_editorFilePath = filePath;
+    if (PreviewCacheEntry *entry = previewCacheEntry(m_editor.data())) {
+        entry->filePath = filePath;
+    }
     markPreviewPending();
     if (m_dock) {
         m_dock->setDocumentInfo(filePath, -1);
@@ -682,6 +746,7 @@ void PreviewController::synchronizeActiveEditor()
 {
     QWidget *current = resolveCurrentEditor();
     if (current == m_editor) {
+        handleFilePathChanged();
         return;
     }
 
@@ -733,8 +798,10 @@ bool PreviewController::disconnectHostImmediateRefresh(bool force)
         m_editor.data(), force);
 }
 
-bool PreviewController::activateNativePreview(bool forceHostUpdate)
+bool PreviewController::activateNativePreview(bool forceHostUpdate,
+                                               bool *performedFullRender)
 {
+    *performedFullRender = false;
     if (!m_editor || !m_dock) {
         return false;
     }
@@ -762,6 +829,7 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
     // result instead of immediately parsing and laying out the whole document
     // a second time.
     if (preview.created) {
+        *performedFullRender = true;
         if (!m_syncScrolling) {
             PreviewCacheEntry *entry = previewCacheEntry(m_editor.data());
             if (entry && entry->hasScrollRatio) {
@@ -786,6 +854,7 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
     QString hostError;
     const bool updated = m_hostAdapter->refreshPreview(
         m_editor.data(), &hostRenderDuration, &hostError);
+    *performedFullRender = updated;
     Diagnostics::write(this,
         QStringLiteral("host preview refresh returned: %1, duration=%2 ms, error=%3")
             .arg(updated)

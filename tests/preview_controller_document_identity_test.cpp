@@ -14,6 +14,7 @@
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextEdit>
+#include <QTextCursor>
 #include <QTimer>
 #include <QToolButton>
 #include <QUrl>
@@ -84,19 +85,27 @@ public slots:
             QTest::qWait(m_renderDelayMs);
         }
         if (m_textEdit) {
+            m_textEdit->setProperty("layoutFinished", false);
             m_textEdit->setMarkdown(m_markdown);
-            m_textEdit->verticalScrollBar()->setRange(0, 100);
+            if (!m_simulateDelayedLayout) {
+                m_textEdit->verticalScrollBar()->setRange(0, 100);
+            }
             m_textEdit->verticalScrollBar()->setValue(0);
             if (m_simulateDelayedLayout) {
                 QPointer<QTextEdit> textEdit = m_textEdit;
                 QTimer::singleShot(10, m_textEdit, [textEdit]() {
                     if (textEdit) {
-                        textEdit->verticalScrollBar()->setRange(0, 160);
+                        QTextCursor cursor(textEdit->document());
+                        cursor.movePosition(QTextCursor::End);
+                        cursor.insertText(QStringLiteral("\nDelayed layout paragraph\n").repeated(60));
                     }
                 });
                 QTimer::singleShot(45, m_textEdit, [textEdit]() {
                     if (textEdit) {
-                        textEdit->verticalScrollBar()->setRange(0, 240);
+                        QTextCursor cursor(textEdit->document());
+                        cursor.movePosition(QTextCursor::End);
+                        cursor.insertText(QStringLiteral("\nFinal layout paragraph\n").repeated(60));
+                        textEdit->setProperty("layoutFinished", true);
                     }
                 });
             }
@@ -135,6 +144,10 @@ private slots:
     void tabChangeSynchronizesWithoutPollingDelay();
     void editorRangeChangeUpdatesPreviewRatio();
     void hiddenDockStopsFallbackPolling();
+    void backgroundEditInvalidatesCachedPreview();
+    void backgroundPathChangeInvalidatesCachedPreview();
+    void reverseScrollReachesHostReceiver();
+    void slowDocumentPolicySurvivesTabSwitch();
 };
 
 class TestHostAdapter final : public HostAdapter
@@ -216,6 +229,11 @@ private:
 };
 
 namespace {
+QString longMarkdown(const QString &heading)
+{
+    return heading + QStringLiteral("\n\nA paragraph for scrolling.\n").repeated(200);
+}
+
 struct Fixture
 {
     QMainWindow window;
@@ -530,9 +548,9 @@ void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyW
 {
     Fixture fixture;
     auto *editorA = new QsciScintilla(QStringLiteral("a.md"),
-                                     QStringLiteral("# A"));
+                                     longMarkdown(QStringLiteral("# A")));
     auto *editorB = new QsciScintilla(QStringLiteral("b.md"),
-                                     QStringLiteral("# B"));
+                                     longMarkdown(QStringLiteral("# B")));
     editorA->setSimulateDelayedLayout(true);
     fixture.tabs.addTab(editorA, QStringLiteral("A"));
     fixture.tabs.addTab(editorB, QStringLiteral("B"));
@@ -544,7 +562,8 @@ void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyW
     QVERIFY(previewTextEdit);
     QScrollBar *previewBar = previewTextEdit->verticalScrollBar();
     QVERIFY(previewBar);
-    QTRY_COMPARE_WITH_TIMEOUT(previewBar->maximum(), 240, 500);
+    QTRY_VERIFY_WITH_TIMEOUT(previewTextEdit->property("layoutFinished").toBool(), 1000);
+    QVERIFY(previewBar->maximum() > 0);
 
     QToolButton *syncButton = nullptr;
     const QList<QToolButton *> buttons = fixture.dock()->findChildren<QToolButton *>();
@@ -559,18 +578,19 @@ void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyW
     syncButton->click();
     QVERIFY(!syncButton->isChecked());
 
-    previewBar->setValue(180);
-    editorA->edit(QStringLiteral("# A updated"));
+    previewBar->setValue(qRound(previewBar->maximum() * 0.75));
+    editorA->edit(longMarkdown(QStringLiteral("# A updated")));
     QTRY_COMPARE_WITH_TIMEOUT(editorA->renderCount(), 2, 1000);
-    QTRY_COMPARE_WITH_TIMEOUT(previewBar->maximum(), 240, 500);
-    QTRY_COMPARE_WITH_TIMEOUT(previewBar->value(), 180, 500);
+    QTRY_VERIFY_WITH_TIMEOUT(previewTextEdit->property("layoutFinished").toBool(), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(fixture.dock()->scrollRatio() - 0.75) < 0.01, 1000);
 
     QAction *refreshAction = fixture.action(QStringLiteral("立即刷新"));
     QVERIFY(refreshAction);
-    previewBar->setValue(120);
+    previewBar->setValue(qRound(previewBar->maximum() * 0.5));
     refreshAction->trigger();
     QCOMPARE(editorA->renderCount(), 3);
-    QTRY_COMPARE_WITH_TIMEOUT(previewBar->value(), 120, 500);
+    QTRY_VERIFY_WITH_TIMEOUT(previewTextEdit->property("layoutFinished").toBool(), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(fixture.dock()->scrollRatio() - 0.5) < 0.01, 1000);
 
     fixture.tabs.setCurrentWidget(editorB);
     fixture.renderNow();
@@ -589,9 +609,9 @@ void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyW
     syncButton->click();
     QVERIFY(syncButton->isChecked());
     editorB->verticalScrollBar()->setValue(80);
-    editorB->edit(QStringLiteral("# B updated"));
+    editorB->edit(longMarkdown(QStringLiteral("# B updated")));
     QTRY_COMPARE_WITH_TIMEOUT(editorB->renderCount(), 2, 1000);
-    QTRY_COMPARE_WITH_TIMEOUT(previewB->verticalScrollBar()->value(), 80, 500);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(fixture.dock()->scrollRatio() - 0.8) < 0.01, 1000);
 }
 
 void PreviewControllerDocumentIdentityTest::unchangedScheduledRefreshDoesNotRenderAgain()
@@ -725,9 +745,9 @@ void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreates
     for (int i = 0; i < 4; ++i) {
         auto *editor = new QsciScintilla(
             QStringLiteral("document-%1.md").arg(i),
-            QStringLiteral("# Document %1").arg(i));
+            longMarkdown(QStringLiteral("# Document %1").arg(i)));
         editors.append(editor);
-    fixture.tabs.addTab(editor, QString::number(i));
+        fixture.tabs.addTab(editor, QString::number(i));
         fixture.tabs.setCurrentWidget(editor);
         fixture.renderNow();
         if (i == 0) {
@@ -745,8 +765,10 @@ void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreates
             QTextEdit *textEdit = fixture.dock()->findChild<QTextEdit *>(
                 QStringLiteral("textEdit"));
             QVERIFY(textEdit);
-            textEdit->verticalScrollBar()->setRange(0, 100);
-            textEdit->verticalScrollBar()->setValue(65);
+            QTest::qWait(100);
+            QVERIFY(textEdit->verticalScrollBar()->maximum() > 0);
+            textEdit->verticalScrollBar()->setValue(
+                qRound(textEdit->verticalScrollBar()->maximum() * 0.65));
         }
     }
 
@@ -774,7 +796,7 @@ void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreates
         }
     }
     QVERIFY(recreatedTextEdit);
-    QTRY_COMPARE_WITH_TIMEOUT(recreatedTextEdit->verticalScrollBar()->value(), 65, 500);
+    QTRY_VERIFY_WITH_TIMEOUT(qAbs(fixture.dock()->scrollRatio() - 0.65) < 0.01, 1000);
 
     QPointer<QWidget> closingPreview = qobject_cast<QWidget *>(
         editors.at(3)->property("_markdownview_native_preview").value<QObject *>());
@@ -857,6 +879,109 @@ void PreviewControllerDocumentIdentityTest::hiddenDockStopsFallbackPolling()
     fixture.dock()->hide();
     QCoreApplication::processEvents();
     QVERIFY(!fallbackTimer->isActive());
+}
+
+void PreviewControllerDocumentIdentityTest::backgroundEditInvalidatesCachedPreview()
+{
+    Fixture fixture;
+    auto *a = new QsciScintilla(QStringLiteral("a.md"), QStringLiteral("# Old A"));
+    auto *b = new QsciScintilla(QStringLiteral("b.md"), QStringLiteral("# B"));
+    fixture.tabs.addTab(a, QStringLiteral("A"));
+    fixture.tabs.addTab(b, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(a);
+    fixture.renderNow();
+    fixture.tabs.setCurrentWidget(b);
+    fixture.renderNow();
+
+    a->edit(QStringLiteral("# New A after replace all"));
+    QCOMPARE(a->renderCount(), 1);
+    QCOMPARE(b->renderCount(), 1);
+    fixture.tabs.setCurrentWidget(a);
+    QByteArray html;
+    QString source;
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &source));
+    QVERIFY(html.contains("New A after replace all"));
+    QVERIFY(!html.contains("Old A"));
+    QCOMPARE(a->renderCount(), 2);
+
+    a->edit(QStringLiteral("# Latest active A"));
+    QTRY_COMPARE_WITH_TIMEOUT(a->renderCount(), 3, 1000);
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &source));
+    QVERIFY(html.contains("Latest active A"));
+}
+
+void PreviewControllerDocumentIdentityTest::backgroundPathChangeInvalidatesCachedPreview()
+{
+    Fixture fixture;
+    auto *a = new QsciScintilla(QStringLiteral("old/a.md"), QStringLiteral("# A"));
+    auto *b = new QsciScintilla(QStringLiteral("b.md"), QStringLiteral("# B"));
+    fixture.tabs.addTab(a, QStringLiteral("A"));
+    fixture.tabs.addTab(b, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(a);
+    fixture.renderNow();
+    fixture.tabs.setCurrentWidget(b);
+    fixture.renderNow();
+    a->renameTo(QStringLiteral("new/a.md"));
+    QCOMPARE(a->renderCount(), 1);
+    fixture.tabs.setCurrentWidget(a);
+    QByteArray html;
+    QString source;
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &source));
+    QCOMPARE(source, QStringLiteral("new/a.md"));
+    QCOMPARE(a->renderCount(), 2);
+}
+
+void PreviewControllerDocumentIdentityTest::reverseScrollReachesHostReceiver()
+{
+    Fixture fixture;
+    auto *editor = new QsciScintilla(QStringLiteral("a.md"), QStringLiteral("# A"));
+    fixture.tabs.addTab(editor, QStringLiteral("A"));
+    fixture.renderNow();
+    QScrollBar *bar = editor->verticalScrollBar();
+    bar->setRange(0, 100);
+    bar->setValue(0);
+    int hostFirstVisibleLine = 0;
+    // The real QScintilla handleVSb slot consumes this same signal to scroll
+    // its content. Checking only the scrollbar value misses a broken bridge.
+    QObject::connect(bar, &QScrollBar::valueChanged, &fixture.window,
+                     [&hostFirstVisibleLine](int value) { hostFirstVisibleLine = value; });
+    QVERIFY(QMetaObject::invokeMethod(fixture.dock(), "previewScrollRatioChanged",
+                                     Qt::DirectConnection, Q_ARG(double, 0.8)));
+    QCOMPARE(bar->value(), 80);
+    QCOMPARE(hostFirstVisibleLine, 80);
+}
+
+void PreviewControllerDocumentIdentityTest::slowDocumentPolicySurvivesTabSwitch()
+{
+    Fixture fixture;
+    auto *a = new QsciScintilla(QStringLiteral("slow.md"), QStringLiteral("# Slow"));
+    auto *b = new QsciScintilla(QStringLiteral("b.md"), QStringLiteral("# B"));
+    a->setRenderDelayMs(800);
+    fixture.tabs.addTab(a, QStringLiteral("Slow"));
+    fixture.tabs.addTab(b, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(a);
+    fixture.renderNow();
+    fixture.tabs.setCurrentWidget(b);
+    fixture.renderNow();
+    b->edit(QStringLiteral("# Normal automatic refresh"));
+    QTRY_COMPARE_WITH_TIMEOUT(b->renderCount(), 2, 1000);
+    fixture.tabs.setCurrentWidget(a);
+    QByteArray html;
+    QString source;
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &source));
+    QCOMPARE(a->renderCount(), 1);
+    a->edit(QStringLiteral("# Slow edit after switching back"));
+    QTest::qWait(2200);
+    QCOMPARE(a->renderCount(), 1);
+
+    // Only a genuine fast full render can re-enable automatic refresh.
+    a->setRenderDelayMs(0);
+    QAction *refresh = fixture.action(QStringLiteral("立即刷新"));
+    QVERIFY(refresh);
+    refresh->trigger();
+    QCOMPARE(a->renderCount(), 2);
+    a->edit(QStringLiteral("# Fast again"));
+    QTRY_COMPARE_WITH_TIMEOUT(a->renderCount(), 3, 1000);
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

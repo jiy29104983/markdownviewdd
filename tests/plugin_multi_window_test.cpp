@@ -238,8 +238,9 @@ void PluginMultiWindowTest::repeatedInitializationIsIdempotent()
     PreviewController *controller = fixture.controller();
     QVERIFY(controller);
     const int actionCount = fixture.rootMenu->actions().size();
-    QCOMPARE(controller->findChildren<QTimer *>(
-                 QString(), Qt::FindDirectChildrenOnly).size(), 2);
+    const QList<QTimer *> timers = controller->findChildren<QTimer *>(
+        QString(), Qt::FindDirectChildrenOnly);
+    QVERIFY(!timers.isEmpty());
 
     QCOMPARE(fixture.initialize(), 0);
     QCOMPARE(fixture.controller(), controller);
@@ -247,7 +248,7 @@ void PluginMultiWindowTest::repeatedInitializationIsIdempotent()
     QCOMPARE(fixture.window.findChildren<MarkdownPreviewDock *>(
                  QString(), Qt::FindDirectChildrenOnly).size(), 1);
     QCOMPARE(controller->findChildren<QTimer *>(
-                 QString(), Qt::FindDirectChildrenOnly).size(), 2);
+                 QString(), Qt::FindDirectChildrenOnly), timers);
 }
 
 void PluginMultiWindowTest::closingOneWindowKeepsTheOtherControllerAlive()

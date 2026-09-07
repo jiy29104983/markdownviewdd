@@ -93,7 +93,7 @@ QString exportDiagnosticComment(const QStringList &resources)
         .arg(escapedResources.join(QStringLiteral(", ")));
 }
 
-QByteArray portableHtmlSnapshot(const QTextDocument *document)
+QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *context)
 {
     if (!document) {
         return QByteArray();
@@ -158,12 +158,12 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document)
         const int bodyEnd = html.lastIndexOf(QStringLiteral("</body>"), -1,
                                              Qt::CaseInsensitive);
         html.insert(bodyEnd >= 0 ? bodyEnd : html.size(), comment);
-        Diagnostics::write(this,
+        Diagnostics::write(context,
             QStringLiteral("HTML export kept %1 unavailable local image reference(s): %2")
                 .arg(missingResources.size())
                 .arg(missingResources.join(QStringLiteral(", "))));
     }
-    Diagnostics::write(this,
+    Diagnostics::write(context,
         QStringLiteral("HTML export embedded %1 local image(s), source bytes=%2")
             .arg(replacements.size())
             .arg(embeddedBytes));
@@ -325,6 +325,8 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     if (m_nativePreview != previewWindow) {
         if (m_nativeTextEdit) {
             m_nativeTextEdit->viewport()->removeEventFilter(this);
+            m_nativeTextEdit->verticalScrollBar()->removeEventFilter(this);
+            m_nativeTextEdit->removeEventFilter(this);
         }
         previewWindow->hide();
         previewWindow->setParent(widget(), Qt::Widget);
@@ -333,6 +335,8 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_nativePreview = previewWindow;
         m_nativeTextEdit = textEdit;
         m_nativeTextEdit->viewport()->installEventFilter(this);
+        m_nativeTextEdit->verticalScrollBar()->installEventFilter(this);
+        m_nativeTextEdit->installEventFilter(this);
         m_currentNativePreviewObject = previewWindow;
         connectNativeScrollBar(textEdit->verticalScrollBar());
         trackNativePreview(previewWindow);
@@ -356,6 +360,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
 
 void MarkdownPreviewDock::invalidatePreview()
 {
+    cancelPreservedScroll();
     m_previewEditor = nullptr;
     m_previewContentVersion = 0;
 }
@@ -375,7 +380,7 @@ QByteArray MarkdownPreviewDock::htmlSnapshotFor(
         return QByteArray();
     }
 
-    return portableHtmlSnapshot(m_nativeTextEdit->document());
+    return portableHtmlSnapshot(m_nativeTextEdit->document(), this);
 }
 
 void MarkdownPreviewDock::trackNativePreview(QWidget *previewWindow)
@@ -549,9 +554,11 @@ void MarkdownPreviewDock::refreshDocumentStyle(QWidget *editor,
 
     const double ratio = scrollRatio();
     applyDocumentStyle(m_nativeTextEdit);
+    const quint64 interactionGeneration = m_scrollInteractionGeneration;
     QTimer::singleShot(0, this, [this, editor = QPointer<QWidget>(editor),
-                                 contentVersion, ratio]() {
-        if (hasPreviewFor(editor.data(), contentVersion)) {
+                                 contentVersion, ratio, interactionGeneration]() {
+        if (hasPreviewFor(editor.data(), contentVersion) &&
+            interactionGeneration == m_scrollInteractionGeneration) {
             scrollToRatio(ratio);
         }
     });
@@ -778,6 +785,7 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
     m_nativeScrollConnection = connect(
         scrollBar, &QAbstractSlider::actionTriggered, this,
         [this, scrollBar](int) {
+            cancelPreservedScroll();
             const QPointer<QScrollBar> guardedScrollBar(scrollBar);
             QTimer::singleShot(0, this, [this, guardedScrollBar]() {
                 if (guardedScrollBar) {
@@ -817,8 +825,18 @@ void MarkdownPreviewDock::restorePreservedScrollRatio()
     const int value = bar->minimum() + qRound(
         m_preservedScrollRatio *
         static_cast<double>(bar->maximum() - bar->minimum()));
-    const QSignalBlocker blocker(bar);
     bar->setValue(value);
+}
+
+void MarkdownPreviewDock::cancelPreservedScroll()
+{
+    ++m_scrollInteractionGeneration;
+    m_preservedScrollEditor = nullptr;
+    m_preservedScrollVersion = 0;
+    m_hasPreservedScrollRatio = false;
+    if (m_layoutSyncTimer && m_syncButton && !m_syncButton->isChecked()) {
+        m_layoutSyncTimer->stop();
+    }
 }
 
 void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
@@ -874,6 +892,13 @@ bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
                   event->type() == QEvent::ApplicationPaletteChange ||
                   event->type() == QEvent::StyleChange)) {
         scheduleThemeStyleRefresh();
+    }
+    if (event && m_nativeTextEdit &&
+        (watched == m_nativeTextEdit || watched == m_nativeTextEdit->viewport() ||
+         watched == m_nativeTextEdit->verticalScrollBar()) &&
+        (event->type() == QEvent::MouseButtonPress ||
+         event->type() == QEvent::Wheel || event->type() == QEvent::KeyPress)) {
+        cancelPreservedScroll();
     }
     if (!m_nativeTextEdit || watched != m_nativeTextEdit->viewport()) {
         return QDockWidget::eventFilter(watched, event);
