@@ -160,7 +160,7 @@
 
 ## BUG-005：文件路径变化后预览元数据与资源路径不刷新
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认。
 - **代码位置**：[preview_controller.cpp](../src/preview_controller.cpp) 的
   `pollEditor()`（211）、`attachEditor()`（389）、`currentFilePath()`（546）；
@@ -496,4 +496,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置输出显示缺少 Qt5Config.cmake；测试源码 tests/plugin_multi_window_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主双窗口操作均待复核。Diagnostics::resetLog() 仍会在每次窗口入口截断共享日志，该独立问题按 BUG-016 处理；本单不能仅凭静态检查标记为已关闭。
+```
+
+## BUG-005 交回验证
+
+```text
+单据编号：BUG-005
+状态：修复完成／待验证
+基于的提交：ebdf8f0ab8d1c8838552d18a18e0e29ae0e53c7f
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-002，e71f14f4c067b271711c128259cf4f6e164025bb；BUG-004，9121b4b85b97b621b503ae1ba171d486eba051d0
+修改文件：docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/preview_controller.cpp；src/preview_controller.h；tests/plugin_multi_window_test.cpp；tests/preview_controller_document_identity_test.cpp
+问题复现与根因：静态确认宿主 v3.8.3 在保存、另存为和重命名链路通过编辑器的 filePath 动态属性更新路径；原控制器只在标签切换、渲染或导出时临时读取该属性，同一编辑器仅改变路径而没有文本变化时不会推进内容版本或安排刷新，因此旧预览仍保持旧文件类型、标题、QTextDocument baseUrl 和导出源路径。
+实际修改方案：控制器的应用事件过滤器增加仅针对当前活动编辑器和 filePath 的 DynamicPropertyChange 处理，并缓存已处理路径去重；路径变化推进 BUG-002 内容版本、失效旧预览身份、立即更新标题与导出动作，Dock 可见时沿用防抖刷新，隐藏时由后续显示或导出同步刷新；原生预览重新接入时沿用 adoptNativePreview 在宿主更新前写入新 baseUrl；编辑器切换或销毁时同步替换或清空路径缓存，其他窗口和旧编辑器事件因身份检查被忽略；补充中文／空格目录、md→txt、未命名→md、导出路径和多窗口隔离回归测试。
+相较本单计划的偏差及原因：没有为每个编辑器再安装一层对象事件过滤器，而复用 BUG-004 已存在的应用级事件过滤器并以 watched == m_editor 严格限定当前窗口活动编辑器；这样不会引入重复事件分发，切换或销毁后旧编辑器自然不再匹配。保留 120 ms 轮询用于标签切换兼容兜底，但路径更新不依赖轮询。
+验收标准逐项结果：无需额外键入或切换标签即可更新——DynamicPropertyChange 同步使旧状态失效并安排刷新，测试源码覆盖，运行 blocked；扩展名变化及时改变预览状态——md→txt 立即禁用导出并使旧预览失效，测试源码覆盖，运行 blocked；新目录图片正确——路径刷新前更新 QTextDocument baseUrl，中文／空格新目录断言已加入，运行 blocked；中文／空格路径正常——QTemporaryDir 下中文及空格目录测试源码覆盖，运行 blocked；多窗口只更新自己的状态——独立窗口回归测试验证首窗改为 txt 不影响第二窗导出与渲染，运行 blocked。
+静态检查：passed（git diff --check；宿主 v3.8.3 / 91105f68 的 filePath 属性设置路径复核；仅处理当前编辑器的 DynamicPropertyChange；ABI 与 notepad--/ 未修改）
+自动化测试：blocked（扩展 markdownview_document_identity_tests 和 markdownview_multi_window_tests；cmake -S . -B /tmp/markdownview-bug005-build -DBUILD_TESTING=ON 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 执行重命名、另存目录、未命名保存、中文／空格路径和双窗口路径变化测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug005-build；测试源码 tests/preview_controller_document_identity_test.cpp、tests/plugin_multi_window_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主中的文件重命名／另存为、同名相对图片目录切换、中文／空格路径和多窗口隔离均待复核。跨目录 HTML 导出资源打包仍按 BUG-008 处理；本单不能仅凭静态检查标记为已关闭。
 ```

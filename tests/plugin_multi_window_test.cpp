@@ -177,6 +177,7 @@ private slots:
     void repeatedInitializationIsIdempotent();
     void closingOneWindowKeepsTheOtherControllerAlive();
     void contextMenuBridgeOnlyHandlesItsOwnWindow();
+    void filePathChangeOnlyUpdatesOwningWindow();
 };
 
 void PluginMultiWindowTest::initializesAndOperatesEachHostWindowIndependently()
@@ -339,6 +340,36 @@ void PluginMultiWindowTest::contextMenuBridgeOnlyHandlesItsOwnWindow()
 
     QTRY_COMPARE_WITH_TIMEOUT(second.editor->renderCount(), 1, 1500);
     QCOMPARE(first.editor->renderCount(), 1);
+}
+
+void PluginMultiWindowTest::filePathChangeOnlyUpdatesOwningWindow()
+{
+    HostFixture first(QStringLiteral("First"), QStringLiteral("first.md"),
+                      QStringLiteral("# First path"));
+    HostFixture second(QStringLiteral("Second"), QStringLiteral("second.md"),
+                       QStringLiteral("# Second path"));
+    QCOMPARE(first.initialize(), 0);
+    QCOMPARE(second.initialize(), 0);
+    first.render();
+    second.render();
+
+    QAction *firstExport = first.action(QStringLiteral("导出 HTML…"));
+    QAction *secondExport = second.action(QStringLiteral("导出 HTML…"));
+    QVERIFY(firstExport);
+    QVERIFY(secondExport);
+    QVERIFY(firstExport->isEnabled());
+    QVERIFY(secondExport->isEnabled());
+
+    first.editor->setProperty("filePath", QStringLiteral("renamed.txt"));
+    QTRY_VERIFY_WITH_TIMEOUT(!firstExport->isEnabled(), 1000);
+    QVERIFY(secondExport->isEnabled());
+    QCOMPARE(second.editor->renderCount(), 1);
+
+    QByteArray html;
+    QString path;
+    QVERIFY(second.controller()->currentHtmlSnapshot(&html, &path));
+    QCOMPARE(path, QStringLiteral("second.md"));
+    QVERIFY(html.contains("Second path"));
 }
 
 QTEST_MAIN(PluginMultiWindowTest)

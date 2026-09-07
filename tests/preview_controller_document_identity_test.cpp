@@ -3,13 +3,16 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
+#include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QMainWindow>
 #include <QMenu>
 #include <QScrollBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextEdit>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QtTest>
 
@@ -36,6 +39,11 @@ public:
     {
         m_markdown = markdown;
         emit textChanged();
+    }
+
+    void renameTo(const QString &filePath)
+    {
+        setProperty("filePath", filePath);
     }
 
 signals:
@@ -83,6 +91,7 @@ private slots:
     void rapidSwitchExportUsesCurrentDocument();
     void messageAndMismatchedPreviewCannotBeExported();
     void snapshotWriterHandlesCancelAndAtomicReplacement();
+    void filePathChangeRefreshesTypeMetadataAndResources();
 };
 
 namespace {
@@ -343,6 +352,57 @@ void PreviewControllerDocumentIdentityTest::snapshotWriterHandlesCancelAndAtomic
     QVERIFY(errorMessage.isEmpty());
     QVERIFY(existing.open(QIODevice::ReadOnly));
     QCOMPARE(existing.readAll(), QByteArray("new"));
+}
+
+void PreviewControllerDocumentIdentityTest::filePathChangeRefreshesTypeMetadataAndResources()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QDir root(directory.path());
+    QVERIFY(root.mkpath(QStringLiteral("旧目录")));
+    QVERIFY(root.mkpath(QStringLiteral("新 目录")));
+
+    const QString oldPath = root.filePath(QStringLiteral("旧目录/文档.md"));
+    const QString newPath = root.filePath(QStringLiteral("新 目录/文档.md"));
+
+    Fixture fixture;
+    auto *editor = new QsciScintilla(
+        oldPath, QStringLiteral("![image](same-name.png)"));
+    fixture.tabs.addTab(editor, QStringLiteral("Document"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+
+    QTextEdit *previewTextEdit = fixture.dock()->findChild<QTextEdit *>(
+        QStringLiteral("textEdit"));
+    QVERIFY(previewTextEdit);
+    QCOMPARE(previewTextEdit->document()->baseUrl(),
+             QUrl::fromLocalFile(QFileInfo(oldPath).absolutePath() + QLatin1Char('/')));
+
+    editor->renameTo(newPath);
+    QTRY_COMPARE_WITH_TIMEOUT(editor->renderCount(), 2, 1000);
+    QCOMPARE(previewTextEdit->document()->baseUrl(),
+             QUrl::fromLocalFile(QFileInfo(newPath).absolutePath() + QLatin1Char('/')));
+
+    QByteArray html;
+    QString sourceFilePath;
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &sourceFilePath));
+    QCOMPARE(sourceFilePath, newPath);
+
+    QAction *exportAction = fixture.action(QStringLiteral("导出 HTML…"));
+    QVERIFY(exportAction);
+    QVERIFY(exportAction->isEnabled());
+
+    editor->renameTo(root.filePath(QStringLiteral("新 目录/文档.txt")));
+    QTRY_VERIFY_WITH_TIMEOUT(!exportAction->isEnabled(), 1000);
+    QTRY_VERIFY_WITH_TIMEOUT(!fixture.dock()->hasPreviewFor(editor, 2), 1000);
+
+    editor->renameTo(QString());
+    QTRY_VERIFY_WITH_TIMEOUT(exportAction->isEnabled(), 1000);
+    editor->renameTo(root.filePath(QStringLiteral("新 目录/未命名.md")));
+    QTRY_COMPARE_WITH_TIMEOUT(editor->renderCount(), 3, 1000);
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &sourceFilePath));
+    QCOMPARE(sourceFilePath,
+             root.filePath(QStringLiteral("新 目录/未命名.md")));
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

@@ -52,6 +52,7 @@ private:
     QWidget *resolveCurrentEditor() const;
     void attachEditor(QWidget *editor);
     void synchronizeActiveEditor();
+    void handleFilePathChanged();
     void markPreviewPending();
     bool isPreviewCurrent() const;
     bool renderCurrentDocument(bool allowHiddenDock);
@@ -77,6 +78,7 @@ private:
     bool m_syncScrolling = true;
     int m_lastEditorScrollValue = -1;
     qint64 m_lastRenderDurationMs = 0;
+    QString m_editorFilePath;
     quint64 m_contentVersion = 0;
     quint64 m_renderedVersion = 0;
     PreviewState m_previewState = PreviewState::NoDocument;

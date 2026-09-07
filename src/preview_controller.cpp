@@ -6,6 +6,7 @@
 #include <QAbstractScrollArea>
 #include <QAction>
 #include <QApplication>
+#include <QDynamicPropertyChangeEvent>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QFileInfo>
@@ -29,6 +30,7 @@ constexpr int kRenderDurationMultiplier = 3;
 constexpr auto kNativePreviewProperty = "_markdownview_native_preview";
 constexpr auto kNativePreviewOwnerHook = "_markdownview_owner_hook";
 constexpr auto kContextActionBridge = "_markdownview_sidebar_bridge";
+constexpr auto kFilePathProperty = "filePath";
 }
 
 PreviewController::PreviewController(QWidget *notepad)
@@ -143,6 +145,14 @@ bool PreviewController::installMenu(QMenu *rootMenu)
 
 bool PreviewController::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event && event->type() == QEvent::DynamicPropertyChange &&
+        watched == m_editor) {
+        auto *propertyEvent = static_cast<QDynamicPropertyChangeEvent *>(event);
+        if (propertyEvent->propertyName() == QByteArray(kFilePathProperty)) {
+            handleFilePathChanged();
+        }
+    }
+
     if (event && event->type() == QEvent::Show) {
         QMenu *menu = qobject_cast<QMenu *>(watched);
         QWidget *current = resolveCurrentEditor();
@@ -489,6 +499,7 @@ void PreviewController::attachEditor(QWidget *editor)
     }
 
     m_editor = editor;
+    m_editorFilePath = currentFilePath();
     ++m_contentVersion;
     m_previewEditor = nullptr;
     m_renderedVersion = 0;
@@ -510,6 +521,7 @@ void PreviewController::attachEditor(QWidget *editor)
                                .arg(static_cast<bool>(textChangedConnection)));
         connect(m_editor, &QObject::destroyed, this, [this]() {
             m_editor = nullptr;
+            m_editorFilePath.clear();
             ++m_contentVersion;
             m_previewEditor = nullptr;
             m_renderedVersion = 0;
@@ -526,6 +538,29 @@ void PreviewController::attachEditor(QWidget *editor)
         }
     }
     updateExportActionState();
+}
+
+void PreviewController::handleFilePathChanged()
+{
+    if (!m_editor) {
+        return;
+    }
+
+    const QString filePath = currentFilePath();
+    if (filePath == m_editorFilePath) {
+        return;
+    }
+
+    Diagnostics::write(QStringLiteral("editor filePath changed: %1 -> %2")
+                           .arg(m_editorFilePath, filePath));
+    m_editorFilePath = filePath;
+    markPreviewPending();
+    if (m_dock) {
+        m_dock->setDocumentInfo(filePath, -1);
+    }
+    if (m_dock && m_dock->isVisible()) {
+        scheduleRender();
+    }
 }
 
 void PreviewController::synchronizeActiveEditor()
@@ -707,7 +742,7 @@ void PreviewController::updateSynchronizedScroll()
 
 QString PreviewController::currentFilePath() const
 {
-    return m_editor ? m_editor->property("filePath").toString() : QString();
+    return m_editor ? m_editor->property(kFilePathProperty).toString() : QString();
 }
 
 bool PreviewController::isMarkdownDocument(const QString &filePath) const

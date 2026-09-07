@@ -359,3 +359,79 @@ Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实
 两个窗口分别预览／刷新／导出、快捷键作用域、关闭任一窗口和重复入口均待复核。
 `Diagnostics::resetLog()` 仍在每次窗口入口清空共享日志，该独立问题按 BUG-016 处理；后续复核
 不能仅凭静态检查关闭 BUG-004。
+
+## BUG-005：文件路径变化后预览元数据与资源路径不刷新
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`ebdf8f0ab8d1c8838552d18a18e0e29ae0e53c7f`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-002，`e71f14f4c067b271711c128259cf4f6e164025bb`；BUG-004，`9121b4b85b97b621b503ae1ba171d486eba051d0`
+- **修改文件**：
+  - `docs/architecture.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `src/preview_controller.cpp`
+  - `src/preview_controller.h`
+  - `tests/plugin_multi_window_test.cpp`
+  - `tests/preview_controller_document_identity_test.cpp`
+
+### 问题核实与根因
+
+静态核实 notepad-- v3.8.3 在保存、另存为和重命名链路通过编辑器的 `filePath` 动态属性
+更新路径。原控制器只在标签切换、渲染或导出时临时读取该属性；同一编辑器仅改变路径且没有
+文本变化时，不会推进内容版本或安排刷新，因此旧预览继续保留旧文件类型、标题、
+`QTextDocument::baseUrl` 和导出源路径。
+
+### 实际修改方案
+
+复用控制器已有的应用事件过滤器，只处理 `watched == m_editor` 且属性名为 `filePath` 的
+`DynamicPropertyChange`。控制器缓存已处理路径用于去重；路径改变时推进 BUG-002 的内容版本、
+失效旧预览身份、立即更新文档标签和导出动作。Dock 可见时沿用现有防抖刷新，隐藏时在下次
+显示或 BUG-003 导出快照前同步刷新。原生预览重新接入时，`adoptNativePreview()` 会在调用宿主
+更新内容前把新目录写入 `QTextDocument::baseUrl`。
+
+切换编辑器时路径缓存随活动编辑器一起替换，编辑器销毁时清空。事件处理严格核对当前编辑器
+身份，因此已解绑编辑器和其他宿主窗口的属性变化不会影响本窗口状态。扩展现有两组 Qt Test，
+覆盖中文／空格目录、同编辑器 md→txt、未命名→md、导出源路径和多窗口隔离。
+
+### 相较计划的偏差
+
+没有再为每个编辑器安装对象级事件过滤器，而是复用 BUG-004 已存在的应用级过滤器并用编辑器
+身份严格限定，以免同一事件被重复分发。保留 120 ms 轮询用于标签切换兼容兜底，但本次路径
+更新不依赖轮询。
+
+### 验收标准逐项结果
+
+1. **无需额外键入或切换即可更新**：动态属性事件同步失效旧状态并安排刷新；测试运行 `blocked`。
+2. **扩展名变化及时改变预览状态**：md→txt 立即禁用导出并使旧预览失效；测试运行 `blocked`。
+3. **新目录图片正确**：刷新前更新文档 `baseUrl`，中文／空格新目录断言已加入；测试运行 `blocked`。
+4. **中文／空格路径正常**：临时目录下中文及空格路径测试源码已覆盖；测试运行 `blocked`。
+5. **多窗口只更新自己的状态**：首窗路径变化不影响第二窗导出状态、快照和渲染计数；测试运行 `blocked`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check` 通过；复核宿主 v3.8.3 固定提交中的 `filePath` 属性设置；ABI 与 `notepad--/` 未修改 |
+| 自动化测试 | `blocked` | 扩展两组 Qt Test；CMake 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 配置失败 |
+| Windows Release 编译 | `blocked` | 当前为 Linux 环境，没有 Qt 5.15.2 和 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或打包 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 中执行重命名、另存目录、未命名保存、中文／空格路径和双窗口测试 |
+
+### 实际环境
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake 配置目录**：`/tmp/markdownview-bug005-build`
+- **测试源码**：`tests/preview_controller_document_identity_test.cpp`、`tests/plugin_multi_window_test.cpp`
+- **截图或二进制报告**：未生成
+
+### 未验证项与已知限制
+
+Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实宿主中的文件重命名／另存为、
+同名相对图片目录切换、中文／空格路径和多窗口隔离均待复核。跨目录 HTML 导出资源打包仍按
+BUG-008 处理；后续复核不能仅凭静态检查关闭 BUG-005。
