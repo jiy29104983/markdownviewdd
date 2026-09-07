@@ -265,7 +265,7 @@
 
 ## BUG-010：发布重跑覆盖已公开 Release 附件
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认。
 - **代码位置**：[windows-release.yml](../.github/workflows/windows-release.yml) 的
   `Create or update GitHub Release` 步骤，约 192～198 行；
@@ -611,4 +611,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug009-build；测试源码 tests/markdown_preview_dock_lifecycle_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact、真实宿主明暗主题视觉、嵌入 HTML 细节及前后截图均待复核。支持范围限于 Qt QTextDocument 可表达的标题、引用、代码、表格、链接和控件 palette，不等价于完整浏览器 CSS；后续 BUG-011 仍需单独测量大文档格式遍历与总体渲染耗时。
+```
+
+## BUG-010 交回验证
+
+```text
+单据编号：BUG-010
+状态：修复完成／待验证
+基于的提交：559d64b4b28efe227af5241ae44935ff80ec4d09
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：无；本单为独立发布流程修复
+修改文件：.github/workflows/windows-release.yml；docs/releasing.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；scripts/publish-release-assets.sh；tests/release_publish_test.sh
+问题复现与根因：静态确认原发布步骤在 gh release view 成功时无条件执行 gh release upload --clobber，使同一公开标签下重新构建的 ZIP 和 SHA256 可覆盖既有内容；同时将 view 的所有非零退出都当作 Release 不存在，网络、权限或限流错误会错误进入创建分支。
+实际修改方案：将发布判定提取为 scripts/publish-release-assets.sh。脚本通过 GitHub API 查询标签 Release：仅明确 HTTP 404 时创建；其他查询错误直接失败。Release 已存在时按文件名查找附件，下载已有附件并逐字节 cmp；内容相同则跳过，缺失附件只在所有已有同名附件一致后无 --clobber 补传，内容不同或同名结果不唯一则失败。release job 增加只读 checkout 以取得脚本，保留原标签版本校验、GITHUB_TOKEN contents:write、ZIP/SHA256 生成和上传 Artifact 逻辑。发布手册同步说明公开附件不可变和缺失附件恢复策略。
+相较本单计划的偏差及原因：没有操作隔离测试仓库或真实 GitHub Release，改用可重复的 mock gh 自动化测试覆盖不存在、完整相同、附件缺失、内容冲突和查询错误，避免修改生产 Release。附件一致性采用逐字节比较而非只信任远端名称或本地 SHA256 文件，可同时约束 ZIP 与校验文件本身。
+验收标准逐项结果：不同附件不能覆盖同一公开版本——冲突场景测试确认脚本在 upload/create 前失败，passed；相同结果可幂等执行——两个附件相同时均跳过且不调用发布写操作，passed；查询错误不进入创建分支——HTTP 403 模拟失败且无 release create，只有 HTTP 404 创建，passed；附件缺失恢复——先验证已有 ZIP 一致，再只上传缺失 SHA256 且命令不含 --clobber，passed；版本校验、权限范围和校验文件生成逻辑——原工作流对应步骤与 contents:write 保留，静态 passed。
+静态检查：passed（git diff --check；bash -n scripts/publish-release-assets.sh tests/release_publish_test.sh；工作流发布权限、版本校验、打包与 SHA256 路径复核）
+自动化测试：passed（./tests/release_publish_test.sh；mock gh 覆盖 Release 不存在、完整相同、附件缺失、内容冲突、HTTP 403 查询错误）
+Windows Release 编译：not run（本单仅修改发布编排、脚本、测试和文档，不修改 DLL 源码；未触发 GitHub Actions）
+Artifact 校验：not run（未生成或下载真实 GitHub Artifact；mock 资产仅用于发布判定测试）
+真实宿主测试：not verified（与本单发布脚本无关，不重复执行 notepad-- 功能测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt／MSVC／notepad-- 不适用；Linux x86_64，GNU bash，mock gh
+日志、截图或测试报告位置：tests/release_publish_test.sh 的终端输出 release publishing tests: passed；未生成持久日志或截图
+未验证项与已知限制：尚未在隔离 GitHub 仓库或真实标签 workflow rerun 中验证 gh API 的在线权限、附件下载响应和竞态行为；未触发 windows-2022 Release 构建，也未修改、覆盖或修复任何现有生产 Release。后续复核不能只凭本地 mock 测试将本单标记为已关闭。
 ```

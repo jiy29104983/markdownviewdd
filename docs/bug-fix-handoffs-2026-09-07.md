@@ -748,3 +748,70 @@ Markdown 字符与块格式。复用原生预览时，原实现又在 `on_updata
 Qt Test 尚未实际编译运行。Windows Release DLL、Artifact、真实宿主明暗主题视觉、嵌入 HTML
 细节与前后截图均待复核。支持范围不等价于完整浏览器 CSS；后续 BUG-011 仍需单独测量大文档
 格式遍历和总体渲染耗时，不能仅凭静态检查关闭 BUG-009。
+
+## BUG-010：发布重跑覆盖已公开 Release 附件
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`559d64b4b28efe227af5241ae44935ff80ec4d09`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：无；本单为独立发布流程修复
+- **修改文件**：
+  - `.github/workflows/windows-release.yml`
+  - `docs/releasing.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `scripts/publish-release-assets.sh`
+  - `tests/release_publish_test.sh`
+
+### 问题核实与根因
+
+原发布步骤以 `gh release view` 的布尔结果决定上传或创建。查询成功时直接执行
+`gh release upload --clobber`，所以同一公开标签的重跑可用重新构建的 ZIP 和 SHA256 覆盖
+已公开附件；查询失败时不区分 HTTP 404、权限、网络或限流，任何错误都进入创建分支。
+
+### 实际修改方案
+
+新增独立发布脚本，通过 GitHub API 查询标签 Release。只有明确 HTTP 404 才调用
+`gh release create`，其他查询错误原样报告并失败。Release 已存在时，脚本按准确文件名定位
+附件，通过资产 API 下载已有内容并使用 `cmp` 逐字节比较：内容一致则跳过，缺失附件在所有
+已有同名附件验证一致后仅补传缺失文件，内容不同或同名附件结果不唯一则拒绝修改。所有上传
+都不使用 `--clobber`，并保留竞态发生时由 GitHub 拒绝同名上传的安全失败语义。
+
+release job 增加固定 SHA 的 `actions/checkout`，用于取得仓库脚本；原版本一致性校验、
+`contents: write` 最小发布权限、ZIP/SHA256 生成和 Artifact 传递均保留。发布手册新增公开附件
+不可变规则，以及完整相同、部分缺失、内容冲突和查询错误的处理说明。
+
+### 相较计划的偏差
+
+没有在真实或隔离 GitHub 仓库改动 Release，而是用 mock `gh` 覆盖五类行为，避免以生产附件
+验证破坏性场景。内容判定使用逐字节比较，不仅校验 ZIP，也校验 SHA256 文件本身；这比只比较
+文件名或相信校验文件更严格。
+
+### 验收标准逐项结果
+
+1. **不同附件不能覆盖同一公开版本**：冲突测试确认在任何发布写调用前失败；`passed`。
+2. **相同结果可幂等执行**：完整相同场景逐一跳过附件且不调用 upload/create；`passed`。
+3. **查询错误不进入创建分支**：HTTP 403 模拟直接失败，HTTP 404 才创建；`passed`。
+4. **附件缺失有明确恢复策略**：已有 ZIP 一致后只上传缺失 SHA256，且无 `--clobber`；
+   自动化 `passed`，真实 GitHub `not verified`。
+5. **保留既有发布约束**：版本校验、`contents: write`、ZIP 与 SHA256 生成逻辑未移除；
+   静态 `passed`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check`；两个 shell 文件 `bash -n`；复核版本校验、权限、打包、SHA256 与 Artifact 路径均保留 |
+| 自动化测试 | `passed` | `./tests/release_publish_test.sh`；覆盖不存在、完整相同、缺失、冲突、HTTP 403 查询错误 |
+| Windows Release 编译 | `not run` | 本单不修改 DLL 源码，且未触发 GitHub Actions |
+| Artifact 校验 | `not run` | 未生成或下载真实 Artifact；测试使用临时 mock 资产 |
+| 真实宿主测试 | `not verified` | 发布脚本修改与 notepad-- 预览行为无关 |
+
+### 实际环境与未验证项
+
+验证环境为 Linux x86_64、GNU bash、`jq`、`cmp` 和 mock `gh`；Qt、MSVC、notepad-- 均不适用。
+测试终端结果为 `release publishing tests: passed`，未生成持久日志或截图。尚未在隔离 GitHub
+仓库或真实标签 workflow rerun 中验证在线 API 权限、附件二进制下载响应及并发竞态，也未修改
+任何现有生产 Release。后续复核不能只凭本地 mock 测试关闭 BUG-010。
