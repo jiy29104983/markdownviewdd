@@ -61,14 +61,26 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $BashCommand = Get-Command "bash.exe" -ErrorAction SilentlyContinue
-if (-not $BashCommand) {
+$BashExe = if ($BashCommand) { $BashCommand.Source } else { $null }
+if (-not $BashExe) {
+    $BashCandidates = @(
+        (Join-Path $env:ProgramFiles "Git\bin\bash.exe"),
+        (Join-Path $env:ProgramFiles "Git\usr\bin\bash.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Git\bin\bash.exe"),
+        (Join-Path ${env:ProgramFiles(x86)} "Git\usr\bin\bash.exe")
+    )
+    $BashExe = $BashCandidates |
+        Where-Object { $_ -and (Test-Path $_ -PathType Leaf) } |
+        Select-Object -First 1
+}
+if (-not $BashExe) {
     throw "bash.exe was not found. Git for Windows is required to run the isolated release publishing tests."
 }
 
 Write-Host "Running isolated release publishing tests..."
 Push-Location $ProjectRoot
 try {
-    & $BashCommand.Source "./tests/release_publish_test.sh"
+    & $BashExe "./tests/release_publish_test.sh"
     if ($LASTEXITCODE -ne 0) {
         throw "Release publishing tests failed with exit code $LASTEXITCODE"
     }
