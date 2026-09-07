@@ -96,12 +96,33 @@ jobs:
               -Toolset "v142" `
               -Clean
 
-      - name: Run regression test suite
+      - name: Run lifecycle regression tests
         shell: pwsh
         run: |
-          & ".\scripts\run-regression-tests.ps1" `
-              -QtRoot $env:QT_ROOT_DIR `
-              -SkipBuild
+          $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
+          ctest --test-dir build -C Release -L lifecycle --output-on-failure --no-tests=error
+
+      - name: Run document regression tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
+          ctest --test-dir build -C Release -L document --output-on-failure --no-tests=error
+
+      - name: Run multi-window regression tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
+          ctest --test-dir build -C Release -L multi-window --output-on-failure --no-tests=error
+
+      - name: Run diagnostics regression tests
+        shell: pwsh
+        run: |
+          $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
+          ctest --test-dir build -C Release -L diagnostics --output-on-failure --no-tests=error
+
+      - name: Run release publishing tests
+        shell: bash
+        run: ./tests/release_publish_test.sh
 
       - name: Package plugin
         id: package
