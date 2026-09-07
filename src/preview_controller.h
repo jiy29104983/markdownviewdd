@@ -13,13 +13,15 @@ class MarkdownPreviewDock;
 class QMainWindow;
 class QMenu;
 class QTimer;
+class HostAdapter;
 
 class PreviewController final : public QObject
 {
     Q_OBJECT
 
 public:
-    explicit PreviewController(QWidget *notepad);
+    explicit PreviewController(QWidget *notepad, HostAdapter *hostAdapter = nullptr);
+    ~PreviewController() override;
 
     bool installMenu(QMenu *rootMenu);
     bool currentHtmlSnapshot(QByteArray *html, QString *sourceFilePath);
@@ -62,7 +64,6 @@ private:
     bool renderCurrentDocument(bool allowHiddenDock,
                                bool forceHostUpdate = false);
     void updateExportActionState();
-    QWidget *nativePreviewForEditor() const;
     bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview(bool forceHostUpdate);
     void updateSynchronizedScroll();
@@ -70,6 +71,8 @@ private:
     bool isMarkdownDocument(const QString &filePath) const;
 
     QPointer<QWidget> m_notepad;
+    HostAdapter *m_hostAdapter = nullptr;
+    bool m_ownsHostAdapter = false;
     QPointer<QMainWindow> m_mainWindow;
     QPointer<QWidget> m_editor;
     QPointer<QWidget> m_previewEditor;
@@ -85,6 +88,7 @@ private:
     qint64 m_lastRenderDurationMs = 0;
     bool m_manualRefreshOnly = false;
     QString m_editorFilePath;
+    QString m_lastHostError;
     quint64 m_contentVersion = 0;
     quint64 m_renderedVersion = 0;
     PreviewState m_previewState = PreviewState::NoDocument;

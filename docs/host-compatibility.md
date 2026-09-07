@@ -52,6 +52,11 @@ notepad-- v3.8.3 会为每个 `CCNotePad` 窗口分别加载插件菜单并调�
 发布 DLL 还必须匹配宿主的 CPU 架构、MSVC 工具链和运行库、Qt 主次版本，以及插件
 依赖的窗口对象名和元对象槽。当前目标为 x64、Qt 5.15.2 和 MSVC v142。
 
+这些宿主专用约定集中在 `src/host_adapter.cpp`：`editTabWidget`、`filePath`、
+`MarkdownViewClass`、`textEdit`、`on_viewMarkdown`、`on_updataMarkdown`，以及宿主原生
+预览的连接和所有权协作。控制器和 Dock 不应重新直接探测这些名称。升级宿主基线时优先修改
+并验证默认适配器；适配器返回的失败原因必须保留到诊断记录，不能静默退回另一套状态来源。
+
 ## 验证与基线更新
 
 兼容性结论应分别记录以下证据，不得互相替代：

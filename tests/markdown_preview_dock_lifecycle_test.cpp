@@ -53,7 +53,8 @@ void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback
     MarkdownPreviewDock dock;
     QWidget *preview = createNativePreview();
     QWidget editor;
-    QVERIFY(dock.adoptNativePreview(preview, QStringLiteral("document.md"),
+    QVERIFY(dock.adoptNativePreview(preview, preview->findChild<QTextEdit *>(),
+                                    QStringLiteral("document.md"),
                                     &editor, 1));
 
     QTextBrowser *browser = dock.findChild<QTextBrowser *>(
@@ -73,9 +74,11 @@ void MarkdownPreviewDockLifecycleTest::hiddenPreviewDestructionKeepsCurrentPrevi
     QWidget *secondPreview = createNativePreview();
     QWidget firstEditor;
     QWidget secondEditor;
-    QVERIFY(dock.adoptNativePreview(firstPreview, QStringLiteral("first.md"),
+    QVERIFY(dock.adoptNativePreview(firstPreview, firstPreview->findChild<QTextEdit *>(),
+                                    QStringLiteral("first.md"),
                                     &firstEditor, 1));
-    QVERIFY(dock.adoptNativePreview(secondPreview, QStringLiteral("second.md"),
+    QVERIFY(dock.adoptNativePreview(secondPreview, secondPreview->findChild<QTextEdit *>(),
+                                    QStringLiteral("second.md"),
                                     &secondEditor, 2));
 
     QTextBrowser *browser = dock.findChild<QTextBrowser *>(
@@ -97,9 +100,11 @@ void MarkdownPreviewDockLifecycleTest::dockDestructionDisconnectsAllPreviewCallb
     QPointer<QWidget> secondPreview = createNativePreview();
     QWidget firstEditor;
     QWidget secondEditor;
-    QVERIFY(dock->adoptNativePreview(firstPreview, QStringLiteral("first.md"),
+    QVERIFY(dock->adoptNativePreview(firstPreview, firstPreview->findChild<QTextEdit *>(),
+                                     QStringLiteral("first.md"),
                                      &firstEditor, 1));
-    QVERIFY(dock->adoptNativePreview(secondPreview, QStringLiteral("second.md"),
+    QVERIFY(dock->adoptNativePreview(secondPreview, secondPreview->findChild<QTextEdit *>(),
+                                     QStringLiteral("second.md"),
                                      &secondEditor, 2));
 
     delete dock;
@@ -115,7 +120,8 @@ void MarkdownPreviewDockLifecycleTest::editorDestructionDeleteLaterIsSafe()
     auto *dock = new MarkdownPreviewDock;
     QPointer<QWidget> preview = createNativePreview();
     QWidget editor;
-    QVERIFY(dock->adoptNativePreview(preview, QStringLiteral("document.md"),
+    QVERIFY(dock->adoptNativePreview(preview, preview->findChild<QTextEdit *>(),
+                                     QStringLiteral("document.md"),
                                      &editor, 1));
     connect(editorOwner, &QObject::destroyed, preview.data(), &QObject::deleteLater);
 
@@ -137,7 +143,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
         "<p><a href=\"https://example.com/path\">External</a></p>"
         "<p><a href=\"guide/next.md\">Relative</a></p>"));
     QVERIFY(dock.adoptNativePreview(
-        preview, QStringLiteral("/tmp/docs/current.md"), &editor, 1));
+        preview, textEdit, QStringLiteral("/tmp/docs/current.md"), &editor, 1));
     dock.resize(600, 400);
     dock.show();
     QTest::qWait(1);
@@ -177,7 +183,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewScrollsToAnchors()
     html += QStringLiteral("<a name=\"target\"></a><h2>Target</h2>");
     textEdit->setHtml(html);
     QVERIFY(dock.adoptNativePreview(
-        preview, QStringLiteral("/tmp/current.md"), &editor, 1));
+        preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 1));
     dock.resize(500, 250);
     dock.show();
     QTest::qWait(1);
@@ -223,7 +229,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewSelectionDoesNotOpenLink()
     textEdit->setHtml(QStringLiteral(
         "<p><a href=\"https://example.com\">Selectable link text</a></p>"));
     QVERIFY(dock.adoptNativePreview(
-        preview, QStringLiteral("/tmp/current.md"), &editor, 1));
+        preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 1));
     dock.resize(600, 300);
     dock.show();
     QTest::qWait(1);
@@ -261,7 +267,7 @@ void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsLocalImagesWithoutChang
     QWidget editor;
     QTextEdit *textEdit = preview->findChild<QTextEdit *>(QStringLiteral("textEdit"));
     QVERIFY(textEdit);
-    QVERIFY(dock.adoptNativePreview(preview, markdownPath, &editor, 1));
+    QVERIFY(dock.adoptNativePreview(preview, textEdit, markdownPath, &editor, 1));
     textEdit->setHtml(QStringLiteral(
         "<p><img src=\"图片 目录/示例.png\"></p>"
         "<p><img src=\"missing.png\"></p>"
@@ -299,7 +305,7 @@ void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChan
         "# Heading\n\n> Quote\n\n`inline` and [link](https://example.com)\n\n"
         "```cpp\nint value = 1;\n```\n\n| A | B |\n| - | - |\n| 1 | 2 |"));
     QVERIFY(dock.adoptNativePreview(
-        preview, QStringLiteral("/tmp/current.md"), &editor, 9));
+        preview, textEdit, QStringLiteral("/tmp/current.md"), &editor, 9));
     dock.resize(600, 260);
     dock.show();
     QTest::qWait(1);

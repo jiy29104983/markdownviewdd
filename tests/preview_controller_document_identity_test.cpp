@@ -1,4 +1,5 @@
 #include "markdown_preview_dock.h"
+#include "host_adapter.h"
 #include "preview_controller.h"
 
 #include <QAbstractScrollArea>
@@ -129,6 +130,65 @@ private slots:
     void switchingBackReusesUnchangedNativePreview();
     void largeFileDefersAutomaticRefreshUntilManualRequest();
     void slowRenderEnablesManualRefreshPolicy();
+    void injectedHostAdapterAvoidsHostObjectNameAssumptions();
+};
+
+class TestHostAdapter final : public HostAdapter
+{
+public:
+    explicit TestHostAdapter(QWidget *editor)
+        : m_editor(editor)
+    {
+    }
+
+    QWidget *currentEditor() const override { return m_editor; }
+    QString filePath(QWidget *) const override
+    {
+        return QStringLiteral("/virtual/injected.md");
+    }
+    bool isFilePathChangeEvent(QEvent *) const override { return false; }
+    bool isEditorContextMenu(QMenu *, QWidget *) const override { return false; }
+    bool isMarkdownContextAction(QAction *) const override { return false; }
+    bool bridgeMarkdownContextAction(QAction *, QWidget *) override { return false; }
+    PreviewResult ensurePreview(QWidget *editor) override
+    {
+        PreviewResult result;
+        if (editor != m_editor) {
+            result.error = QStringLiteral("unexpected editor");
+            return result;
+        }
+        if (!m_preview) {
+            m_preview = new QWidget(editor);
+            auto *layout = new QVBoxLayout(m_preview);
+            m_textEdit = new QTextEdit(m_preview);
+            layout->addWidget(m_textEdit);
+            m_textEdit->setMarkdown(QStringLiteral("# Injected adapter"));
+            result.created = true;
+        }
+        result.window = m_preview;
+        result.textEdit = m_textEdit;
+        return result;
+    }
+    bool refreshPreview(QWidget *, qint64 *durationMs, QString *) override
+    {
+        if (durationMs) {
+            *durationMs = 0;
+        }
+        ++m_refreshCount;
+        return true;
+    }
+    bool disconnectImmediateRefresh(QWidget *, bool) override { return false; }
+    bool previewIsCurrent(QWidget *) const override { return m_current; }
+    void setPreviewCurrent(QWidget *, bool current) override { m_current = current; }
+
+    int refreshCount() const { return m_refreshCount; }
+
+private:
+    QWidget *m_editor = nullptr;
+    QWidget *m_preview = nullptr;
+    QTextEdit *m_textEdit = nullptr;
+    int m_refreshCount = 0;
+    bool m_current = false;
 };
 
 namespace {
@@ -608,6 +668,30 @@ void PreviewControllerDocumentIdentityTest::slowRenderEnablesManualRefreshPolicy
     QVERIFY(refreshAction);
     refreshAction->trigger();
     QCOMPARE(editor->renderCount(), 2);
+}
+
+void PreviewControllerDocumentIdentityTest::injectedHostAdapterAvoidsHostObjectNameAssumptions()
+{
+    QMainWindow window;
+    auto *editor = new QWidget(&window);
+    window.setCentralWidget(editor);
+    TestHostAdapter adapter(editor);
+    PreviewController controller(&window, &adapter);
+    QMenu menu(&window);
+    QVERIFY(controller.installMenu(&menu));
+    MarkdownPreviewDock *dock = window.findChild<MarkdownPreviewDock *>();
+    QVERIFY(dock);
+    dock->show();
+    QCoreApplication::processEvents();
+    QVERIFY(QMetaObject::invokeMethod(&controller, "renderNow",
+                                     Qt::DirectConnection));
+
+    QByteArray html;
+    QString sourcePath;
+    QVERIFY(controller.currentHtmlSnapshot(&html, &sourcePath));
+    QVERIFY(html.contains("Injected adapter"));
+    QCOMPARE(sourcePath, QStringLiteral("/virtual/injected.md"));
+    QCOMPARE(adapter.refreshCount(), 0);
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

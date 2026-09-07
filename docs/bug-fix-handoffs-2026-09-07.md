@@ -1009,3 +1009,84 @@ Qt 链接测试继续使用注入的 URL opener，不启动真实外部程序。
 云端验证。真实 notepad-- x64 的销毁、多窗口、快速切换、路径变化、导出、相对图片、链接、
 主题、滚动及大文档性能仍需按 `docs/testing.md` 单独复核。模拟宿主测试不能证明真实 ABI 或
 宿主窗口结构兼容性，因此本单保持“修复完成／待验证”。
+
+## BUG-013：宿主适配散落在控制器和 Dock 中
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`33df2f127aa7276ba9f2b3adf417c84540088955`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-012 `33df2f127aa7276ba9f2b3adf417c84540088955`
+- **修改文件**：`CMakeLists.txt`、`markdownview.pro`、`docs/architecture.md`、
+  `docs/host-compatibility.md`、`docs/bug-backlog-2026-09-07.md`、
+  `docs/bug-fix-handoffs-2026-09-07.md`、`src/host_adapter.cpp`、
+  `src/host_adapter.h`、`src/markdown_preview_dock.cpp`、
+  `src/markdown_preview_dock.h`、`src/preview_controller.cpp`、
+  `src/preview_controller.h`、`tests/markdown_preview_dock_lifecycle_test.cpp`、
+  `tests/preview_controller_document_identity_test.cpp`
+
+### 问题核实与根因
+
+静态核实确认，控制器直接查找 `editTabWidget`、读取 `filePath`、识别右键 Markdown 动作、
+查找和缓存 `MarkdownViewClass`、调用 `on_viewMarkdown`／`on_updataMarkdown` 并断开宿主即时
+刷新连接；Dock 又自行查找原生预览的 `textEdit`，并了解宿主窗口中菜单栏、状态栏和工具栏的
+裁剪方式。这些名称、动态属性、连接和窗口结构假设分散在调度层与展示层。该问题属于架构
+改进，未声称已经在真实宿主中导致故障。
+
+### 实际修改方案
+
+新增可注入的 `HostAdapter` 接口及 notepad-- 默认实现。默认实现集中当前编辑器解析、路径读取
+与变化事件识别、右键动作识别和宿主连接移除、原生预览创建／刷新、预览内部文本控件解析、
+窗口装饰隐藏、即时刷新断连及编辑器／预览所有权协作。预览探测使用 `PreviewResult` 返回窗口、
+文本控件、是否新建、耗时和明确错误；刷新也返回耗时和错误。控制器只负责状态、版本、调度、
+菜单和滚动编排，并在失败时展示适配器错误；Dock 只接收已经解析的窗口和 `QTextEdit`，不再
+查找任何宿主对象名或裁剪宿主窗口结构。
+
+增加注入适配器测试源码：测试宿主没有 `editTabWidget`、`MarkdownViewClass`、`textEdit` 对象名
+或宿主 Markdown 槽，仍可通过替换适配器完成首次渲染和 HTML 快照，证明控制器行为可脱离
+notepad-- 结构测试。既有测试改为显式把已解析的 `QTextEdit` 交给 Dock。
+
+### 相较计划的偏差
+
+未把滚动条访问、文件扩展名判断或 Dock 的展示辅助函数拆成更多类，因为它们不是宿主专用
+能力；保持最小适配层，避免在 BUG-014、BUG-015 前引入额外框架。适配器为普通 C++ 接口，
+默认实例由控制器拥有，测试注入实例由调用方拥有；未修改插件入口 ABI 或宿主回调类型。
+
+### 验收标准逐项结果
+
+1. **宿主专用对象名和槽调用集中可查**：静态扫描确认 `editTabWidget`、`filePath`、
+   `MarkdownViewClass`、`textEdit`、`on_viewMarkdown`、`on_updataMarkdown` 及插件宿主动态属性
+   只在 `src/host_adapter.cpp` 定义和使用，`passed`。
+2. **控制器不再散布兼容性探测**：控制器仅调用 `HostAdapter` 接口，Dock 接收解析结果；
+   架构与兼容性文档已同步，静态 `passed`。
+3. **单元测试可替换适配层**：新增 `TestHostAdapter` 和无宿主对象名测试源码，静态
+   `passed`；Qt Test 实际运行因环境缺 Qt 而 `blocked`。
+4. **真实基线宿主功能不退化**：默认适配器保留原对象名、槽调用、连接及所有权语义；既有
+   BUG-012 回归源码继续编入相同测试目标，静态 `passed`；真实 notepad-- 功能 `not verified`。
+5. **ABI 和静态 QScintilla 边界不变**：`src/ndd_plugin_api.h`、`src/plugin_exports.cpp` 和
+   `notepad--/` 未修改；插件仍仅通过 Qt 元对象和 QWidget 边界访问宿主，`passed`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check`；宿主名称集中扫描；BUG-012 祖先关系；notepad-- v3.8.3 / `91105f68` 基线核对；CMake/qmake 源文件清单；ABI、导出入口和宿主参考目录未修改 |
+| 自动化测试 | `partial` | `./tests/release_publish_test.sh` passed；Qt Test 配置因缺少 `Qt5Config.cmake` blocked；新增注入适配器回归源码未运行 |
+| Windows Release 编译 | `blocked` | 当前 Linux 环境没有 Qt 5.15.2、MSVC v142 和 Windows runner |
+| Artifact 校验 | `not run` | 未生成 DLL、ZIP、SHA256 或 GitHub Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- v3.8.3 x64 检查菜单、预览、刷新、导出、多窗口、主题和滚动回归 |
+
+### 实际环境与未验证项
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake 配置目录**：`/tmp/markdownview-bug013-build`
+- **可用测试输出**：`release publishing tests: passed`
+- **新增测试源码**：`tests/preview_controller_document_identity_test.cpp`
+
+三个 Qt Test 尚未编译运行；Windows Release DLL、Artifact 和真实宿主回归均未验证。默认
+适配器仍有意绑定 notepad-- v3.8.3 的对象名、动态属性和槽名称，宿主升级时必须按兼容性文档
+重新验证；可注入模拟测试只证明控制器与适配边界，不证明真实 ABI 或窗口结构兼容性。

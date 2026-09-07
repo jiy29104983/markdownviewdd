@@ -8,12 +8,14 @@ INCLUDEPATH += \
 
 SOURCES += \
     src/diagnostics.cpp \
+    src/host_adapter.cpp \
     src/markdown_preview_dock.cpp \
     src/plugin_exports.cpp \
     src/preview_controller.cpp
 
 HEADERS += \
     src/diagnostics.h \
+    src/host_adapter.h \
     src/markdown_preview_dock.h \
     src/ndd_plugin_api.h \
     src/preview_controller.h

@@ -14,6 +14,8 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Core Gui Widgets)
 add_library(markdownview SHARED
     src/diagnostics.cpp
     src/diagnostics.h
+    src/host_adapter.cpp
+    src/host_adapter.h
     src/markdown_preview_dock.cpp
     src/markdown_preview_dock.h
     src/plugin_exports.cpp
@@ -59,6 +61,8 @@ if(BUILD_TESTING)
         tests/markdown_preview_dock_lifecycle_test.cpp
         src/diagnostics.cpp
         src/diagnostics.h
+        src/host_adapter.cpp
+        src/host_adapter.h
         src/markdown_preview_dock.cpp
         src/markdown_preview_dock.h
         resources/markdownview.qrc)
@@ -89,6 +93,8 @@ if(BUILD_TESTING)
         tests/preview_controller_document_identity_test.cpp
         src/diagnostics.cpp
         src/diagnostics.h
+        src/host_adapter.cpp
+        src/host_adapter.h
         src/markdown_preview_dock.cpp
         src/markdown_preview_dock.h
         src/preview_controller.cpp
@@ -125,6 +131,8 @@ if(BUILD_TESTING)
         tests/plugin_multi_window_test.cpp
         src/diagnostics.cpp
         src/diagnostics.h
+        src/host_adapter.cpp
+        src/host_adapter.h
         src/markdown_preview_dock.cpp
         src/markdown_preview_dock.h
         src/plugin_exports.cpp

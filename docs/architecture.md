@@ -23,16 +23,27 @@ int NDD_PROC_MAIN(
 notepad-- / CCNotePad
   ├─ 插件根菜单
   │    └─ PreviewController 注册 QAction
-  ├─ editTabWidget 当前页 ──> PreviewController
+  ├─ editTabWidget 当前页 ──> HostAdapter ──> PreviewController
+  │                              │              │ 调度与状态
   │                              │ Qt 元对象调用
   │                              v
   │                    ScintillaEditView::on_viewMarkdown
   │                              │ 宿主内部读取与更新
   │                              v
-  └─ QMainWindow ─────── MarkdownView ──嵌入──> QDockWidget
+  └─ QMainWindow ─────── MarkdownView ──HostAdapter 解析──> QDockWidget
 ```
 
-`PreviewController` 从宿主的 `editTabWidget` 取得当前页。由于 API 没有暴露标签切换事件，它定期比较当前指针。插件监听文本变化并合并连续刷新，实际的文本读取和 Markdown 解析仍由 notepad-- 完成。
+`HostAdapter` 是控制器可注入的最小宿主边界。默认 notepad-- 实现集中处理当前编辑器发现、
+`filePath` 读取与变化识别、右键 Markdown 动作识别和断连、原生预览创建／刷新、预览内部
+`QTextEdit` 解析、宿主窗口装饰隐藏、即时刷新连接移除及预览所有权协作。每次能力探测返回
+明确成功状态、耗时或错误信息。`PreviewController` 只消费这些结构化结果并维护文档身份、版本、
+调度和菜单状态；`MarkdownPreviewDock` 只接收已经解析的预览窗口与文本控件，负责嵌入、样式、
+滚动、链接和导出，不再了解宿主对象名或窗口结构。
+
+默认适配器从宿主的 `editTabWidget` 取得当前页。由于 API 没有暴露标签切换事件，控制器定期
+比较适配器返回的当前指针。插件监听文本变化并合并连续刷新，实际的文本读取和 Markdown
+解析仍由 notepad-- 完成。测试可注入不使用任何 notepad-- 对象名或槽名的适配器，直接验证
+控制器状态与 Dock 展示行为；这类模拟测试不替代真实宿主 ABI 验证。
 
 每个宿主窗口分别持有一个 `PreviewController`。插件入口在当前 `notepad` 的直接子对象中
 查找控制器：同一窗口重复调用时复用已有实例，不重复注册菜单、计时器或事件过滤器；新窗口

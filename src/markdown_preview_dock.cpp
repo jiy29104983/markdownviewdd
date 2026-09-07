@@ -12,9 +12,7 @@
 #include <QFont>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QMainWindow>
 #include <QMouseEvent>
-#include <QMenuBar>
 #include <QMessageBox>
 #include <QMimeDatabase>
 #include <QPalette>
@@ -22,7 +20,6 @@
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QSignalBlocker>
-#include <QStatusBar>
 #include <QTextBrowser>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -33,7 +30,6 @@
 #include <QtMath>
 #include <QTimer>
 #include <QToolButton>
-#include <QToolBar>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -310,18 +306,12 @@ void MarkdownPreviewDock::setUrlOpener(UrlOpener opener)
 }
 
 bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
+                                             QTextEdit *textEdit,
                                              const QString &filePath,
                                              QWidget *editor,
                                              quint64 contentVersion)
 {
-    if (!previewWindow || !editor || !m_contentLayout || !widget()) {
-        return false;
-    }
-
-    QTextEdit *textEdit = previewWindow->findChild<QTextEdit *>(
-        QStringLiteral("textEdit"));
-    if (!textEdit) {
-        Diagnostics::write(QStringLiteral("native MarkdownView textEdit was not found"));
+    if (!previewWindow || !textEdit || !editor || !m_contentLayout || !widget()) {
         return false;
     }
 
@@ -338,21 +328,6 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         }
         previewWindow->hide();
         previewWindow->setParent(widget(), Qt::Widget);
-
-        if (QMainWindow *window = qobject_cast<QMainWindow *>(previewWindow)) {
-            if (QMenuBar *menu = window->findChild<QMenuBar *>(
-                    QStringLiteral("menuBar"))) {
-                menu->hide();
-            }
-            if (QStatusBar *status = window->findChild<QStatusBar *>(
-                    QStringLiteral("statusBar"))) {
-                status->hide();
-            }
-            const QList<QToolBar *> toolBars = window->findChildren<QToolBar *>();
-            for (QToolBar *toolBar : toolBars) {
-                toolBar->hide();
-            }
-        }
 
         m_contentLayout->addWidget(previewWindow);
         m_nativePreview = previewWindow;

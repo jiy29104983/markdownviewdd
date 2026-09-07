@@ -30,7 +30,8 @@ public:
     explicit MarkdownPreviewDock(QWidget *parent = nullptr);
     ~MarkdownPreviewDock() override;
 
-    bool adoptNativePreview(QWidget *previewWindow, const QString &filePath,
+    bool adoptNativePreview(QWidget *previewWindow, QTextEdit *textEdit,
+                            const QString &filePath,
                             QWidget *editor, quint64 contentVersion);
     void invalidatePreview();
     bool hasPreviewFor(QWidget *editor, quint64 contentVersion) const;

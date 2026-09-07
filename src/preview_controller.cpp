@@ -1,12 +1,12 @@
 #include "preview_controller.h"
 
 #include "diagnostics.h"
+#include "host_adapter.h"
 #include "markdown_preview_dock.h"
 
 #include <QAbstractScrollArea>
 #include <QAction>
 #include <QApplication>
-#include <QDynamicPropertyChangeEvent>
 #include <QElapsedTimer>
 #include <QEvent>
 #include <QFileInfo>
@@ -17,9 +17,7 @@
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QStringList>
-#include <QTabWidget>
 #include <QTimer>
-#include <QVariant>
 #include <QtMath>
 
 namespace {
@@ -29,16 +27,13 @@ constexpr int kMaximumRenderDebounceMs = 2000;
 constexpr int kRenderDurationMultiplier = 3;
 constexpr qint64 kSlowRenderThresholdMs = 750;
 constexpr qint64 kLargeDocumentThresholdBytes = 1024 * 1024;
-constexpr auto kNativePreviewProperty = "_markdownview_native_preview";
-constexpr auto kNativePreviewOwnerHook = "_markdownview_owner_hook";
-constexpr auto kNativePreviewCurrent = "_markdownview_preview_current";
-constexpr auto kContextActionBridge = "_markdownview_sidebar_bridge";
-constexpr auto kFilePathProperty = "filePath";
 }
 
-PreviewController::PreviewController(QWidget *notepad)
+PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     : QObject(notepad),
       m_notepad(notepad),
+      m_hostAdapter(hostAdapter ? hostAdapter : createNotepadHostAdapter(notepad)),
+      m_ownsHostAdapter(!hostAdapter),
       m_mainWindow(qobject_cast<QMainWindow *>(notepad))
 {
     Diagnostics::write(QStringLiteral("PreviewController constructor entered"));
@@ -108,6 +103,13 @@ PreviewController::PreviewController(QWidget *notepad)
     Diagnostics::write(QStringLiteral("PreviewController constructor completed"));
 }
 
+PreviewController::~PreviewController()
+{
+    if (m_ownsHostAdapter) {
+        delete m_hostAdapter;
+    }
+}
+
 bool PreviewController::installMenu(QMenu *rootMenu)
 {
     if (!rootMenu || !m_dock) {
@@ -149,22 +151,14 @@ bool PreviewController::installMenu(QMenu *rootMenu)
 
 bool PreviewController::eventFilter(QObject *watched, QEvent *event)
 {
-    if (event && event->type() == QEvent::DynamicPropertyChange &&
-        watched == m_editor) {
-        auto *propertyEvent = static_cast<QDynamicPropertyChangeEvent *>(event);
-        if (propertyEvent->propertyName() == QByteArray(kFilePathProperty)) {
-            handleFilePathChanged();
-        }
+    if (watched == m_editor && m_hostAdapter->isFilePathChangeEvent(event)) {
+        handleFilePathChanged();
     }
 
     if (event && event->type() == QEvent::Show) {
         QMenu *menu = qobject_cast<QMenu *>(watched);
         QWidget *current = resolveCurrentEditor();
-        QWidget *menuParent = menu ? menu->parentWidget() : nullptr;
-        const bool belongsToHostWindow = menuParent && current && m_notepad &&
-            menuParent->window() == m_notepad->window() &&
-            current->window() == m_notepad->window();
-        if (belongsToHostWindow && menuParent == current) {
+        if (m_hostAdapter->isEditorContextMenu(menu, current)) {
             if (current != m_editor) {
                 attachEditor(current);
             }
@@ -183,25 +177,18 @@ void PreviewController::bridgeEditorContextMenu(QMenu *menu)
 
     const QList<QAction *> actions = menu->actions();
     for (QAction *action : actions) {
-        if (!action || action->property(kContextActionBridge).toBool()) {
-            continue;
-        }
-
-        QString text = action->text();
-        text.remove(QLatin1Char('&'));
-        if (!text.contains(QStringLiteral("markdown"), Qt::CaseInsensitive)) {
+        if (!m_hostAdapter->isMarkdownContextAction(action)) {
             continue;
         }
 
         action->setText(tr("在侧边栏预览 Markdown"));
-        action->setProperty(kContextActionBridge, true);
 
         // notepad-- creates this QAction on every context-menu invocation and
-        // connects it directly to ScintillaEditView::on_viewMarkdown().  The
-        // plugin must be the sole receiver; otherwise the host slot can show a
+        // connects it directly to the host's native preview slot.  The plugin
+        // must be the sole receiver; otherwise the host can show a
         // top-level MarkdownView before (or after) the dock adopts it.
-        const bool disconnected = m_editor && QObject::disconnect(
-            action, nullptr, m_editor.data(), nullptr);
+        const bool disconnected = m_hostAdapter->bridgeMarkdownContextAction(
+            action, m_editor.data());
         connect(action, &QAction::triggered,
                 this, &PreviewController::showPreviewFromNativeAction);
         Diagnostics::write(
@@ -252,18 +239,7 @@ void PreviewController::onEditorTextChanged()
 
 QWidget *PreviewController::resolveCurrentEditor() const
 {
-    if (m_notepad) {
-        QTabWidget *tabs = m_notepad->findChild<QTabWidget *>(
-            QStringLiteral("editTabWidget"));
-        if (tabs) {
-            QWidget *page = tabs->currentWidget();
-            if (page && page->inherits("QsciScintilla")) {
-                return page;
-            }
-        }
-    }
-
-    return nullptr;
+    return m_hostAdapter ? m_hostAdapter->currentEditor() : nullptr;
 }
 
 void PreviewController::scheduleRender()
@@ -385,7 +361,9 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         }
         m_dock->showMessage(
             tr("无法打开原生 Markdown 预览"),
-            tr("notepad-- 没有响应 on_viewMarkdown 调用，或没有创建 MarkdownView。"));
+            m_lastHostError.isEmpty()
+                ? tr("notepad-- 未提供可用的原生 Markdown 预览能力。")
+                : m_lastHostError);
         updateExportActionState();
         return false;
     }
@@ -404,7 +382,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     m_previewEditor = renderEditor;
     m_renderedVersion = renderVersion;
     m_previewState = PreviewState::Ready;
-    renderEditor->setProperty(kNativePreviewCurrent, true);
+    m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
     m_dock->setDocumentInfo(filePath, -1);
     m_lastEditorScrollValue = -1;
     if (m_syncScrolling) {
@@ -659,7 +637,7 @@ void PreviewController::markPreviewPending()
     m_previewState = PreviewState::Pending;
     m_previewEditor = nullptr;
     m_renderedVersion = 0;
-    m_editor->setProperty(kNativePreviewCurrent, false);
+    m_hostAdapter->setPreviewCurrent(m_editor.data(), false);
     if (m_dock) {
         m_dock->invalidatePreview();
     }
@@ -683,34 +661,10 @@ void PreviewController::updateExportActionState()
         m_editor && isMarkdownDocument(currentFilePath()));
 }
 
-QWidget *PreviewController::nativePreviewForEditor() const
-{
-    if (!m_editor) {
-        return nullptr;
-    }
-
-    QObject *stored = m_editor->property(kNativePreviewProperty).value<QObject *>();
-    QWidget *nativePreview = qobject_cast<QWidget *>(stored);
-    if (!nativePreview) {
-        nativePreview = m_editor->findChild<QWidget *>(
-            QStringLiteral("MarkdownViewClass"));
-    }
-    return nativePreview;
-}
-
 bool PreviewController::disconnectHostImmediateRefresh(bool force)
 {
-    if (!m_editor || (!force && !nativePreviewForEditor())) {
-        return false;
-    }
-
-    // notepad-- v3.8.3 has exactly one textChanged connection whose receiver
-    // is the editor itself: on_updataMarkdown().  Disconnecting by receiver
-    // avoids relying on the host's pointer-to-member connection syntax while
-    // preserving the editor -> controller and editor -> main-window signals.
-    return QObject::disconnect(
-        m_editor.data(), SIGNAL(textChanged()),
-        m_editor.data(), nullptr);
+    return m_hostAdapter && m_hostAdapter->disconnectImmediateRefresh(
+        m_editor.data(), force);
 }
 
 bool PreviewController::activateNativePreview(bool forceHostUpdate)
@@ -719,67 +673,27 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
         return false;
     }
 
-    QWidget *nativePreview = nativePreviewForEditor();
-    const bool reusablePreview = nativePreview &&
-        m_editor->property(kNativePreviewCurrent).toBool();
-    bool renderedWhileCreating = false;
-    if (!nativePreview) {
-        Diagnostics::write(QStringLiteral("invoking host on_viewMarkdown"));
-        QElapsedTimer hostRenderElapsed;
-        hostRenderElapsed.start();
-        const bool invoked = QMetaObject::invokeMethod(
-            m_editor.data(), "on_viewMarkdown", Qt::DirectConnection);
-        Diagnostics::write(
-            QStringLiteral("host on_viewMarkdown returned: %1, duration=%2 ms")
-                .arg(invoked)
-                .arg(hostRenderElapsed.elapsed()));
-        if (!invoked) {
-            return false;
-        }
-        renderedWhileCreating = true;
-
-        nativePreview = m_editor->findChild<QWidget *>(
-            QStringLiteral("MarkdownViewClass"));
-    }
-
-    // on_viewMarkdown() installs a direct editor self-connection.  Remove any
-    // such connection before control returns to the event loop.
-    const bool disconnected = disconnectHostImmediateRefresh(
-        renderedWhileCreating || nativePreview);
-    if (renderedWhileCreating || disconnected) {
-        Diagnostics::write(QStringLiteral("host immediate refresh disconnected=%1")
-                               .arg(disconnected));
-    }
-
-    if (!nativePreview) {
-        Diagnostics::write(QStringLiteral("host MarkdownView was not found"));
+    m_lastHostError.clear();
+    HostAdapter::PreviewResult preview = m_hostAdapter->ensurePreview(m_editor.data());
+    Diagnostics::write(
+        QStringLiteral("host preview ensure created=%1, duration=%2 ms, error=%3")
+            .arg(preview.created).arg(preview.durationMs).arg(preview.error));
+    if (!preview.isValid()) {
+        m_lastHostError = preview.error;
         return false;
     }
 
-    m_editor->setProperty(
-        kNativePreviewProperty,
-        QVariant::fromValue(static_cast<QObject *>(nativePreview)));
-    if (!nativePreview->property(kNativePreviewOwnerHook).toBool()) {
-        QPointer<QWidget> editor = m_editor;
-        connect(nativePreview, &QObject::destroyed, m_editor.data(), [editor]() {
-            if (editor) {
-                editor->setProperty(kNativePreviewProperty, QVariant());
-            }
-        });
-        connect(m_editor.data(), &QObject::destroyed,
-                nativePreview, &QObject::deleteLater);
-        nativePreview->setProperty(kNativePreviewOwnerHook, true);
-    }
-
-    if (!m_dock->adoptNativePreview(nativePreview, currentFilePath(),
+    const bool reusablePreview = m_hostAdapter->previewIsCurrent(m_editor.data());
+    if (!m_dock->adoptNativePreview(preview.window, preview.textEdit,
+                                    currentFilePath(),
                                     m_editor.data(), m_contentVersion)) {
         return false;
     }
 
-    // on_viewMarkdown() has already rendered the initial document.  Reuse that
+    // The host creation call has already rendered the initial document. Reuse that
     // result instead of immediately parsing and laying out the whole document
     // a second time.
-    if (renderedWhileCreating) {
+    if (preview.created) {
         Diagnostics::write(QStringLiteral("host initial render reused"));
         return true;
     }
@@ -791,20 +705,24 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
 
     // Render through the host module after embedding.  This is also the only
     // render performed for debounced editor textChanged notifications.
-    QElapsedTimer hostRenderElapsed;
-    hostRenderElapsed.start();
-    const bool updated = QMetaObject::invokeMethod(
-        m_editor.data(), "on_updataMarkdown", Qt::DirectConnection);
+    qint64 hostRenderDuration = 0;
+    QString hostError;
+    const bool updated = m_hostAdapter->refreshPreview(
+        m_editor.data(), &hostRenderDuration, &hostError);
     Diagnostics::write(
-        QStringLiteral("host on_updataMarkdown returned: %1, duration=%2 ms")
+        QStringLiteral("host preview refresh returned: %1, duration=%2 ms, error=%3")
             .arg(updated)
-            .arg(hostRenderElapsed.elapsed()));
+            .arg(hostRenderDuration)
+            .arg(hostError));
     if (updated) {
         QElapsedTimer styleElapsed;
         styleElapsed.start();
         m_dock->refreshDocumentStyle(m_editor.data(), m_contentVersion);
         Diagnostics::write(QStringLiteral("document style refresh duration=%1 ms")
                                .arg(styleElapsed.elapsed()));
+    }
+    if (!updated) {
+        m_lastHostError = hostError;
     }
     return updated;
 }
@@ -836,7 +754,7 @@ void PreviewController::updateSynchronizedScroll()
 
 QString PreviewController::currentFilePath() const
 {
-    return m_editor ? m_editor->property(kFilePathProperty).toString() : QString();
+    return m_hostAdapter ? m_hostAdapter->filePath(m_editor.data()) : QString();
 }
 
 bool PreviewController::isMarkdownDocument(const QString &filePath) const
