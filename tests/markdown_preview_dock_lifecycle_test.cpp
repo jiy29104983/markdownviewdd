@@ -1,13 +1,17 @@
 #include "markdown_preview_dock.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QEvent>
+#include <QFile>
+#include <QImage>
 #include <QLabel>
 #include <QPointer>
 #include <QScrollBar>
 #include <QTextBrowser>
 #include <QTextCursor>
 #include <QTextEdit>
+#include <QTemporaryDir>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
@@ -38,6 +42,7 @@ private slots:
     void nativePreviewScrollsToAnchors();
     void nativePreviewRejectsUnsupportedSchemes();
     void nativePreviewSelectionDoesNotOpenLink();
+    void htmlSnapshotEmbedsLocalImagesWithoutChangingPreview();
 };
 
 void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback()
@@ -234,6 +239,50 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewSelectionDoesNotOpenLink()
 
     QCOMPARE(openCount, 0);
     QVERIFY(textEdit->textCursor().hasSelection());
+}
+
+void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsLocalImagesWithoutChangingPreview()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    QDir root(directory.path());
+    QVERIFY(root.mkpath(QStringLiteral("图片 目录")));
+    const QString markdownPath = root.filePath(QStringLiteral("文档.md"));
+    const QString imagePath = root.filePath(QStringLiteral("图片 目录/示例.png"));
+    QImage image(2, 2, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(imagePath, "PNG"));
+
+    MarkdownPreviewDock dock;
+    QWidget *preview = createNativePreview();
+    QWidget editor;
+    QTextEdit *textEdit = preview->findChild<QTextEdit *>(QStringLiteral("textEdit"));
+    QVERIFY(textEdit);
+    QVERIFY(dock.adoptNativePreview(preview, markdownPath, &editor, 1));
+    textEdit->setHtml(QStringLiteral(
+        "<p><img src=\"图片 目录/示例.png\"></p>"
+        "<p><img src=\"missing.png\"></p>"
+        "<p><img src=\"https://example.com/remote.png\"></p>"
+        "<p><a href=\"附件/report.pdf\">attachment</a></p>"));
+    const QString previewHtml = textEdit->document()->toHtml();
+
+    const QByteArray snapshot = dock.htmlSnapshotFor(&editor, 1);
+    QVERIFY(snapshot.contains("data:image/png;base64,"));
+    QVERIFY(snapshot.contains("https://example.com/remote.png"));
+    QVERIFY(snapshot.contains("missing.png"));
+    QVERIFY(snapshot.contains("markdownview-export: local images not embedded"));
+    QVERIFY(snapshot.contains("report.pdf"));
+    QCOMPARE(textEdit->document()->toHtml(), previewHtml);
+
+    QVERIFY(root.mkpath(QStringLiteral("其他目录")));
+    const QString targetPath = root.filePath(QStringLiteral("其他目录/导出.html"));
+    QString errorMessage;
+    QVERIFY(MarkdownPreviewDock::writeHtmlSnapshot(
+        snapshot, targetPath, &errorMessage));
+    QVERIFY(errorMessage.isEmpty());
+    QFile exported(targetPath);
+    QVERIFY(exported.open(QIODevice::ReadOnly));
+    QVERIFY(exported.readAll().contains("data:image/png;base64,"));
 }
 
 QTEST_MAIN(MarkdownPreviewDockLifecycleTest)

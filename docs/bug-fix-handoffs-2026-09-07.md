@@ -586,3 +586,81 @@ Dock 在原生 `QTextEdit` viewport 上安装局部事件过滤器。只有鼠�
 Qt Test 尚未实际编译运行。Windows Release DLL、Artifact 和真实宿主链接交互均待复核。当前只处理
 `QTextDocument` 可识别的命名锚点和明确允许协议，不支持脚本执行、浏览器导航历史或源行级定位；
 不能仅凭静态检查关闭 BUG-007。
+
+## BUG-008：HTML 跨目录导出未处理相对资源
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`3e2b00848101fb2f9074761e446962f593897efd`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-003，`5c54499e5204376ac629ad6012f9564d888708ff`；BUG-005，`b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3`
+- **修改文件**：
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `src/markdown_preview_dock.cpp`
+  - `tests/markdown_preview_dock_lifecycle_test.cpp`
+
+### 问题核实与根因
+
+静态确认 BUG-003 固定的 `QTextDocument::toHtml()` 快照仍保留图片原始相对 `src`。BUG-005
+更新 `baseUrl` 后，实时预览可以从 Markdown 所在目录加载图片，但这个基准地址不会自动变成
+可迁移 HTML 内容。导出到其他目录或随后移动 HTML 时，浏览器会改从 HTML 所在目录解析
+`images/a.png`，因此图片丢失。
+
+### 实际修改方案
+
+采用单文件导出策略。Dock 从身份和版本匹配的实时文档取得固定 HTML 字符串后，只扫描
+`<img src>` 属性：相对路径和 `file:` 本地图片按文档 `baseUrl` 解析，文件可读且 MIME 类型为
+`image/*` 时转换为 Base64 data URL。替换发生在字符串副本中，不修改实时 `QTextDocument`。
+
+已有 data URL、HTTP/HTTPS 图片、其他协议和普通 `<a href>` 均保持原样；实现不会下载远程
+资源，也不会因为一个本地链接恰好可读就把任意附件打包。缺失、不可读或无法识别为图片的
+本地资源保留原 `src`，同时在导出 HTML 注入 `markdownview-export` 诊断注释并写入日志。
+实际落盘继续使用 BUG-003 的 `QSaveFile` 原子提交，不创建伴随资源目录。
+
+扩展 `markdownview_lifecycle_tests`，构造中文及空格目录下的 PNG、缺失图片、远程图片和普通
+本地附件链接，验证本地图片内嵌、跨目录写入、未支持资源的明确记录，以及导出前后实时文档
+HTML 完全不变。
+
+### 相较计划的偏差
+
+采用 backlog 优先建议的内嵌策略，没有实现伴随资源目录，因此不需要定义目录命名、同名文件
+覆盖、部分复制失败清理或覆盖已有无关资源的行为。未设置图片体积上限，以保持“单个 HTML
+可以迁移”的产品语义；文档明确说明 Base64 编码会增大文件体积。
+
+### 验收标准逐项结果
+
+1. **跨目录导出正确显示本地图片**：中文及空格路径 PNG 转为 `data:image/png;base64`，并写入另一个目录的测试源码已覆盖；运行 `blocked`。
+2. **可迁移策略符合文档描述**：README 与架构文档已说明单文件内嵌、远程资源、失败语义和体积影响；静态 `passed`。
+3. **原预览不变**：测试在生成快照前后比较实时 `document()->toHtml()`；运行 `blocked`。
+4. **资源缺失有明确结果**：缺失资源保留原 `src`，HTML 注释与诊断日志列明；测试源码已覆盖，运行 `blocked`。
+5. **保存失败不破坏已有文件和无关资源**：继续使用 `QSaveFile`，BUG-003 的原子写入测试仍保留；运行 `blocked`。本单不创建资源目录，因此不会覆盖或清理无关资源。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check` 通过；只重写固定快照中的 `<img src>`；远程图片和普通链接不打包；ABI 与 `notepad--/` 未修改；宿主参考基线为 `v3.8.3` / `91105f68` |
+| 自动化测试 | `blocked` | 扩展 `markdownview_lifecycle_tests`；`cmake -S . -B /tmp/markdownview-bug008-build -DBUILD_TESTING=ON` 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 失败 |
+| Windows Release 编译 | `blocked` | 当前 Linux 环境没有 Qt 5.15.2 与 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或打包 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 执行跨目录导出、移动 HTML、中文／空格图片、缺失图片、远程图片及大图片测试 |
+
+### 实际环境
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake 配置目录**：`/tmp/markdownview-bug008-build`
+- **测试源码**：`tests/markdown_preview_dock_lifecycle_test.cpp`
+- **截图或二进制报告**：未生成
+
+### 未验证项与已知限制
+
+Qt Test 尚未实际编译运行。Windows Release DLL、Artifact 和真实宿主跨目录导出均待复核。
+远程图片仍依赖打开 HTML 时的网络可达性；缺失本地图片不会使整个导出失败，而是保留引用并
+明确记录；大型图片会按 Base64 编码增大 HTML 文件。不能仅凭静态检查关闭 BUG-008。

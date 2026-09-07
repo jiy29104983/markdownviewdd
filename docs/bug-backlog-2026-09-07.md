@@ -222,7 +222,7 @@
 
 ## BUG-008：HTML 跨目录导出未处理相对资源
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认。
 - **代码位置**：[markdown_preview_dock.cpp](../src/markdown_preview_dock.cpp) 的
   `htmlSnapshotFor()`、`saveHtmlSnapshot()`、`writeHtmlSnapshot()`、`baseUrlForFile()`；
@@ -565,4 +565,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug007-build；测试源码 tests/markdown_preview_dock_lifecycle_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 和真实宿主链接交互均待复核。只处理 QTextDocument 可识别的命名锚点和明确允许协议，不支持脚本执行、浏览器导航历史或源行级定位。
+```
+
+## BUG-008 交回验证
+
+```text
+单据编号：BUG-008
+状态：修复完成／待验证
+基于的提交：3e2b00848101fb2f9074761e446962f593897efd
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-003，5c54499e5204376ac629ad6012f9564d888708ff；BUG-005，b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3
+修改文件：README.md；docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/markdown_preview_dock.cpp；tests/markdown_preview_dock_lifecycle_test.cpp
+问题复现与根因：静态确认 BUG-003 固定的 QTextDocument::toHtml() 快照保留相对图片 src；即使预览依靠 BUG-005 更新后的 baseUrl 正确显示，导出到其他目录或移动 HTML 后，浏览器仍会从导出目录解析该相对路径并丢失图片。
+实际修改方案：采用单文件导出策略，只在固定 HTML 字符串副本中扫描 img src；相对路径和 file: 本地图片按快照文档 baseUrl 解析，读取成功且 MIME 为 image/* 时嵌入 Base64 data URL。远程图片、data URL、其他协议和普通超链接保持原样，不下载或打包。缺失、不可读或非图片资源保留原引用，在 HTML 注释和诊断日志中列出。实时 QTextDocument 不修改，保存仍复用 QSaveFile 原子写入。
+相较本单计划的偏差及原因：采用建议的内嵌策略，没有建立伴随资源目录，因此不存在目录命名、同名覆盖、部分复制清理或无关资源损坏问题。未设置图片体积上限，以保证单文件迁移语义；README 和架构文档明确 Base64 会增加文件体积。
+验收标准逐项结果：跨目录导出正确显示本地图片——中文及空格路径 PNG 被转为 data:image/png;base64 且写入其他目录的测试源码覆盖，运行 blocked；可迁移策略符合文档——README 与架构文档已说明单文件内嵌、远程资源和体积语义，静态 passed；原预览不变——测试保存转换前后 document()->toHtml() 并比较相等，运行 blocked；资源缺失有明确结果——保留原 src、插入 markdownview-export 注释并写诊断日志，测试源码覆盖，运行 blocked；保存失败不破坏已有文件和无关资源——继续使用 BUG-003 的 QSaveFile，既有原子写入测试源码覆盖，运行 blocked，本单不创建资源目录。
+静态检查：passed（git diff --check；核对只重写固定快照中的 img src；远程图片和普通链接不打包；ABI 与 notepad--/ 未修改；宿主参考基线 v3.8.3 / 91105f68）
+自动化测试：blocked（扩展 markdownview_lifecycle_tests；cmake -S . -B /tmp/markdownview-bug008-build -DBUILD_TESTING=ON 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 执行跨目录导出、移动 HTML、中文／空格图片、缺失图片、远程图片及大图片体积测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug008-build；测试源码 tests/markdown_preview_dock_lifecycle_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 和真实宿主跨目录导出均待复核。远程图片仍依赖查看 HTML 时的网络可达性；缺失本地图片不会使整个导出失败，而是保留引用并明确记录；大型图片会按 Base64 增大 HTML 文件。
 ```

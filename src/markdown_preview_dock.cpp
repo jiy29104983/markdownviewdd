@@ -15,7 +15,9 @@
 #include <QMouseEvent>
 #include <QMenuBar>
 #include <QMessageBox>
+#include <QMimeDatabase>
 #include <QPalette>
+#include <QRegularExpression>
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QSignalBlocker>
@@ -35,6 +37,106 @@
 
 namespace {
 constexpr int kLayoutSyncDelayMs = 32;
+
+QString decodeHtmlAttribute(const QString &value)
+{
+    QTextDocument document;
+    document.setHtml(QStringLiteral("<span>%1</span>").arg(value));
+    return document.toPlainText();
+}
+
+QString exportDiagnosticComment(const QStringList &resources)
+{
+    if (resources.isEmpty()) {
+        return QString();
+    }
+
+    QStringList escapedResources;
+    for (const QString &resource : resources) {
+        QString escaped = resource;
+        escaped.replace(QStringLiteral("--"), QStringLiteral("- -"));
+        escapedResources.append(escaped);
+    }
+    return QStringLiteral("\n<!-- markdownview-export: local images not embedded: %1 -->\n")
+        .arg(escapedResources.join(QStringLiteral(", ")));
+}
+
+QByteArray portableHtmlSnapshot(const QTextDocument *document)
+{
+    if (!document) {
+        return QByteArray();
+    }
+
+    QString html = document->toHtml("UTF-8");
+    const QRegularExpression imageSourcePattern(
+        QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])([^\\\"']+)\\2"),
+        QRegularExpression::CaseInsensitiveOption);
+    QList<QPair<int, QPair<int, QString>>> replacements;
+    QStringList missingResources;
+    qint64 embeddedBytes = 0;
+
+    QRegularExpressionMatchIterator matches = imageSourcePattern.globalMatch(html);
+    while (matches.hasNext()) {
+        const QRegularExpressionMatch match = matches.next();
+        const QString source = decodeHtmlAttribute(match.captured(3));
+        const QUrl sourceUrl(source);
+        if (sourceUrl.scheme().compare(QStringLiteral("data"), Qt::CaseInsensitive) == 0 ||
+            sourceUrl.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0 ||
+            sourceUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0 ||
+            (!sourceUrl.scheme().isEmpty() &&
+             sourceUrl.scheme().compare(QStringLiteral("file"), Qt::CaseInsensitive) != 0)) {
+            continue;
+        }
+
+        QUrl resolvedUrl = sourceUrl.isRelative()
+            ? document->baseUrl().resolved(sourceUrl)
+            : sourceUrl;
+        resolvedUrl.setFragment(QString());
+        resolvedUrl.setQuery(QString());
+        const QString localPath = resolvedUrl.toLocalFile();
+        QFile imageFile(localPath);
+        if (localPath.isEmpty() || !imageFile.open(QIODevice::ReadOnly)) {
+            missingResources.append(source);
+            continue;
+        }
+
+        const QByteArray imageBytes = imageFile.readAll();
+        const QString mimeType = QMimeDatabase().mimeTypeForFile(
+            localPath, QMimeDatabase::MatchContent).name();
+        if (imageBytes.isEmpty() || !mimeType.startsWith(QStringLiteral("image/"))) {
+            missingResources.append(source);
+            continue;
+        }
+
+        const QString dataUrl = QStringLiteral("data:%1;base64,%2")
+            .arg(mimeType, QString::fromLatin1(imageBytes.toBase64()));
+        replacements.append(qMakePair(
+            match.capturedStart(3),
+            qMakePair(match.capturedLength(3), dataUrl)));
+        embeddedBytes += imageBytes.size();
+    }
+
+    for (auto it = replacements.crbegin(); it != replacements.crend(); ++it) {
+        html.replace(it->first, it->second.first, it->second.second);
+    }
+
+    if (!missingResources.isEmpty()) {
+        missingResources.removeDuplicates();
+        const QString comment = exportDiagnosticComment(missingResources);
+        const int bodyEnd = html.lastIndexOf(QStringLiteral("</body>"), -1,
+                                             Qt::CaseInsensitive);
+        html.insert(bodyEnd >= 0 ? bodyEnd : html.size(), comment);
+        Diagnostics::write(
+            QStringLiteral("HTML export kept %1 unavailable local image reference(s): %2")
+                .arg(missingResources.size())
+                .arg(missingResources.join(QStringLiteral(", "))));
+    }
+    Diagnostics::write(
+        QStringLiteral("HTML export embedded %1 local image(s), source bytes=%2")
+            .arg(replacements.size())
+            .arg(embeddedBytes));
+    return html.toUtf8();
+}
 }
 
 MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
@@ -245,7 +347,7 @@ QByteArray MarkdownPreviewDock::htmlSnapshotFor(
         return QByteArray();
     }
 
-    return m_nativeTextEdit->document()->toHtml("UTF-8").toUtf8();
+    return portableHtmlSnapshot(m_nativeTextEdit->document());
 }
 
 void MarkdownPreviewDock::trackNativePreview(QWidget *previewWindow)
