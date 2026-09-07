@@ -28,7 +28,6 @@
 #include <QVBoxLayout>
 
 namespace {
-constexpr auto kDockDestroyHook = "_markdownview_dock_destroy_hook";
 constexpr int kLayoutSyncDelayMs = 32;
 }
 
@@ -111,6 +110,26 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     });
 }
 
+MarkdownPreviewDock::~MarkdownPreviewDock()
+{
+    m_isDestroying = true;
+    if (m_layoutSyncTimer) {
+        m_layoutSyncTimer->stop();
+    }
+    if (m_nativeScrollConnection) {
+        disconnect(m_nativeScrollConnection);
+    }
+    if (m_nativeScrollRangeConnection) {
+        disconnect(m_nativeScrollRangeConnection);
+    }
+    m_nativeScrollConnection = QMetaObject::Connection();
+    m_nativeScrollRangeConnection = QMetaObject::Connection();
+    disconnectNativePreviews();
+    m_nativePreview = nullptr;
+    m_nativeTextEdit = nullptr;
+    m_currentNativePreviewObject = nullptr;
+}
+
 bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
                                              const QString &filePath)
 {
@@ -155,23 +174,9 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_contentLayout->addWidget(previewWindow);
         m_nativePreview = previewWindow;
         m_nativeTextEdit = textEdit;
+        m_currentNativePreviewObject = previewWindow;
         connectNativeScrollBar(textEdit->verticalScrollBar());
-        if (!previewWindow->property(kDockDestroyHook).toBool()) {
-            connect(previewWindow, &QObject::destroyed, this,
-                    [this, previewWindow]() {
-                if (m_nativePreview == previewWindow) {
-                    m_nativePreview = nullptr;
-                    m_nativeTextEdit = nullptr;
-                    m_nativeScrollConnection = QMetaObject::Connection();
-                    m_nativeScrollRangeConnection = QMetaObject::Connection();
-                    m_layoutSyncTimer->stop();
-                    if (m_browser) {
-                        m_browser->show();
-                    }
-                }
-            });
-            previewWindow->setProperty(kDockDestroyHook, true);
-        }
+        trackNativePreview(previewWindow);
     }
 
     m_currentFilePath = filePath;
@@ -179,6 +184,56 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     previewWindow->show();
     Diagnostics::write(QStringLiteral("native MarkdownView embedded in dock"));
     return true;
+}
+
+void MarkdownPreviewDock::trackNativePreview(QWidget *previewWindow)
+{
+    if (!previewWindow || m_nativePreviewDestroyConnections.contains(previewWindow)) {
+        return;
+    }
+
+    const QMetaObject::Connection connection = connect(
+        previewWindow, &QObject::destroyed, this,
+        [this](QObject *previewObject) {
+            handleNativePreviewDestroyed(previewObject);
+        });
+    m_nativePreviewDestroyConnections.insert(previewWindow, connection);
+}
+
+void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
+{
+    m_nativePreviewDestroyConnections.remove(previewObject);
+    if (m_isDestroying || m_currentNativePreviewObject != previewObject) {
+        return;
+    }
+
+    if (m_nativeScrollConnection) {
+        disconnect(m_nativeScrollConnection);
+    }
+    if (m_nativeScrollRangeConnection) {
+        disconnect(m_nativeScrollRangeConnection);
+    }
+    m_nativeScrollConnection = QMetaObject::Connection();
+    m_nativeScrollRangeConnection = QMetaObject::Connection();
+    m_nativePreview = nullptr;
+    m_nativeTextEdit = nullptr;
+    m_currentNativePreviewObject = nullptr;
+    if (m_layoutSyncTimer) {
+        m_layoutSyncTimer->stop();
+    }
+    if (m_browser) {
+        m_browser->show();
+    }
+}
+
+void MarkdownPreviewDock::disconnectNativePreviews()
+{
+    const QList<QMetaObject::Connection> connections =
+        m_nativePreviewDestroyConnections.values();
+    for (const QMetaObject::Connection &connection : connections) {
+        disconnect(connection);
+    }
+    m_nativePreviewDestroyConnections.clear();
 }
 
 void MarkdownPreviewDock::renderMarkdown(const QString &markdown,

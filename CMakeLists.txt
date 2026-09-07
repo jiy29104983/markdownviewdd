@@ -2,6 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 
 project(ndd-markdown-view VERSION 0.2.7 LANGUAGES CXX)
 
+include(CTest)
+
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 14)
@@ -49,3 +51,34 @@ set_target_properties(markdownview PROPERTIES
 install(TARGETS markdownview
     RUNTIME DESTINATION plugin
     LIBRARY DESTINATION plugin)
+
+if(BUILD_TESTING)
+    find_package(Qt5 5.15 REQUIRED COMPONENTS Test)
+
+    add_executable(markdownview_lifecycle_tests
+        tests/markdown_preview_dock_lifecycle_test.cpp
+        src/diagnostics.cpp
+        src/diagnostics.h
+        src/markdown_preview_dock.cpp
+        src/markdown_preview_dock.h
+        resources/markdownview.qrc)
+
+    target_include_directories(markdownview_lifecycle_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+    target_link_libraries(markdownview_lifecycle_tests PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::Test)
+
+    if(MSVC)
+        target_compile_options(markdownview_lifecycle_tests PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_lifecycle_tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
+
+    add_test(NAME markdownview_lifecycle_tests
+        COMMAND markdownview_lifecycle_tests -platform offscreen)
+endif()

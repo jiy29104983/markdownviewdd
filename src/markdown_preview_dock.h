@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QDockWidget>
+#include <QHash>
 #include <QMetaObject>
 #include <QPointer>
 #include <QUrl>
@@ -22,6 +23,7 @@ class MarkdownPreviewDock final : public QDockWidget
 
 public:
     explicit MarkdownPreviewDock(QWidget *parent = nullptr);
+    ~MarkdownPreviewDock() override;
 
     bool adoptNativePreview(QWidget *previewWindow, const QString &filePath);
     void renderMarkdown(const QString &markdown, const QString &filePath);
@@ -45,6 +47,9 @@ private:
     QTextDocument *activeDocument() const;
     QAbstractScrollArea *activeScrollArea() const;
     void connectNativeScrollBar(QScrollBar *scrollBar);
+    void trackNativePreview(QWidget *previewWindow);
+    void handleNativePreviewDestroyed(QObject *previewObject);
+    void disconnectNativePreviews();
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
@@ -55,8 +60,11 @@ private:
     QToolButton *m_syncButton = nullptr;
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;
+    QObject *m_currentNativePreviewObject = nullptr;
     QMetaObject::Connection m_nativeScrollConnection;
     QMetaObject::Connection m_nativeScrollRangeConnection;
+    QHash<QObject *, QMetaObject::Connection> m_nativePreviewDestroyConnections;
     QTimer *m_layoutSyncTimer = nullptr;
     QString m_currentFilePath;
+    bool m_isDestroying = false;
 };
