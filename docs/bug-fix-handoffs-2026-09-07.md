@@ -279,13 +279,14 @@ Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实
 
 - **状态**：修复完成／待验证
 - **基于的提交**：`5c54499e5204376ac629ad6012f9564d888708ff`
-- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **修复提交**：`9121b4b85b97b621b503ae1ba171d486eba051d0`
 - **前置单据及对应提交**：BUG-001，`ba87695e48576e0711dadbcc2a97832b22efc5e4`
 - **修改文件**：
   - `CMakeLists.txt`
   - `docs/architecture.md`
   - `docs/bug-backlog-2026-09-07.md`
   - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `docs/host-compatibility.md`
   - `src/plugin_exports.cpp`
   - `src/preview_controller.cpp`
   - `src/preview_controller.h`

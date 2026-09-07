@@ -481,9 +481,9 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 单据编号：BUG-004
 状态：修复完成／待验证
 基于的提交：5c54499e5204376ac629ad6012f9564d888708ff
-修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+修复提交或补丁位置：9121b4b85b97b621b503ae1ba171d486eba051d0
 前置单据及对应提交：BUG-001，ba87695e48576e0711dadbcc2a97832b22efc5e4
-修改文件：CMakeLists.txt；docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/plugin_exports.cpp；src/preview_controller.cpp；src/preview_controller.h；tests/plugin_multi_window_test.cpp
+修改文件：CMakeLists.txt；docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；docs/host-compatibility.md；src/plugin_exports.cpp；src/preview_controller.cpp；src/preview_controller.h；tests/plugin_multi_window_test.cpp
 问题复现与根因：静态确认原插件使用进程级 QPointer<PreviewController> g_controller；首个宿主窗口创建控制器后，同进程第二个窗口进入 NDD_PROC_MAIN 会跳过控制器和菜单初始化却返回成功。控制器的显示／隐藏快捷键使用 Qt::ApplicationShortcut，多个窗口各自初始化后也会争抢同一应用级快捷键。全局事件过滤器原先仅比较菜单父对象与当前编辑器，没有显式核对其所属宿主窗口。
 实际修改方案：移除进程级全局控制器，改为从本次 notepad 宿主窗口的直接子对象中查找或创建 PreviewController；同一窗口重复入口复用已有控制器，installMenu 记录根菜单并保证幂等；每个控制器、Dock、计时器和动作继续由对应宿主窗口的 Qt 父子所有权管理；快捷键改为 Qt::WindowShortcut；右键菜单桥接增加菜单、当前编辑器和宿主窗口归属一致检查；新增独立 Qt Test 覆盖双窗口预览／导出互不影响、重复初始化、关闭一窗后另一窗继续工作及右键菜单隔离。
 相较本单计划的偏差及原因：没有引入独立进程级注册表，而使用宿主窗口直接子对象作为受控注册表；该方案由 Qt 父子所有权自动清理，满足按窗口实例化与幂等要求且范围更小。未修改 getCurrentEditor 或 hostCallback 的使用方式，也未改变插件 ABI。
