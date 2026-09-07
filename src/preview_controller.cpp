@@ -210,15 +210,7 @@ void PreviewController::showPreviewFromNativeAction()
 
 void PreviewController::pollEditor()
 {
-    QWidget *current = resolveCurrentEditor();
-    if (current != m_editor) {
-        Diagnostics::write(QStringLiteral("active editor changed: 0x%1")
-                               .arg(reinterpret_cast<quintptr>(current), 0, 16));
-        attachEditor(current);
-        if (m_dock && m_dock->isVisible()) {
-            scheduleRender();
-        }
-    }
+    synchronizeActiveEditor();
 
     if (m_dock && m_dock->isVisible() && m_syncScrolling) {
         updateSynchronizedScroll();
@@ -234,6 +226,7 @@ void PreviewController::onEditorTextChanged()
         Diagnostics::write(
             QStringLiteral("host immediate refresh reconnected; disconnected on edit"));
     }
+    markPreviewPending();
     scheduleRender();
 }
 
@@ -278,6 +271,7 @@ void PreviewController::renderNow()
 {
     // Manual refreshes and explicit renders supersede any pending automatic
     // refresh for the same editor state.
+    synchronizeActiveEditor();
     m_renderTimer->stop();
     Diagnostics::write(QStringLiteral("renderNow entered"));
     if (!m_dock || !m_dock->isVisible()) {
@@ -286,6 +280,9 @@ void PreviewController::renderNow()
     }
 
     if (!m_editor) {
+        m_previewState = PreviewState::NoDocument;
+        m_previewEditor = nullptr;
+        m_renderedVersion = 0;
         Diagnostics::write(QStringLiteral("renderNow: no active editor"));
         m_dock->showMessage(tr("没有活动文档"),
                             tr("打开一个 Markdown 文件后即可预览。"));
@@ -295,6 +292,9 @@ void PreviewController::renderNow()
     const QString filePath = currentFilePath();
     Diagnostics::write(QStringLiteral("filePath read: %1").arg(filePath));
     if (!isMarkdownDocument(filePath)) {
+        m_previewState = PreviewState::Unsupported;
+        m_previewEditor = nullptr;
+        m_renderedVersion = 0;
         m_dock->showMessage(
             tr("当前文档不是 Markdown 文件"),
             tr("支持 .md、.markdown、.mdown、.mkd、.mkdn 和 .mdwn 文件。"));
@@ -302,9 +302,23 @@ void PreviewController::renderNow()
         return;
     }
 
+    QPointer<QWidget> renderEditor = m_editor;
+    const quint64 renderVersion = m_contentVersion;
     QElapsedTimer elapsed;
     elapsed.start();
     if (!activateNativePreview()) {
+        synchronizeActiveEditor();
+        if (m_editor != renderEditor || m_contentVersion != renderVersion) {
+            Diagnostics::write(QStringLiteral(
+                "renderNow failure discarded: editor state changed"));
+            scheduleRender();
+            return;
+        }
+        if (m_editor == renderEditor && m_contentVersion == renderVersion) {
+            m_previewState = PreviewState::Failed;
+            m_previewEditor = nullptr;
+            m_renderedVersion = 0;
+        }
         m_dock->showMessage(
             tr("无法打开原生 Markdown 预览"),
             tr("notepad-- 没有响应 on_viewMarkdown 调用，或没有创建 MarkdownView。"));
@@ -314,6 +328,16 @@ void PreviewController::renderNow()
     Diagnostics::write(QStringLiteral("renderNow completed in %1 ms")
                            .arg(m_lastRenderDurationMs));
 
+    synchronizeActiveEditor();
+    if (m_editor != renderEditor || m_contentVersion != renderVersion) {
+        Diagnostics::write(QStringLiteral("renderNow discarded: editor state changed"));
+        scheduleRender();
+        return;
+    }
+
+    m_previewEditor = renderEditor;
+    m_renderedVersion = renderVersion;
+    m_previewState = PreviewState::Ready;
     m_dock->setDocumentInfo(filePath, -1);
     m_lastEditorScrollValue = -1;
     if (m_syncScrolling) {
@@ -353,7 +377,8 @@ void PreviewController::setSyncScrolling(bool enabled)
 
 void PreviewController::scrollEditorToRatio(double ratio)
 {
-    if (!m_editor || !m_dock || !m_dock->isVisible() || !m_syncScrolling) {
+    synchronizeActiveEditor();
+    if (!isPreviewCurrent() || !m_dock->isVisible() || !m_syncScrolling) {
         return;
     }
 
@@ -393,6 +418,13 @@ void PreviewController::attachEditor(QWidget *editor)
     }
 
     m_editor = editor;
+    ++m_contentVersion;
+    m_previewEditor = nullptr;
+    m_renderedVersion = 0;
+    m_previewState = m_editor ? PreviewState::Pending : PreviewState::NoDocument;
+    if (m_dock) {
+        m_dock->invalidatePreview();
+    }
     m_lastEditorScrollValue = -1;
     m_lastRenderDurationMs = 0;
 
@@ -407,6 +439,13 @@ void PreviewController::attachEditor(QWidget *editor)
                                .arg(static_cast<bool>(textChangedConnection)));
         connect(m_editor, &QObject::destroyed, this, [this]() {
             m_editor = nullptr;
+            ++m_contentVersion;
+            m_previewEditor = nullptr;
+            m_renderedVersion = 0;
+            m_previewState = PreviewState::NoDocument;
+            if (m_dock) {
+                m_dock->invalidatePreview();
+            }
             scheduleRender();
         });
         if (disconnectHostImmediateRefresh()) {
@@ -414,6 +453,43 @@ void PreviewController::attachEditor(QWidget *editor)
                 QStringLiteral("existing host immediate refresh disconnected on attach"));
         }
     }
+}
+
+void PreviewController::synchronizeActiveEditor()
+{
+    QWidget *current = resolveCurrentEditor();
+    if (current == m_editor) {
+        return;
+    }
+
+    Diagnostics::write(QStringLiteral("active editor changed: 0x%1")
+                           .arg(reinterpret_cast<quintptr>(current), 0, 16));
+    attachEditor(current);
+    if (m_dock && m_dock->isVisible()) {
+        scheduleRender();
+    }
+}
+
+void PreviewController::markPreviewPending()
+{
+    if (!m_editor) {
+        return;
+    }
+
+    ++m_contentVersion;
+    m_previewState = PreviewState::Pending;
+    m_previewEditor = nullptr;
+    m_renderedVersion = 0;
+    if (m_dock) {
+        m_dock->invalidatePreview();
+    }
+}
+
+bool PreviewController::isPreviewCurrent() const
+{
+    return m_previewState == PreviewState::Ready && m_editor &&
+        m_previewEditor == m_editor && m_renderedVersion == m_contentVersion &&
+        m_dock && m_dock->hasPreviewFor(m_editor.data(), m_contentVersion);
 }
 
 QWidget *PreviewController::nativePreviewForEditor() const
@@ -498,7 +574,8 @@ bool PreviewController::activateNativePreview()
         nativePreview->setProperty(kNativePreviewOwnerHook, true);
     }
 
-    if (!m_dock->adoptNativePreview(nativePreview, currentFilePath())) {
+    if (!m_dock->adoptNativePreview(nativePreview, currentFilePath(),
+                                    m_editor.data(), m_contentVersion)) {
         return false;
     }
 
@@ -521,7 +598,8 @@ bool PreviewController::activateNativePreview()
 
 void PreviewController::updateSynchronizedScroll()
 {
-    if (!m_editor || !m_dock || !m_dock->isVisible() || !m_syncScrolling) {
+    synchronizeActiveEditor();
+    if (!isPreviewCurrent() || !m_dock->isVisible() || !m_syncScrolling) {
         return;
     }
 

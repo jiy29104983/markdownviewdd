@@ -37,7 +37,9 @@ void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback
 {
     MarkdownPreviewDock dock;
     QWidget *preview = createNativePreview();
-    QVERIFY(dock.adoptNativePreview(preview, QStringLiteral("document.md")));
+    QWidget editor;
+    QVERIFY(dock.adoptNativePreview(preview, QStringLiteral("document.md"),
+                                    &editor, 1));
 
     QTextBrowser *browser = dock.findChild<QTextBrowser *>(
         QStringLiteral("NddMarkdownPreviewBrowser"));
@@ -54,8 +56,12 @@ void MarkdownPreviewDockLifecycleTest::hiddenPreviewDestructionKeepsCurrentPrevi
     MarkdownPreviewDock dock;
     QWidget *firstPreview = createNativePreview();
     QWidget *secondPreview = createNativePreview();
-    QVERIFY(dock.adoptNativePreview(firstPreview, QStringLiteral("first.md")));
-    QVERIFY(dock.adoptNativePreview(secondPreview, QStringLiteral("second.md")));
+    QWidget firstEditor;
+    QWidget secondEditor;
+    QVERIFY(dock.adoptNativePreview(firstPreview, QStringLiteral("first.md"),
+                                    &firstEditor, 1));
+    QVERIFY(dock.adoptNativePreview(secondPreview, QStringLiteral("second.md"),
+                                    &secondEditor, 2));
 
     QTextBrowser *browser = dock.findChild<QTextBrowser *>(
         QStringLiteral("NddMarkdownPreviewBrowser"));
@@ -74,8 +80,12 @@ void MarkdownPreviewDockLifecycleTest::dockDestructionDisconnectsAllPreviewCallb
     auto *dock = new MarkdownPreviewDock;
     QPointer<QWidget> firstPreview = createNativePreview();
     QPointer<QWidget> secondPreview = createNativePreview();
-    QVERIFY(dock->adoptNativePreview(firstPreview, QStringLiteral("first.md")));
-    QVERIFY(dock->adoptNativePreview(secondPreview, QStringLiteral("second.md")));
+    QWidget firstEditor;
+    QWidget secondEditor;
+    QVERIFY(dock->adoptNativePreview(firstPreview, QStringLiteral("first.md"),
+                                     &firstEditor, 1));
+    QVERIFY(dock->adoptNativePreview(secondPreview, QStringLiteral("second.md"),
+                                     &secondEditor, 2));
 
     delete dock;
 
@@ -89,7 +99,9 @@ void MarkdownPreviewDockLifecycleTest::editorDestructionDeleteLaterIsSafe()
     auto *editorOwner = new QObject;
     auto *dock = new MarkdownPreviewDock;
     QPointer<QWidget> preview = createNativePreview();
-    QVERIFY(dock->adoptNativePreview(preview, QStringLiteral("document.md")));
+    QWidget editor;
+    QVERIFY(dock->adoptNativePreview(preview, QStringLiteral("document.md"),
+                                     &editor, 1));
     connect(editorOwner, &QObject::destroyed, preview.data(), &QObject::deleteLater);
 
     delete editorOwner;

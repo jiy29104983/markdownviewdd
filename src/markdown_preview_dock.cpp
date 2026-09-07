@@ -127,13 +127,17 @@ MarkdownPreviewDock::~MarkdownPreviewDock()
     disconnectNativePreviews();
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
+    m_previewEditor = nullptr;
+    m_previewContentVersion = 0;
     m_currentNativePreviewObject = nullptr;
 }
 
 bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
-                                             const QString &filePath)
+                                             const QString &filePath,
+                                             QWidget *editor,
+                                             quint64 contentVersion)
 {
-    if (!previewWindow || !m_contentLayout || !widget()) {
+    if (!previewWindow || !editor || !m_contentLayout || !widget()) {
         return false;
     }
 
@@ -180,10 +184,26 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     }
 
     m_currentFilePath = filePath;
+    m_previewEditor = editor;
+    m_previewContentVersion = contentVersion;
     m_browser->hide();
     previewWindow->show();
     Diagnostics::write(QStringLiteral("native MarkdownView embedded in dock"));
     return true;
+}
+
+void MarkdownPreviewDock::invalidatePreview()
+{
+    m_previewEditor = nullptr;
+    m_previewContentVersion = 0;
+}
+
+bool MarkdownPreviewDock::hasPreviewFor(QWidget *editor,
+                                       quint64 contentVersion) const
+{
+    return editor && m_previewEditor == editor &&
+        m_previewContentVersion == contentVersion &&
+        m_nativePreview && m_nativeTextEdit && m_nativePreview->isVisible();
 }
 
 void MarkdownPreviewDock::trackNativePreview(QWidget *previewWindow)
@@ -217,6 +237,8 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     m_nativeScrollRangeConnection = QMetaObject::Connection();
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
+    m_previewEditor = nullptr;
+    m_previewContentVersion = 0;
     m_currentNativePreviewObject = nullptr;
     if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();

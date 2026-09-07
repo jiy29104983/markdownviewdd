@@ -81,4 +81,37 @@ if(BUILD_TESTING)
 
     add_test(NAME markdownview_lifecycle_tests
         COMMAND markdownview_lifecycle_tests -platform offscreen)
+
+    add_executable(markdownview_document_identity_tests
+        tests/preview_controller_document_identity_test.cpp
+        src/diagnostics.cpp
+        src/diagnostics.h
+        src/markdown_preview_dock.cpp
+        src/markdown_preview_dock.h
+        src/preview_controller.cpp
+        src/preview_controller.h
+        resources/markdownview.qrc)
+
+    target_include_directories(markdownview_document_identity_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+    target_link_libraries(markdownview_document_identity_tests PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::Test)
+
+    target_compile_definitions(markdownview_document_identity_tests PRIVATE
+        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+
+    if(MSVC)
+        target_compile_options(markdownview_document_identity_tests PRIVATE
+            /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_document_identity_tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
+
+    add_test(NAME markdownview_document_identity_tests
+        COMMAND markdownview_document_identity_tests -platform offscreen)
 endif()

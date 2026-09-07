@@ -36,10 +36,21 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    enum class PreviewState {
+        NoDocument,
+        Unsupported,
+        Pending,
+        Ready,
+        Failed
+    };
+
     void bridgeEditorContextMenu(QMenu *menu);
     void showPreviewFromNativeAction();
     QWidget *resolveCurrentEditor() const;
     void attachEditor(QWidget *editor);
+    void synchronizeActiveEditor();
+    void markPreviewPending();
+    bool isPreviewCurrent() const;
     QWidget *nativePreviewForEditor() const;
     bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview();
@@ -50,6 +61,7 @@ private:
     QPointer<QWidget> m_notepad;
     QPointer<QMainWindow> m_mainWindow;
     QPointer<QWidget> m_editor;
+    QPointer<QWidget> m_previewEditor;
     QPointer<MarkdownPreviewDock> m_dock;
     QPointer<QAction> m_toggleAction;
     QPointer<QAction> m_syncAction;
@@ -58,4 +70,7 @@ private:
     bool m_syncScrolling = true;
     int m_lastEditorScrollValue = -1;
     qint64 m_lastRenderDurationMs = 0;
+    quint64 m_contentVersion = 0;
+    quint64 m_renderedVersion = 0;
+    PreviewState m_previewState = PreviewState::NoDocument;
 };

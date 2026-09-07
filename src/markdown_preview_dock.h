@@ -25,7 +25,10 @@ public:
     explicit MarkdownPreviewDock(QWidget *parent = nullptr);
     ~MarkdownPreviewDock() override;
 
-    bool adoptNativePreview(QWidget *previewWindow, const QString &filePath);
+    bool adoptNativePreview(QWidget *previewWindow, const QString &filePath,
+                            QWidget *editor, quint64 contentVersion);
+    void invalidatePreview();
+    bool hasPreviewFor(QWidget *editor, quint64 contentVersion) const;
     void renderMarkdown(const QString &markdown, const QString &filePath);
     void showMessage(const QString &title, const QString &message);
     void setDocumentInfo(const QString &filePath, int characterCount);
@@ -60,11 +63,13 @@ private:
     QToolButton *m_syncButton = nullptr;
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;
+    QPointer<QWidget> m_previewEditor;
     QObject *m_currentNativePreviewObject = nullptr;
     QMetaObject::Connection m_nativeScrollConnection;
     QMetaObject::Connection m_nativeScrollRangeConnection;
     QHash<QObject *, QMetaObject::Connection> m_nativePreviewDestroyConnections;
     QTimer *m_layoutSyncTimer = nullptr;
     QString m_currentFilePath;
+    quint64 m_previewContentVersion = 0;
     bool m_isDestroying = false;
 };
