@@ -107,11 +107,14 @@ bool PreviewController::installMenu(QMenu *rootMenu)
     if (!rootMenu || !m_dock) {
         return false;
     }
+    if (m_rootMenu) {
+        return m_rootMenu == rootMenu;
+    }
 
     m_toggleAction = rootMenu->addAction(tr("显示/隐藏预览"));
     m_toggleAction->setCheckable(true);
     m_toggleAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
-    m_toggleAction->setShortcutContext(Qt::ApplicationShortcut);
+    m_toggleAction->setShortcutContext(Qt::WindowShortcut);
     connect(m_toggleAction, &QAction::toggled,
             this, &PreviewController::togglePreview);
 
@@ -134,6 +137,7 @@ bool PreviewController::installMenu(QMenu *rootMenu)
     auto *aboutAction = rootMenu->addAction(tr("关于 Markdown 预览"));
     connect(aboutAction, &QAction::triggered,
             this, &PreviewController::showAbout);
+    m_rootMenu = rootMenu;
     return true;
 }
 
@@ -142,7 +146,11 @@ bool PreviewController::eventFilter(QObject *watched, QEvent *event)
     if (event && event->type() == QEvent::Show) {
         QMenu *menu = qobject_cast<QMenu *>(watched);
         QWidget *current = resolveCurrentEditor();
-        if (menu && current && menu->parentWidget() == current) {
+        QWidget *menuParent = menu ? menu->parentWidget() : nullptr;
+        const bool belongsToHostWindow = menuParent && current && m_notepad &&
+            menuParent->window() == m_notepad->window() &&
+            current->window() == m_notepad->window();
+        if (belongsToHostWindow && menuParent == current) {
             if (current != m_editor) {
                 attachEditor(current);
             }

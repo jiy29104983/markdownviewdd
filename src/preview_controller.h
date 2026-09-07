@@ -68,6 +68,7 @@ private:
     QPointer<QWidget> m_editor;
     QPointer<QWidget> m_previewEditor;
     QPointer<MarkdownPreviewDock> m_dock;
+    QPointer<QMenu> m_rootMenu;
     QPointer<QAction> m_toggleAction;
     QPointer<QAction> m_syncAction;
     QPointer<QAction> m_exportAction;

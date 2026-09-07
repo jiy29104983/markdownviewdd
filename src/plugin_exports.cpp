@@ -2,12 +2,6 @@
 #include "diagnostics.h"
 #include "preview_controller.h"
 
-#include <QPointer>
-
-namespace {
-QPointer<PreviewController> g_controller;
-}
-
 extern "C" {
 
 NDD_PLUGIN_EXPORT bool NDD_PROC_IDENTIFY(NDD_PROC_DATA *data)
@@ -41,19 +35,27 @@ NDD_PLUGIN_EXPORT int NDD_PROC_MAIN(QWidget *notepad,
         return -1;
     }
 
-    if (!g_controller) {
-        Diagnostics::write(QStringLiteral("creating PreviewController"));
+    PreviewController *controller = notepad->findChild<PreviewController *>(
+        QString(), Qt::FindDirectChildrenOnly);
+    const bool createdController = !controller;
+    if (!controller) {
+        Diagnostics::write(QStringLiteral("creating PreviewController for host window"));
         Q_UNUSED(getCurrentEditor);
         Q_UNUSED(hostCallback);
-        g_controller = new PreviewController(notepad);
-        if (!g_controller->installMenu(data->rootMenu)) {
-            Diagnostics::write(QStringLiteral("installMenu failed"));
-            delete g_controller;
-            g_controller = nullptr;
-            return -2;
-        }
-        Diagnostics::write(QStringLiteral("PreviewController and menu ready"));
+        controller = new PreviewController(notepad);
+    } else {
+        Diagnostics::write(QStringLiteral(
+            "reusing PreviewController for repeated host-window initialization"));
     }
+
+    if (!controller->installMenu(data->rootMenu)) {
+        Diagnostics::write(QStringLiteral("installMenu failed"));
+        if (createdController) {
+            delete controller;
+        }
+        return -2;
+    }
+    Diagnostics::write(QStringLiteral("PreviewController and menu ready"));
 
     return 0;
 }

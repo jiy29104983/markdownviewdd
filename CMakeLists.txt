@@ -114,4 +114,39 @@ if(BUILD_TESTING)
 
     add_test(NAME markdownview_document_identity_tests
         COMMAND markdownview_document_identity_tests -platform offscreen)
+
+    add_executable(markdownview_multi_window_tests
+        tests/plugin_multi_window_test.cpp
+        src/diagnostics.cpp
+        src/diagnostics.h
+        src/markdown_preview_dock.cpp
+        src/markdown_preview_dock.h
+        src/plugin_exports.cpp
+        src/preview_controller.cpp
+        src/preview_controller.h
+        src/ndd_plugin_api.h
+        resources/markdownview.qrc)
+
+    target_include_directories(markdownview_multi_window_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+
+    target_link_libraries(markdownview_multi_window_tests PRIVATE
+        Qt5::Core
+        Qt5::Gui
+        Qt5::Widgets
+        Qt5::Test)
+
+    target_compile_definitions(markdownview_multi_window_tests PRIVATE
+        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+
+    if(MSVC)
+        target_compile_options(markdownview_multi_window_tests PRIVATE
+            /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_multi_window_tests PRIVATE
+            -Wall -Wextra -Wpedantic)
+    endif()
+
+    add_test(NAME markdownview_multi_window_tests
+        COMMAND markdownview_multi_window_tests -platform offscreen)
 endif()

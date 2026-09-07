@@ -272,3 +272,89 @@ Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实
 编辑后立即导出、A→B 快速切换、取消保存和磁盘写入失败均未完成。跨目录导出的相对图片仍
 不会自动复制或嵌入，按 BUG-008 处理；文件路径动态变化后的元数据刷新按 BUG-005 处理。
 后续复核不能仅凭静态检查将 BUG-003 标记为已关闭。
+
+## BUG-004：同进程多窗口只初始化一个插件控制器
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`5c54499e5204376ac629ad6012f9564d888708ff`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-001，`ba87695e48576e0711dadbcc2a97832b22efc5e4`
+- **修改文件**：
+  - `CMakeLists.txt`
+  - `docs/architecture.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `src/plugin_exports.cpp`
+  - `src/preview_controller.cpp`
+  - `src/preview_controller.h`
+  - `tests/plugin_multi_window_test.cpp`
+
+### 问题核实与根因
+
+静态核实原插件由进程级 `QPointer<PreviewController> g_controller` 保存唯一控制器。宿主
+v3.8.3 的 `openFileInNewWin()` 会创建新的 `CCNotePad` 窗口，而每个窗口加载插件菜单时都通过
+`sendParaToPlugin()` 将自身和新建根菜单传入 `NDD_PROC_MAIN`。首个窗口已设置全局控制器后，
+第二个窗口会跳过菜单和 Dock 初始化却返回成功。
+
+若改为每窗口实例但保留 `Qt::ApplicationShortcut`，同进程控制器还会争抢相同快捷键。控制器
+安装在 `qApp` 上的事件过滤器也需明确核对右键菜单和当前编辑器确实属于自身宿主窗口。
+
+### 实际修改方案
+
+移除进程级全局控制器。入口现在从本次 `notepad` 的直接子对象中查找
+`PreviewController`：未找到时为该窗口创建，找到时按重复入口处理。`installMenu()` 保存已安装
+的根菜单，同一窗口和同一菜单的重复调用直接成功，不再添加第二组动作、计时器、Dock 或事件
+过滤器；异常传入另一根菜单时返回失败。
+
+控制器、Dock、动作和计时器仍由各自宿主窗口的 Qt 父子所有权管理，关闭一个窗口会清理它
+自己的实例，不触碰其他窗口。显示／隐藏快捷键改为 `Qt::WindowShortcut`。右键菜单事件只有
+在菜单、当前编辑器和控制器宿主窗口三者归属一致时才桥接。
+
+新增 `markdownview_multi_window_tests`，覆盖两个窗口分别预览和导出、同窗重复初始化的对象
+及动作计数、关闭首窗后第二窗继续刷新和导出，以及两窗口右键菜单桥接互不影响。
+
+### 相较计划的偏差
+
+没有建立额外的进程级容器，而将宿主窗口的直接子对象集合用作受控注册表。该实现可由 Qt
+所有权自动清理，避免悬空注册项，且足以满足按窗口实例化和重复入口幂等。未改动插件 ABI、
+宿主源码或导出签名。
+
+### 验收标准逐项结果
+
+1. **两个同进程窗口独立预览、刷新、导出**：专用回归测试源码已覆盖；运行 `blocked`。
+2. **操作互不影响**：测试分别核对 Dock 可见性、渲染次数、HTML 内容和右键菜单；运行
+   `blocked`。
+3. **关闭任一窗口不破坏另一窗口**：测试以 `QPointer` 核对首窗控制器清理后第二窗继续
+   刷新和导出；运行 `blocked`。
+4. **重复入口不增加重复动作**：测试核对控制器、Dock、计时器和菜单动作数量；运行
+   `blocked`。
+5. **没有快捷键歧义警告**：动作改用 `Qt::WindowShortcut` 并有属性断言；真实宿主警告
+   检查 `not verified`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check` 通过；复核宿主 `openFileInNewWin()`、`quickshow()`、插件菜单加载和 `sendParaToPlugin()`；ABI 与 `notepad--/` 未修改 |
+| 自动化测试 | `blocked` | 新增 `markdownview_multi_window_tests`；CMake 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 配置失败 |
+| Windows Release 编译 | `blocked` | 当前为 Linux 环境，没有 Qt 5.15.2 和 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或打包 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 中执行新窗口、双窗口快捷键、关闭任一窗口和重复入口测试 |
+
+### 实际环境
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **测试源码**：`tests/plugin_multi_window_test.cpp`
+- **截图或二进制报告**：未生成
+
+### 未验证项与已知限制
+
+Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实宿主中的“在新窗口打开”、
+两个窗口分别预览／刷新／导出、快捷键作用域、关闭任一窗口和重复入口均待复核。
+`Diagnostics::resetLog()` 仍在每次窗口入口清空共享日志，该独立问题按 BUG-016 处理；后续复核
+不能仅凭静态检查关闭 BUG-004。

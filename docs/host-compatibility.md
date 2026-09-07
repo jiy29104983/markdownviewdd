@@ -40,6 +40,11 @@ rg -n "on_viewMarkdown|on_updataMarkdown" notepad--/src
 结构体和回调类型都属于 ABI 高风险区域。除非任务明确要求适配新的宿主版本，否则不要
 改变字段顺序、字段类型、调用约定或导出签名。
 
+notepad-- v3.8.3 会为每个 `CCNotePad` 窗口分别加载插件菜单并调用 `NDD_PROC_MAIN`。
+插件因此按入口参数中的宿主窗口维护独立控制器，同一窗口重复调用时复用已有实例；快捷键
+使用窗口作用域，编辑器右键菜单桥接也必须核对所属顶层窗口。不能用进程级单例跨窗口共享
+控制器或 Dock。
+
 检查兼容性时，应逐项对照 Gitee 基线中的 `src/include/pluginGl.h` 和 `src/plugin.h`，
 不能只比较名称或依赖宽泛的文本差异。组件关系、宿主调用方式和当前 ABI 设计说明见
 [`architecture.md`](architecture.md)。

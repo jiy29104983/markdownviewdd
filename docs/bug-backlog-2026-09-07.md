@@ -138,7 +138,7 @@
 
 ## BUG-004：同进程多窗口只初始化一个插件控制器
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认。
 - **代码位置**：[plugin_exports.cpp](../src/plugin_exports.cpp) 的 `g_controller`（8）
   和 `NDD_PROC_MAIN()`（44～55）；
@@ -473,4 +473,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置输出显示缺少 Qt5Config.cmake；测试源码 tests/preview_controller_document_identity_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主导出流程均待复核。跨目录相对图片资源仍未打包，按 BUG-008 处理；文件路径变化后的元数据刷新按 BUG-005 处理。
+```
+
+## BUG-004 交回验证
+
+```text
+单据编号：BUG-004
+状态：修复完成／待验证
+基于的提交：5c54499e5204376ac629ad6012f9564d888708ff
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-001，ba87695e48576e0711dadbcc2a97832b22efc5e4
+修改文件：CMakeLists.txt；docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/plugin_exports.cpp；src/preview_controller.cpp；src/preview_controller.h；tests/plugin_multi_window_test.cpp
+问题复现与根因：静态确认原插件使用进程级 QPointer<PreviewController> g_controller；首个宿主窗口创建控制器后，同进程第二个窗口进入 NDD_PROC_MAIN 会跳过控制器和菜单初始化却返回成功。控制器的显示／隐藏快捷键使用 Qt::ApplicationShortcut，多个窗口各自初始化后也会争抢同一应用级快捷键。全局事件过滤器原先仅比较菜单父对象与当前编辑器，没有显式核对其所属宿主窗口。
+实际修改方案：移除进程级全局控制器，改为从本次 notepad 宿主窗口的直接子对象中查找或创建 PreviewController；同一窗口重复入口复用已有控制器，installMenu 记录根菜单并保证幂等；每个控制器、Dock、计时器和动作继续由对应宿主窗口的 Qt 父子所有权管理；快捷键改为 Qt::WindowShortcut；右键菜单桥接增加菜单、当前编辑器和宿主窗口归属一致检查；新增独立 Qt Test 覆盖双窗口预览／导出互不影响、重复初始化、关闭一窗后另一窗继续工作及右键菜单隔离。
+相较本单计划的偏差及原因：没有引入独立进程级注册表，而使用宿主窗口直接子对象作为受控注册表；该方案由 Qt 父子所有权自动清理，满足按窗口实例化与幂等要求且范围更小。未修改 getCurrentEditor 或 hostCallback 的使用方式，也未改变插件 ABI。
+验收标准逐项结果：两个同进程窗口都可独立预览、刷新、导出——专用测试源码覆盖，运行 blocked；操作互不影响——预览／导出和右键菜单隔离测试源码覆盖，运行 blocked；关闭任一窗口不破坏另一窗口——QPointer 生命周期测试源码覆盖，运行 blocked；重复入口调用不增加重复动作——控制器、Dock、计时器及菜单动作计数测试源码覆盖，运行 blocked；没有快捷键歧义警告——快捷键已限定 Qt::WindowShortcut 并有断言，真实宿主警告检查 not verified。
+静态检查：passed（git diff --check；复核宿主 v3.8.3 的 openFileInNewWin、quickshow、插件菜单加载与 sendParaToPlugin；ABI 与 notepad--/ 未修改）
+自动化测试：blocked（新增 markdownview_multi_window_tests；CMake 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 执行在新窗口打开、双窗口快捷键、关闭任一窗口及重复插件入口测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置输出显示缺少 Qt5Config.cmake；测试源码 tests/plugin_multi_window_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主双窗口操作均待复核。Diagnostics::resetLog() 仍会在每次窗口入口截断共享日志，该独立问题按 BUG-016 处理；本单不能仅凭静态检查标记为已关闭。
 ```
