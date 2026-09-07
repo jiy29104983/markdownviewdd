@@ -203,7 +203,17 @@ bool MarkdownPreviewDock::hasPreviewFor(QWidget *editor,
 {
     return editor && m_previewEditor == editor &&
         m_previewContentVersion == contentVersion &&
-        m_nativePreview && m_nativeTextEdit && m_nativePreview->isVisible();
+        m_nativePreview && m_nativeTextEdit;
+}
+
+QByteArray MarkdownPreviewDock::htmlSnapshotFor(
+    QWidget *editor, quint64 contentVersion) const
+{
+    if (!hasPreviewFor(editor, contentVersion)) {
+        return QByteArray();
+    }
+
+    return m_nativeTextEdit->document()->toHtml("UTF-8").toUtf8();
 }
 
 void MarkdownPreviewDock::trackNativePreview(QWidget *previewWindow)
@@ -284,6 +294,7 @@ void MarkdownPreviewDock::renderMarkdown(const QString &markdown,
 void MarkdownPreviewDock::showMessage(const QString &title,
                                       const QString &message)
 {
+    invalidatePreview();
     if (m_nativePreview) {
         m_nativePreview->hide();
     }
@@ -341,14 +352,15 @@ double MarkdownPreviewDock::scrollRatio() const
            static_cast<double>(bar->maximum() - bar->minimum());
 }
 
-bool MarkdownPreviewDock::exportHtml(QWidget *dialogParent)
+bool MarkdownPreviewDock::saveHtmlSnapshot(QWidget *dialogParent,
+                                           const QByteArray &html,
+                                           const QString &sourceFilePath)
 {
-    QTextDocument *document = activeDocument();
-    if (!document || document->isEmpty()) {
+    if (html.isEmpty()) {
         return false;
     }
 
-    QFileInfo sourceInfo(m_currentFilePath);
+    const QFileInfo sourceInfo(sourceFilePath);
     const QString suggestedName = sourceInfo.completeBaseName().isEmpty()
         ? QStringLiteral("preview.html")
         : sourceInfo.completeBaseName() + QStringLiteral(".html");
@@ -363,28 +375,50 @@ bool MarkdownPreviewDock::exportHtml(QWidget *dialogParent)
         return false;
     }
 
-    QSaveFile output(targetPath);
-    if (!output.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QMessageBox::warning(dialogParent, tr("导出失败"),
-                             tr("无法写入文件：%1").arg(targetPath));
-        return false;
-    }
-
-    const QByteArray html = document->toHtml("UTF-8").toUtf8();
-    if (output.write(html) != html.size() || !output.commit()) {
-        QMessageBox::warning(dialogParent, tr("导出失败"),
-                             tr("写入文件时发生错误：%1").arg(targetPath));
+    QString errorMessage;
+    if (!writeHtmlSnapshot(html, targetPath, &errorMessage)) {
+        QMessageBox::warning(dialogParent, tr("导出失败"), errorMessage);
         return false;
     }
 
     return true;
 }
 
-QTextDocument *MarkdownPreviewDock::activeDocument() const
+bool MarkdownPreviewDock::writeHtmlSnapshot(const QByteArray &html,
+                                            const QString &targetPath,
+                                            QString *errorMessage)
 {
-    return m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()
-        ? m_nativeTextEdit->document()
-        : m_browser->document();
+    if (html.isEmpty() || targetPath.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = tr("没有可写入的 HTML 快照或目标路径。");
+        }
+        return false;
+    }
+
+    QSaveFile output(targetPath);
+    if (!output.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (errorMessage) {
+            *errorMessage = tr("无法写入文件：%1").arg(targetPath);
+        }
+        return false;
+    }
+
+    const qint64 expectedSize = static_cast<qint64>(html.size());
+    if (output.write(html) != expectedSize) {
+        output.cancelWriting();
+        if (errorMessage) {
+            *errorMessage = tr("写入文件时发生错误：%1").arg(targetPath);
+        }
+        return false;
+    }
+    if (!output.commit()) {
+        if (errorMessage) {
+            *errorMessage = tr("提交导出文件时发生错误：%1").arg(targetPath);
+        }
+        return false;
+    }
+
+    return true;
 }
 
 QAbstractScrollArea *MarkdownPreviewDock::activeScrollArea() const

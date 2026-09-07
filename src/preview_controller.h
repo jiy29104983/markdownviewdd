@@ -2,6 +2,7 @@
 
 #include "ndd_plugin_api.h"
 
+#include <QByteArray>
 #include <QObject>
 #include <QPointer>
 #include <QtGlobal>
@@ -21,6 +22,7 @@ public:
     explicit PreviewController(QWidget *notepad);
 
     bool installMenu(QMenu *rootMenu);
+    bool currentHtmlSnapshot(QByteArray *html, QString *sourceFilePath);
 
 private slots:
     void pollEditor();
@@ -30,6 +32,7 @@ private slots:
     void togglePreview(bool visible);
     void setSyncScrolling(bool enabled);
     void scrollEditorToRatio(double ratio);
+    void exportCurrentHtml();
     void showAbout();
 
 protected:
@@ -51,6 +54,8 @@ private:
     void synchronizeActiveEditor();
     void markPreviewPending();
     bool isPreviewCurrent() const;
+    bool renderCurrentDocument(bool allowHiddenDock);
+    void updateExportActionState();
     QWidget *nativePreviewForEditor() const;
     bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview();
@@ -65,6 +70,7 @@ private:
     QPointer<MarkdownPreviewDock> m_dock;
     QPointer<QAction> m_toggleAction;
     QPointer<QAction> m_syncAction;
+    QPointer<QAction> m_exportAction;
     QTimer *m_pollTimer = nullptr;
     QTimer *m_renderTimer = nullptr;
     bool m_syncScrolling = true;

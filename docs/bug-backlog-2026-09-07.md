@@ -113,11 +113,12 @@
 
 ## BUG-003：HTML 导出选错文档、导出提示页或旧内容
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认；立即导出的旧内容行为需要用明确的产品语义收敛。
 - **代码位置**：[markdown_preview_dock.cpp](../src/markdown_preview_dock.cpp) 的
-  `showMessage()`（207）、`exportHtml()`（267）、`activeDocument()`（306）；
-  [preview_controller.cpp](../src/preview_controller.cpp) 的 `installMenu()` 导出动作（128）。
+  `showMessage()`、`htmlSnapshotFor()`、`saveHtmlSnapshot()`、`writeHtmlSnapshot()`；
+  [preview_controller.cpp](../src/preview_controller.cpp) 的 `currentHtmlSnapshot()`、
+  `exportCurrentHtml()` 和 `installMenu()` 导出动作。
 - **问题影响**：`activeDocument()` 通过原生控件是否可见选择文档。隐藏 Dock 后会选择
   备用浏览器，可能静默失败或导出先前提示页。错误提示非空，也会被当成有效文档。
   导出入口没有确认预览与当前编辑器的身份、版本是否一致。
@@ -224,7 +225,8 @@
 - **优先级／状态**：P2／待处理。
 - **证据性质**：静态确认。
 - **代码位置**：[markdown_preview_dock.cpp](../src/markdown_preview_dock.cpp) 的
-  `exportHtml()`（296）、`baseUrlForFile()`（414）；BUG-003 新建的导出逻辑。
+  `htmlSnapshotFor()`、`saveHtmlSnapshot()`、`writeHtmlSnapshot()`、`baseUrlForFile()`；
+  [preview_controller.cpp](../src/preview_controller.cpp) 的 `currentHtmlSnapshot()`。
 - **问题影响**：直接 `toHtml()` 保留图片原始相对名称，导出到其他目录后浏览器从错误
   目录查找资源，导致图片丢失。预览文档的 `baseUrl` 本身不构成可迁移的资源包。
 - **建议复现**：Markdown 引用 `images/a.png`，导出到其他目录后打开 HTML；再移动导出
@@ -448,4 +450,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置错误见本次交回测试证据；测试源码 tests/preview_controller_document_identity_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release、DLL Artifact、真实宿主 A→B→A、当前标签关闭、同步滚动及连续输入体验均待复核。后续 BUG-003 可使用 Dock 的预览身份接口，但本单未改变现有导出语义。
+```
+
+## BUG-003 交回验证
+
+```text
+单据编号：BUG-003
+状态：修复完成／待验证
+基于的提交：e71f14f4c067b271711c128259cf4f6e164025bb
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-002，e71f14f4c067b271711c128259cf4f6e164025bb
+修改文件：README.md；docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/markdown_preview_dock.cpp；src/markdown_preview_dock.h；src/preview_controller.cpp；src/preview_controller.h；tests/preview_controller_document_identity_test.cpp
+问题复现与根因：静态确认原 activeDocument() 以原生控件可见性选择数据源，Dock 隐藏后会改取备用 QTextBrowser；showMessage() 生成的非空提示 HTML 可被误判为有效文档；菜单导出动作没有同步当前标签，也没有核对 BUG-002 建立的编辑器身份和内容版本，因此可能导出旧内容或其他标签。
+实际修改方案：导出语义收敛为当前活动 Markdown 文档的最新有效内容；控制器同步当前标签并在内容未就绪时允许隐藏 Dock 下同步刷新；Dock 仅为身份和版本匹配的原生预览生成 HTML 字节快照，提示页会失效导出身份；快照和源路径在文件对话框前固定；保存交互与写入分离，取消不进入写入，QSaveFile 保持原子提交；导出动作随当前文档类型启停；补充隐藏导出、立即编辑、快速切换、提示页、动作状态和快照写入回归测试。
+相较本单计划的偏差及原因：未建立独立导出服务类，而是在现有控制器和 Dock 边界内提供可测试的快照与写入接口，避免超出单据范围；未复制或嵌入相对资源，该工作仍属于 BUG-008。
+验收标准逐项结果：隐藏与显示时导出对象一致——身份接口不依赖可见性并有隐藏 Dock 测试源码，运行 blocked；提示页不能导出——showMessage() 失效身份并有测试源码，运行 blocked；立即导出包含最后一次编辑——导出前同步刷新并有测试源码，运行 blocked；快速切换不串文档——导出前同步当前标签并有 A/B 测试源码，运行 blocked；取消不写文件——保存对话框空路径直接返回，写入接口空路径测试源码覆盖，运行 blocked；写入失败不破坏已有文件——继续使用 QSaveFile，测试覆盖无效快照不改已有文件及原子替换成功，实际提交失败场景未运行。
+静态检查：passed（git diff --check；复核 BUG-002 身份模型、宿主 v3.8.3 同步渲染槽；ABI 与 notepad--/ 未修改）
+自动化测试：blocked（扩展 markdownview_document_identity_tests；CMake 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 执行隐藏侧栏、立即编辑、快速切换、取消和写入失败测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置输出显示缺少 Qt5Config.cmake；测试源码 tests/preview_controller_document_identity_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主导出流程均待复核。跨目录相对图片资源仍未打包，按 BUG-008 处理；文件路径变化后的元数据刷新按 BUG-005 处理。
 ```

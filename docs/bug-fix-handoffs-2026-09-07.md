@@ -174,3 +174,101 @@ Dock 新增的身份参数，未削弱原有覆盖。
 Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实宿主中的 A→B→A、
 关闭当前标签、预览与编辑器双向滚动、连续输入防抖体验均未完成。后续 BUG-003 可复用 Dock
 的预览身份接口，但本单没有改变现有 HTML 导出语义；复核不能据静态检查直接关闭 BUG-002。
+
+## BUG-003：HTML 导出选错文档、导出提示页或旧内容
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`e71f14f4c067b271711c128259cf4f6e164025bb`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-002，`e71f14f4c067b271711c128259cf4f6e164025bb`
+- **修改文件**：
+  - `README.md`
+  - `docs/architecture.md`
+  - `docs/bug-backlog-2026-09-07.md`
+  - `docs/bug-fix-handoffs-2026-09-07.md`
+  - `src/markdown_preview_dock.cpp`
+  - `src/markdown_preview_dock.h`
+  - `src/preview_controller.cpp`
+  - `src/preview_controller.h`
+  - `tests/preview_controller_document_identity_test.cpp`
+
+### 问题核实与根因
+
+静态核实原 `activeDocument()` 以原生预览控件是否可见来选择导出文档。Dock 隐藏后，原生
+控件的 `isVisible()` 为假，导出会改取备用 `QTextBrowser`；该浏览器可能没有内容，也可能
+保留 `showMessage()` 写入的提示或错误 HTML。由于提示 HTML 非空，原逻辑会将其视为有效
+预览并允许保存。
+
+菜单导出动作还直接调用 Dock，没有先同步 `editTabWidget` 当前页，也没有检查 BUG-002
+建立的活动编辑器、预览编辑器、内容版本和已渲染版本。在文本变化后的防抖窗口或 A→B
+切换后的轮询窗口中，因此可能导出旧版本或错误标签。该问题已由静态调用链确认；真实宿主
+中的具体表现尚未运行复现。
+
+### 实际修改方案
+
+导出语义收敛为“当前活动 Markdown 文档的最新有效预览”。控制器新增当前 HTML 快照准备
+入口：先同步当前标签，检查文档类型；若预览身份或版本尚未就绪，则即使 Dock 已隐藏也通过
+宿主 `on_viewMarkdown`／`on_updataMarkdown` 同步完成一次最新渲染。渲染后再次核对编辑器
+和内容版本，只有 BUG-002 状态模型与 Dock 预览归属完全匹配才生成快照。
+
+Dock 不再根据控件可见性选择导出数据源，只从匹配身份和版本的原生 `QTextDocument` 生成
+HTML 字节。`showMessage()` 会立即失效预览身份，提示页和错误页不能成为快照来源。HTML
+字节和源文件路径在打开保存对话框前复制完成，即使模态对话框期间发生标签变化，待写入数据
+也不会改变。
+
+快照生成、保存交互和文件写入已分开。取消文件对话框直接返回，不调用写入；文件写入继续
+使用 `QSaveFile`，短写时显式取消，提交失败返回清晰错误。导出动作会随当前文档是否为支持的
+Markdown 类型启停。README 已写明导出对象、隐藏侧栏、提示页、取消和相对资源边界。
+
+扩展现有 Qt Test，覆盖隐藏 Dock 后编辑并立即导出、A→B 未轮询即导出、提示页及身份不匹配
+拒绝导出、非 Markdown 文档禁用动作，以及无效输入不改已有文件和原子替换成功。
+
+### 相较计划的偏差
+
+没有引入独立导出服务类，而是在现有 `PreviewController` 与 `MarkdownPreviewDock` 边界内
+增加可测试的快照和写入接口，避免为单一功能扩大架构范围。没有复制、重写或嵌入相对图片；
+跨目录资源迁移仍属于 BUG-008。文件另存为或重命名后的路径元数据刷新仍属于 BUG-005。
+
+### 验收标准逐项结果
+
+1. **隐藏与显示时导出对象一致**：快照接口不再读取控件可见性，隐藏 Dock 用例已覆盖最后
+   编辑内容和 Dock 保持隐藏；测试运行 `blocked`。
+2. **提示页不能导出**：`showMessage()` 显式失效预览身份，测试验证提示 HTML 不能取得
+   快照；测试运行 `blocked`。
+3. **立即导出包含最后一次编辑**：文本变化推进内容版本，导出准备会同步刷新未就绪版本；
+   隐藏 Dock 后立即编辑和导出用例已覆盖；测试运行 `blocked`。
+4. **快速切换不串文档**：快照准备先同步当前标签并在渲染后复核身份；A 已渲染、切 B 后
+   未等待轮询即导出的用例验证只取得 B；测试运行 `blocked`。
+5. **取消不写文件**：文件对话框返回空路径时直接返回；写入接口空路径测试源码已覆盖；
+   实际文件对话框运行 `not verified`。
+6. **写入失败不破坏已有文件**：保留 `QSaveFile` 原子临时文件与提交语义，短写显式取消；
+   测试源码覆盖无效快照不改已有文件和成功原子替换，实际磁盘提交失败场景 `not verified`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check` 通过；复核 BUG-002 身份接口、notepad-- v3.8.3 的 `on_viewMarkdown`／`on_updataMarkdown` 同步调用；ABI 和 `notepad--/` 未修改 |
+| 自动化测试 | `blocked` | 已扩展 `markdownview_document_identity_tests`；`cmake -S . -B /tmp/markdownview-bug003-build -DBUILD_TESTING=ON` 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 失败 |
+| Windows Release 编译 | `blocked` | 当前为 Linux 环境，没有 Qt 5.15.2 和 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或打包 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 中执行隐藏／显示导出、立即编辑、快速切换、取消和写入失败测试 |
+
+### 实际环境
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **测试源码**：`tests/preview_controller_document_identity_test.cpp`
+- **CMake 配置目录**：`/tmp/markdownview-bug003-build`
+- **截图或二进制报告**：未生成
+
+### 未验证项与已知限制
+
+Qt Test 尚未实际编译运行。Windows Release DLL、Artifact，以及真实宿主中的隐藏侧栏导出、
+编辑后立即导出、A→B 快速切换、取消保存和磁盘写入失败均未完成。跨目录导出的相对图片仍
+不会自动复制或嵌入，按 BUG-008 处理；文件路径动态变化后的元数据刷新按 BUG-005 处理。
+后续复核不能仅凭静态检查将 BUG-003 标记为已关闭。

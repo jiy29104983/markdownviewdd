@@ -3,10 +3,12 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
+#include <QFile>
 #include <QMainWindow>
 #include <QMenu>
 #include <QScrollBar>
 #include <QTabWidget>
+#include <QTemporaryDir>
 #include <QTextEdit>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -77,6 +79,10 @@ private slots:
     void previewScrollCannotMoveNewActiveEditor();
     void manualRefreshUsesCurrentTab();
     void rapidSwitchAndTypingKeepLatestDocument();
+    void hiddenDockExportRefreshesLatestDocument();
+    void rapidSwitchExportUsesCurrentDocument();
+    void messageAndMismatchedPreviewCannotBeExported();
+    void snapshotWriterHandlesCancelAndAtomicReplacement();
 };
 
 namespace {
@@ -117,6 +123,16 @@ struct Fixture
     {
         QVERIFY(QMetaObject::invokeMethod(&controller, "pollEditor",
                                          Qt::DirectConnection));
+    }
+
+    QAction *action(const QString &text)
+    {
+        for (QAction *candidate : menu.actions()) {
+            if (candidate && candidate->text() == text) {
+                return candidate;
+            }
+        }
+        return nullptr;
     }
 };
 }
@@ -204,6 +220,129 @@ void PreviewControllerDocumentIdentityTest::rapidSwitchAndTypingKeepLatestDocume
     QCOMPARE(editorA->renderCount(), 1);
     QTRY_COMPARE_WITH_TIMEOUT(editorA->renderCount(), 2, 1000);
     QCOMPARE(editorB->renderCount(), 0);
+}
+
+void PreviewControllerDocumentIdentityTest::hiddenDockExportRefreshesLatestDocument()
+{
+    Fixture fixture;
+    auto *editor = new QsciScintilla(QStringLiteral("notes/current.md"),
+                                     QStringLiteral("# Initial"));
+    fixture.tabs.addTab(editor, QStringLiteral("Current"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+    QCOMPARE(editor->renderCount(), 1);
+
+    fixture.dock()->hide();
+    QCoreApplication::processEvents();
+    editor->edit(QStringLiteral("# Latest export"));
+
+    QByteArray html;
+    QString sourceFilePath;
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &sourceFilePath));
+    QVERIFY(fixture.dock()->isHidden());
+    QCOMPARE(editor->renderCount(), 2);
+    QCOMPARE(sourceFilePath, QStringLiteral("notes/current.md"));
+    QVERIFY(html.contains("Latest export"));
+    QVERIFY(!html.contains("Initial"));
+}
+
+void PreviewControllerDocumentIdentityTest::rapidSwitchExportUsesCurrentDocument()
+{
+    Fixture fixture;
+    auto *editorA = new QsciScintilla(QStringLiteral("a.md"),
+                                     QStringLiteral("# Document A"));
+    auto *editorB = new QsciScintilla(QStringLiteral("b.md"),
+                                     QStringLiteral("# Document B"));
+    fixture.tabs.addTab(editorA, QStringLiteral("A"));
+    fixture.tabs.addTab(editorB, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(editorA);
+    fixture.renderNow();
+
+    fixture.tabs.setCurrentWidget(editorB);
+    QByteArray html;
+    QString sourceFilePath;
+    QVERIFY(fixture.controller.currentHtmlSnapshot(&html, &sourceFilePath));
+    QCOMPARE(sourceFilePath, QStringLiteral("b.md"));
+    QVERIFY(html.contains("Document B"));
+    QVERIFY(!html.contains("Document A"));
+    QCOMPARE(editorA->renderCount(), 1);
+    QCOMPARE(editorB->renderCount(), 1);
+}
+
+void PreviewControllerDocumentIdentityTest::messageAndMismatchedPreviewCannotBeExported()
+{
+    Fixture fixture;
+    auto *editor = new QsciScintilla(QStringLiteral("document.md"),
+                                     QStringLiteral("# Document"));
+    fixture.tabs.addTab(editor, QStringLiteral("Document"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+
+    fixture.dock()->showMessage(QStringLiteral("Error"),
+                                QStringLiteral("This is not document data"));
+    QVERIFY(fixture.dock()->htmlSnapshotFor(editor, 1).isEmpty());
+
+    auto *unsupported = new QsciScintilla(QStringLiteral("notes.txt"),
+                                          QStringLiteral("plain text"));
+    fixture.tabs.addTab(unsupported, QStringLiteral("Text"));
+    fixture.tabs.setCurrentWidget(unsupported);
+    fixture.pollEditor();
+
+    QAction *exportAction = fixture.action(QStringLiteral("导出 HTML…"));
+    QVERIFY(exportAction);
+    QVERIFY(!exportAction->isEnabled());
+
+    QByteArray html;
+    QString sourceFilePath;
+    QVERIFY(!fixture.controller.currentHtmlSnapshot(&html, &sourceFilePath));
+    QVERIFY(html.isEmpty());
+    QVERIFY(sourceFilePath.isEmpty());
+}
+
+void PreviewControllerDocumentIdentityTest::snapshotWriterHandlesCancelAndAtomicReplacement()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString targetPath = directory.filePath(QStringLiteral("preview.html"));
+
+    QFile existing(targetPath);
+    QVERIFY(existing.open(QIODevice::WriteOnly));
+    QCOMPARE(existing.write("old"), qint64(3));
+    existing.close();
+
+    QString errorMessage;
+    QVERIFY(!MarkdownPreviewDock::writeHtmlSnapshot(
+        QByteArray(), targetPath, &errorMessage));
+    QVERIFY(!errorMessage.isEmpty());
+    QVERIFY(existing.open(QIODevice::ReadOnly));
+    QCOMPARE(existing.readAll(), QByteArray("old"));
+    existing.close();
+
+    errorMessage.clear();
+    QVERIFY(!MarkdownPreviewDock::writeHtmlSnapshot(
+        QByteArray("new"), QString(), &errorMessage));
+    QVERIFY(!errorMessage.isEmpty());
+
+    const QString blockingPath = directory.filePath(QStringLiteral("not-a-directory"));
+    QFile blockingFile(blockingPath);
+    QVERIFY(blockingFile.open(QIODevice::WriteOnly));
+    QCOMPARE(blockingFile.write("sentinel"), qint64(8));
+    blockingFile.close();
+    errorMessage.clear();
+    QVERIFY(!MarkdownPreviewDock::writeHtmlSnapshot(
+        QByteArray("new"),
+        blockingPath + QStringLiteral("/preview.html"), &errorMessage));
+    QVERIFY(!errorMessage.isEmpty());
+    QVERIFY(blockingFile.open(QIODevice::ReadOnly));
+    QCOMPARE(blockingFile.readAll(), QByteArray("sentinel"));
+    blockingFile.close();
+
+    errorMessage.clear();
+    QVERIFY(MarkdownPreviewDock::writeHtmlSnapshot(
+        QByteArray("new"), targetPath, &errorMessage));
+    QVERIFY(errorMessage.isEmpty());
+    QVERIFY(existing.open(QIODevice::ReadOnly));
+    QCOMPARE(existing.readAll(), QByteArray("new"));
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

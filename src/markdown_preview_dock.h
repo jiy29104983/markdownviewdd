@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QByteArray>
 #include <QDockWidget>
 #include <QHash>
 #include <QMetaObject>
@@ -11,7 +12,6 @@ class QLabel;
 class QLayout;
 class QScrollBar;
 class QTextBrowser;
-class QTextDocument;
 class QTextEdit;
 class QTimer;
 class QToolButton;
@@ -29,13 +29,19 @@ public:
                             QWidget *editor, quint64 contentVersion);
     void invalidatePreview();
     bool hasPreviewFor(QWidget *editor, quint64 contentVersion) const;
+    QByteArray htmlSnapshotFor(QWidget *editor,
+                               quint64 contentVersion) const;
     void renderMarkdown(const QString &markdown, const QString &filePath);
     void showMessage(const QString &title, const QString &message);
     void setDocumentInfo(const QString &filePath, int characterCount);
     void setSyncScrolling(bool enabled);
     void scrollToRatio(double ratio);
     double scrollRatio() const;
-    bool exportHtml(QWidget *dialogParent);
+    bool saveHtmlSnapshot(QWidget *dialogParent, const QByteArray &html,
+                          const QString &sourceFilePath);
+    static bool writeHtmlSnapshot(const QByteArray &html,
+                                  const QString &targetPath,
+                                  QString *errorMessage = nullptr);
 
 signals:
     void refreshRequested();
@@ -47,7 +53,6 @@ private slots:
     void openLink(const QUrl &url);
 
 private:
-    QTextDocument *activeDocument() const;
     QAbstractScrollArea *activeScrollArea() const;
     void connectNativeScrollBar(QScrollBar *scrollBar);
     void trackNativePreview(QWidget *previewWindow);

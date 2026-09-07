@@ -125,12 +125,10 @@ bool PreviewController::installMenu(QMenu *rootMenu)
     connect(m_syncAction, &QAction::toggled,
             this, &PreviewController::setSyncScrolling);
 
-    auto *exportAction = rootMenu->addAction(tr("导出 HTML…"));
-    connect(exportAction, &QAction::triggered, this, [this]() {
-        if (m_dock) {
-            m_dock->exportHtml(m_notepad);
-        }
-    });
+    m_exportAction = rootMenu->addAction(tr("导出 HTML…"));
+    connect(m_exportAction, &QAction::triggered,
+            this, &PreviewController::exportCurrentHtml);
+    updateExportActionState();
 
     rootMenu->addSeparator();
     auto *aboutAction = rootMenu->addAction(tr("关于 Markdown 预览"));
@@ -269,14 +267,19 @@ void PreviewController::scheduleRender()
 
 void PreviewController::renderNow()
 {
+    renderCurrentDocument(false);
+}
+
+bool PreviewController::renderCurrentDocument(bool allowHiddenDock)
+{
     // Manual refreshes and explicit renders supersede any pending automatic
     // refresh for the same editor state.
     synchronizeActiveEditor();
     m_renderTimer->stop();
     Diagnostics::write(QStringLiteral("renderNow entered"));
-    if (!m_dock || !m_dock->isVisible()) {
+    if (!m_dock || (!allowHiddenDock && !m_dock->isVisible())) {
         Diagnostics::write(QStringLiteral("renderNow skipped: dock hidden"));
-        return;
+        return false;
     }
 
     if (!m_editor) {
@@ -286,7 +289,8 @@ void PreviewController::renderNow()
         Diagnostics::write(QStringLiteral("renderNow: no active editor"));
         m_dock->showMessage(tr("没有活动文档"),
                             tr("打开一个 Markdown 文件后即可预览。"));
-        return;
+        updateExportActionState();
+        return false;
     }
 
     const QString filePath = currentFilePath();
@@ -299,7 +303,8 @@ void PreviewController::renderNow()
             tr("当前文档不是 Markdown 文件"),
             tr("支持 .md、.markdown、.mdown、.mkd、.mkdn 和 .mdwn 文件。"));
         m_dock->setDocumentInfo(filePath, -1);
-        return;
+        updateExportActionState();
+        return false;
     }
 
     QPointer<QWidget> renderEditor = m_editor;
@@ -312,7 +317,7 @@ void PreviewController::renderNow()
             Diagnostics::write(QStringLiteral(
                 "renderNow failure discarded: editor state changed"));
             scheduleRender();
-            return;
+            return false;
         }
         if (m_editor == renderEditor && m_contentVersion == renderVersion) {
             m_previewState = PreviewState::Failed;
@@ -322,7 +327,8 @@ void PreviewController::renderNow()
         m_dock->showMessage(
             tr("无法打开原生 Markdown 预览"),
             tr("notepad-- 没有响应 on_viewMarkdown 调用，或没有创建 MarkdownView。"));
-        return;
+        updateExportActionState();
+        return false;
     }
     m_lastRenderDurationMs = elapsed.elapsed();
     Diagnostics::write(QStringLiteral("renderNow completed in %1 ms")
@@ -332,7 +338,7 @@ void PreviewController::renderNow()
     if (m_editor != renderEditor || m_contentVersion != renderVersion) {
         Diagnostics::write(QStringLiteral("renderNow discarded: editor state changed"));
         scheduleRender();
-        return;
+        return false;
     }
 
     m_previewEditor = renderEditor;
@@ -343,6 +349,8 @@ void PreviewController::renderNow()
     if (m_syncScrolling) {
         QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
     }
+    updateExportActionState();
+    return true;
 }
 
 void PreviewController::togglePreview(bool visible)
@@ -400,6 +408,61 @@ void PreviewController::scrollEditorToRatio(double ratio)
     m_lastEditorScrollValue = editorBar->value();
 }
 
+bool PreviewController::currentHtmlSnapshot(QByteArray *html,
+                                            QString *sourceFilePath)
+{
+    if (!html || !sourceFilePath) {
+        return false;
+    }
+
+    html->clear();
+    sourceFilePath->clear();
+    synchronizeActiveEditor();
+    updateExportActionState();
+    if (!m_editor || !isMarkdownDocument(currentFilePath())) {
+        return false;
+    }
+
+    if (!isPreviewCurrent() && !renderCurrentDocument(true)) {
+        return false;
+    }
+
+    synchronizeActiveEditor();
+    if (!isPreviewCurrent()) {
+        Diagnostics::write(
+            QStringLiteral("export snapshot discarded: editor state changed"));
+        return false;
+    }
+
+    const QPointer<QWidget> snapshotEditor = m_editor;
+    const quint64 snapshotVersion = m_contentVersion;
+    const QString snapshotPath = currentFilePath();
+    const QByteArray snapshot = m_dock->htmlSnapshotFor(
+        snapshotEditor.data(), snapshotVersion);
+    if (snapshot.isEmpty()) {
+        Diagnostics::write(QStringLiteral("export snapshot unavailable"));
+        return false;
+    }
+
+    *html = snapshot;
+    *sourceFilePath = snapshotPath;
+    return true;
+}
+
+void PreviewController::exportCurrentHtml()
+{
+    QByteArray html;
+    QString sourceFilePath;
+    if (!currentHtmlSnapshot(&html, &sourceFilePath)) {
+        QMessageBox::warning(
+            m_notepad, tr("无法导出 HTML"),
+            tr("当前活动 Markdown 文档没有可导出的最新有效预览。请确认文档类型后重试。"));
+        return;
+    }
+
+    m_dock->saveHtmlSnapshot(m_notepad, html, sourceFilePath);
+}
+
 void PreviewController::showAbout()
 {
     QMessageBox::about(
@@ -446,6 +509,7 @@ void PreviewController::attachEditor(QWidget *editor)
             if (m_dock) {
                 m_dock->invalidatePreview();
             }
+            updateExportActionState();
             scheduleRender();
         });
         if (disconnectHostImmediateRefresh()) {
@@ -453,6 +517,7 @@ void PreviewController::attachEditor(QWidget *editor)
                 QStringLiteral("existing host immediate refresh disconnected on attach"));
         }
     }
+    updateExportActionState();
 }
 
 void PreviewController::synchronizeActiveEditor()
@@ -483,6 +548,7 @@ void PreviewController::markPreviewPending()
     if (m_dock) {
         m_dock->invalidatePreview();
     }
+    updateExportActionState();
 }
 
 bool PreviewController::isPreviewCurrent() const
@@ -490,6 +556,16 @@ bool PreviewController::isPreviewCurrent() const
     return m_previewState == PreviewState::Ready && m_editor &&
         m_previewEditor == m_editor && m_renderedVersion == m_contentVersion &&
         m_dock && m_dock->hasPreviewFor(m_editor.data(), m_contentVersion);
+}
+
+void PreviewController::updateExportActionState()
+{
+    if (!m_exportAction) {
+        return;
+    }
+
+    m_exportAction->setEnabled(
+        m_editor && isMarkdownDocument(currentFilePath()));
 }
 
 QWidget *PreviewController::nativePreviewForEditor() const
