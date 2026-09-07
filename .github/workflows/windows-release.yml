@@ -100,7 +100,8 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
-          $output = ctest --test-dir build -C Release -L lifecycle --output-on-failure --no-tests=error 2>&1
+          $testExe = Join-Path $PWD "build\Release\markdownview_lifecycle_tests.exe"
+          $output = & $testExe -platform offscreen -v1 2>&1
           $exitCode = $LASTEXITCODE
           $output | ForEach-Object { Write-Host $_ }
           if ($exitCode -ne 0) {
