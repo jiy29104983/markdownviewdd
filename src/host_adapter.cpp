@@ -174,6 +174,33 @@ public:
         }
     }
 
+    bool releasePreview(QWidget *editor, QString *error) override
+    {
+        if (!editor) {
+            if (error) {
+                *error = QStringLiteral("没有可淘汰的编辑器");
+            }
+            return false;
+        }
+
+        QWidget *preview = nativePreview(editor);
+        editor->setProperty(kNativePreviewCurrent, false);
+        editor->setProperty(kNativePreviewProperty, QVariant());
+        if (!preview) {
+            return true;
+        }
+
+        // The host stores this object in a QPointer, so deferred deletion
+        // clears its handle and lets on_viewMarkdown create a fresh preview.
+        // Remove only the ownership connection installed by this adapter's
+        // editor-to-preview relationship before scheduling deletion.
+        QObject::disconnect(editor, &QObject::destroyed,
+                            preview, &QObject::deleteLater);
+        preview->hide();
+        preview->deleteLater();
+        return true;
+    }
+
 private:
     QWidget *nativePreview(QWidget *editor) const
     {

@@ -3,6 +3,7 @@
 #include "ndd_plugin_api.h"
 
 #include <QByteArray>
+#include <QList>
 #include <QObject>
 #include <QPointer>
 #include <QtGlobal>
@@ -42,6 +43,13 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
 
 private:
+    struct PreviewCacheEntry {
+        QPointer<QWidget> editor;
+        double scrollRatio = 0.0;
+        bool hasScrollRatio = false;
+        bool hasNativePreview = false;
+    };
+
     enum class PreviewState {
         NoDocument,
         Unsupported,
@@ -66,6 +74,11 @@ private:
     void updateExportActionState();
     bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview(bool forceHostUpdate);
+    void rememberCurrentPreviewScroll();
+    void touchPreviewCache(QWidget *editor);
+    void enforcePreviewCacheLimit();
+    PreviewCacheEntry *previewCacheEntry(QWidget *editor);
+    void prunePreviewCache();
     void updateSynchronizedScroll();
     QString currentFilePath() const;
     bool isMarkdownDocument(const QString &filePath) const;
@@ -92,4 +105,5 @@ private:
     quint64 m_contentVersion = 0;
     quint64 m_renderedVersion = 0;
     PreviewState m_previewState = PreviewState::NoDocument;
+    QList<PreviewCacheEntry> m_previewCache;
 };

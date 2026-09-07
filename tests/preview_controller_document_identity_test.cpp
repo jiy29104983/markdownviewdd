@@ -105,8 +105,8 @@ public slots:
 
 private:
     QString m_markdown;
-    QWidget *m_preview = nullptr;
-    QTextEdit *m_textEdit = nullptr;
+    QPointer<QWidget> m_preview;
+    QPointer<QTextEdit> m_textEdit;
     int m_renderCount = 0;
     bool m_simulateDelayedLayout = false;
     int m_renderDelayMs = 0;
@@ -131,6 +131,7 @@ private slots:
     void largeFileDefersAutomaticRefreshUntilManualRequest();
     void slowRenderEnablesManualRefreshPolicy();
     void injectedHostAdapterAvoidsHostObjectNameAssumptions();
+    void nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument();
 };
 
 class TestHostAdapter final : public HostAdapter
@@ -180,6 +181,16 @@ public:
     bool disconnectImmediateRefresh(QWidget *, bool) override { return false; }
     bool previewIsCurrent(QWidget *) const override { return m_current; }
     void setPreviewCurrent(QWidget *, bool current) override { m_current = current; }
+    bool releasePreview(QWidget *, QString *) override
+    {
+        if (m_preview) {
+            m_preview->deleteLater();
+            m_preview = nullptr;
+            m_textEdit = nullptr;
+        }
+        m_current = false;
+        return true;
+    }
 
     int refreshCount() const { return m_refreshCount; }
 
@@ -692,6 +703,74 @@ void PreviewControllerDocumentIdentityTest::injectedHostAdapterAvoidsHostObjectN
     QVERIFY(html.contains("Injected adapter"));
     QCOMPARE(sourcePath, QStringLiteral("/virtual/injected.md"));
     QCOMPARE(adapter.refreshCount(), 0);
+}
+
+void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument()
+{
+    Fixture fixture;
+    QList<QsciScintilla *> editors;
+    for (int i = 0; i < 4; ++i) {
+        auto *editor = new QsciScintilla(
+            QStringLiteral("document-%1.md").arg(i),
+            QStringLiteral("# Document %1").arg(i));
+        editors.append(editor);
+    fixture.tabs.addTab(editor, QString::number(i));
+        fixture.tabs.setCurrentWidget(editor);
+        fixture.renderNow();
+        if (i == 0) {
+            QToolButton *syncButton = nullptr;
+            const QList<QToolButton *> buttons =
+                fixture.dock()->findChildren<QToolButton *>();
+            for (QToolButton *button : buttons) {
+                if (button && button->text() == QStringLiteral("同步滚动")) {
+                    syncButton = button;
+                    break;
+                }
+            }
+            QVERIFY(syncButton);
+            syncButton->click();
+            QTextEdit *textEdit = fixture.dock()->findChild<QTextEdit *>(
+                QStringLiteral("textEdit"));
+            QVERIFY(textEdit);
+            textEdit->verticalScrollBar()->setRange(0, 100);
+            textEdit->verticalScrollBar()->setValue(65);
+        }
+    }
+
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+    QCOMPARE(fixture.dock()->findChildren<QWidget *>(
+                 QStringLiteral("MarkdownViewClass")).size(), 3);
+    QCOMPARE(editors.at(0)->renderCount(), 1);
+
+    fixture.tabs.setCurrentWidget(editors.at(0));
+    fixture.renderNow();
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+
+    QCOMPARE(editors.at(0)->renderCount(), 2);
+    QCOMPARE(fixture.dock()->findChildren<QWidget *>(
+                 QStringLiteral("MarkdownViewClass")).size(), 3);
+    QTextEdit *recreatedTextEdit = nullptr;
+    const QList<QTextEdit *> textEdits =
+        fixture.dock()->findChildren<QTextEdit *>(QStringLiteral("textEdit"));
+    for (QTextEdit *textEdit : textEdits) {
+        if (textEdit && textEdit->isVisible()) {
+            recreatedTextEdit = textEdit;
+            break;
+        }
+    }
+    QVERIFY(recreatedTextEdit);
+    QTRY_COMPARE_WITH_TIMEOUT(recreatedTextEdit->verticalScrollBar()->value(), 65, 500);
+
+    QPointer<QWidget> closingPreview = qobject_cast<QWidget *>(
+        editors.at(3)->property("_markdownview_native_preview").value<QObject *>());
+    QVERIFY(closingPreview);
+    fixture.tabs.removeTab(fixture.tabs.indexOf(editors.at(3)));
+    delete editors.at(3);
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QCoreApplication::processEvents();
+    QVERIFY(closingPreview.isNull());
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

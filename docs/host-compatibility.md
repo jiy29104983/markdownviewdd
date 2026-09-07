@@ -56,6 +56,10 @@ notepad-- v3.8.3 会为每个 `CCNotePad` 窗口分别加载插件菜单并调�
 `MarkdownViewClass`、`textEdit`、`on_viewMarkdown`、`on_updataMarkdown`，以及宿主原生
 预览的连接和所有权协作。控制器和 Dock 不应重新直接探测这些名称。升级宿主基线时优先修改
 并验证默认适配器；适配器返回的失败原因必须保留到诊断记录，不能静默退回另一套状态来源。
+缓存淘汰同样必须经过该适配器：notepad-- v3.8.3 的 `ScintillaEditView::m_markdownWin` 是
+`QPointer<MarkdownView>`，因此受控 `deleteLater()` 后能够安全归零并在下次
+`on_viewMarkdown()` 时重建。若未来宿主改为裸指针、共享所有权或不允许外部销毁预览，必须
+重新实现并验证 `releasePreview()`，不能沿用当前淘汰假设。
 
 ## 验证与基线更新
 

@@ -42,6 +42,7 @@ public:
                                             bool force = false) = 0;
     virtual bool previewIsCurrent(QWidget *editor) const = 0;
     virtual void setPreviewCurrent(QWidget *editor, bool current) = 0;
+    virtual bool releasePreview(QWidget *editor, QString *error) = 0;
 };
 
 HostAdapter *createNotepadHostAdapter(QWidget *notepad);

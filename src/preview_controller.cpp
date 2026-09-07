@@ -27,6 +27,7 @@ constexpr int kMaximumRenderDebounceMs = 2000;
 constexpr int kRenderDurationMultiplier = 3;
 constexpr qint64 kSlowRenderThresholdMs = 750;
 constexpr qint64 kLargeDocumentThresholdBytes = 1024 * 1024;
+constexpr int kNativePreviewCacheCapacity = 3;
 }
 
 PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
@@ -518,6 +519,7 @@ void PreviewController::showAbout()
 
 void PreviewController::attachEditor(QWidget *editor)
 {
+    rememberCurrentPreviewScroll();
     if (m_editor) {
         disconnect(m_editor, nullptr, this, nullptr);
     }
@@ -690,14 +692,25 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
         return false;
     }
 
+    touchPreviewCache(m_editor.data());
+
     // The host creation call has already rendered the initial document. Reuse that
     // result instead of immediately parsing and laying out the whole document
     // a second time.
     if (preview.created) {
+        if (!m_syncScrolling) {
+            PreviewCacheEntry *entry = previewCacheEntry(m_editor.data());
+            if (entry && entry->hasScrollRatio) {
+                m_dock->preserveNativeScrollRatio(
+                    m_editor.data(), m_contentVersion, entry->scrollRatio);
+            }
+        }
+        enforcePreviewCacheLimit();
         Diagnostics::write(QStringLiteral("host initial render reused"));
         return true;
     }
     if (reusablePreview && !forceHostUpdate) {
+        enforcePreviewCacheLimit();
         Diagnostics::write(QStringLiteral(
             "existing current host preview reused without full render"));
         return true;
@@ -724,7 +737,107 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate)
     if (!updated) {
         m_lastHostError = hostError;
     }
+    enforcePreviewCacheLimit();
     return updated;
+}
+
+void PreviewController::rememberCurrentPreviewScroll()
+{
+    if (!m_editor || !m_dock) {
+        return;
+    }
+    double ratio = 0.0;
+    if (!m_dock->nativeScrollRatioFor(m_editor.data(), &ratio)) {
+        return;
+    }
+    PreviewCacheEntry *entry = previewCacheEntry(m_editor.data());
+    if (!entry) {
+        PreviewCacheEntry newEntry;
+        newEntry.editor = m_editor;
+        m_previewCache.append(newEntry);
+        entry = &m_previewCache.last();
+    }
+    entry->scrollRatio = ratio;
+    entry->hasScrollRatio = true;
+}
+
+void PreviewController::touchPreviewCache(QWidget *editor)
+{
+    if (!editor) {
+        return;
+    }
+    prunePreviewCache();
+    for (int i = 0; i < m_previewCache.size(); ++i) {
+        if (m_previewCache.at(i).editor == editor) {
+            PreviewCacheEntry entry = m_previewCache.takeAt(i);
+            entry.hasNativePreview = true;
+            m_previewCache.append(entry);
+            return;
+        }
+    }
+    PreviewCacheEntry entry;
+    entry.editor = editor;
+    entry.hasNativePreview = true;
+    m_previewCache.append(entry);
+}
+
+void PreviewController::enforcePreviewCacheLimit()
+{
+    prunePreviewCache();
+    int cachedPreviewCount = 0;
+    for (const PreviewCacheEntry &entry : m_previewCache) {
+        if (entry.hasNativePreview) {
+            ++cachedPreviewCount;
+        }
+    }
+    while (cachedPreviewCount > kNativePreviewCacheCapacity) {
+        int evictionIndex = -1;
+        for (int i = 0; i < m_previewCache.size(); ++i) {
+            if (m_previewCache.at(i).hasNativePreview &&
+                m_previewCache.at(i).editor != m_editor) {
+                evictionIndex = i;
+                break;
+            }
+        }
+        if (evictionIndex < 0) {
+            return;
+        }
+
+        PreviewCacheEntry &entry = m_previewCache[evictionIndex];
+        QString error;
+        const bool released = m_hostAdapter->releasePreview(entry.editor.data(), &error);
+        if (released) {
+            entry.hasNativePreview = false;
+            --cachedPreviewCount;
+        }
+        Diagnostics::write(
+            QStringLiteral("native preview cache evicted: released=%1, remaining=%2, error=%3")
+                .arg(released).arg(cachedPreviewCount).arg(error));
+        if (!released) {
+            return;
+        }
+    }
+}
+
+PreviewController::PreviewCacheEntry *PreviewController::previewCacheEntry(
+    QWidget *editor)
+{
+    prunePreviewCache();
+    for (PreviewCacheEntry &entry : m_previewCache) {
+        if (entry.editor == editor) {
+            return &entry;
+        }
+    }
+    return nullptr;
+}
+
+void PreviewController::prunePreviewCache()
+{
+    for (int i = m_previewCache.size() - 1; i >= 0; --i) {
+        if (m_previewCache.at(i).editor.isNull()) {
+            m_previewCache.removeAt(i);
+        }
+    }
 }
 
 void PreviewController::updateSynchronizedScroll()

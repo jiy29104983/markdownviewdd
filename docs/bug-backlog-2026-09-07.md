@@ -348,7 +348,7 @@
 
 ## BUG-014：多文档原生预览缓存没有容量控制
 
-- **优先级／状态**：P3／待处理。
+- **优先级／状态**：P3／修复完成／待验证。
 - **证据性质**：保留策略已静态确认，内存规模待测量；不能直接标记为内存泄漏。
 - **代码位置**：[markdown_preview_dock.cpp](../src/markdown_preview_dock.cpp) 的
   `adoptNativePreview()`（131～155）；
@@ -703,4 +703,27 @@ Artifact 校验：not run（未生成 DLL、ZIP、SHA256 或 GitHub Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug013-build；发布测试终端输出 release publishing tests: passed；新增测试源码 tests/preview_controller_document_identity_test.cpp；未生成 Qt、Windows、Artifact 或宿主报告
 未验证项与已知限制：Qt Test 未编译运行；Windows Release DLL、Artifact 和真实宿主回归待验证。默认适配器仍有意绑定 v3.8.3 的名称和槽，宿主升级需重新验证；模拟适配器测试不能证明真实 ABI 或窗口结构兼容性。
+```
+
+## BUG-014 交回验证
+
+```text
+单据编号：BUG-014
+状态：修复完成／待验证
+基于的提交：3c78fa6f04b96a72e5aeb93097d6eaedadc9f600
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-001，ba87695e48576e0711dadbcc2a97832b22efc5e4；BUG-013，3c78fa6f04b96a72e5aeb93097d6eaedadc9f600
+修改文件：docs/architecture.md；docs/host-compatibility.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/host_adapter.cpp；src/host_adapter.h；src/preview_controller.cpp；src/preview_controller.h；tests/preview_controller_document_identity_test.cpp
+问题复现与根因：静态确认每个已浏览且未关闭的编辑器都可保留一份宿主 MarkdownView；Dock 切换时只隐藏旧预览并移出布局，没有容量上限。notepad-- v3.8.3 的 ScintillaEditView 以 QPointer<MarkdownView> 保存实例，因此这些对象属于缓存，不据此声称内存泄漏。真实宿主对象数、RSS 和图片缓存规模尚未测量。
+实际修改方案：每个 PreviewController 使用容量为 3 的最近使用顺序缓存，当前活动编辑器不参与淘汰。切换前保存当前文档滚动比例；淘汰条目仍保留轻量阅读状态，关闭同步滚动时返回已淘汰文档可在宿主重建预览后恢复该比例。新增 HostAdapter::releasePreview() 作为唯一淘汰入口；默认适配器清除预览身份和当前状态属性，断开适配器安装的编辑器销毁协作连接，隐藏并 deleteLater 原生预览。宿主 QPointer 在销毁后归零，下次 on_viewMarkdown 可重新创建。无效编辑器条目通过 QPointer 自动剪枝，关闭标签继续使用既有编辑器销毁路径释放预览。
+相较本单计划的偏差及原因：容量 3 是简单保守上限，不声称来自真实宿主内存曲线；当前 Linux 环境缺少 Qt 5.15.2，无法运行新增对象计数测试或采集 Windows RSS。未引入按字节计费、后台缓存或复杂缓存框架。隐藏 Dock 不主动清空缓存，只停止渲染并继续受同一容量约束，保持再次显示时的可预测复用。
+验收标准逐项结果：超出容量后对象数量受控——新增 4 文档顺序预览后等待 DeferredDelete 并断言 MarkdownViewClass 数量为 3 的测试源码，静态 passed、运行 blocked；返回已淘汰文档可重新预览——断言首文档 renderCount 从 1 增至 2 且总对象仍为 3，静态 passed、运行 blocked；关闭标签后资源释放——测试保存 QPointer、删除标签编辑器、处理 DeferredDelete 后断言为空，静态 passed、运行 blocked；无悬挂指针、重复删除或逐键渲染恢复——适配器清除属性、宿主 QPointer 与 Dock destroyed 跟踪协作，既有每次编辑断开即时刷新逻辑保持，静态 passed、真实宿主 not verified；提供前后测量——测试定义 4 个已创建文档到最多 3 个存活预览的对象计数测量，Qt 运行 blocked，真实 Windows RSS not verified。
+静态检查：passed（git diff --check；BUG-001 和 BUG-013 祖先关系；notepad-- v3.8.3 / 91105f68 基线；宿主 m_markdownWin 为 QPointer；淘汰仅经 HostAdapter；ABI、导出入口和 notepad--/ 未修改）
+自动化测试：partial（./tests/release_publish_test.sh passed；cmake -S . -B /tmp/markdownview-bug014-build -DBUILD_TESTING=ON 因缺少 Qt5Config.cmake blocked；新增容量、重建、阅读位置和关闭释放 Qt Test 未运行）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2、MSVC v142 和 Windows runner）
+Artifact 校验：not run（未生成 DLL、ZIP、SHA256 或 GitHub Artifact）
+真实宿主测试：not verified（未在 notepad-- v3.8.3 x64 测量对象数、RSS、图片缓存、淘汰重建、标签关闭和隐藏 Dock）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64；CMake 3.28.3；GNU C++ 13.3.0
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug014-build；发布测试终端输出 release publishing tests: passed；容量测试源码 tests/preview_controller_document_identity_test.cpp；未生成 Qt、Windows、Artifact、RSS 或宿主截图报告
+未验证项与已知限制：Qt Test 未编译运行；Windows Release DLL 和 Artifact 未生成；容量 3 在真实宿主上的内存收益及切换体验尚未测量；真实宿主 QPointer 归零、重新创建、关闭标签、隐藏 Dock、图片缓存释放、阅读位置恢复和无逐键宿主刷新均待验证。轻量滚动比例状态会保留到编辑器销毁或控制器销毁，不保存精确 Markdown 节点位置。
 ```
