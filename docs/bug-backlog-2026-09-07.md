@@ -202,7 +202,7 @@
 
 ## BUG-007：原生预览未接入链接与锚点处理
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认。
 - **代码位置**：[markdown_preview_dock.cpp](../src/markdown_preview_dock.cpp) 的
   浏览器信号连接（89）、`adoptNativePreview()`（114）、`openLink()`（374）。
@@ -542,4 +542,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug006-build；测试源码 tests/preview_controller_document_identity_test.cpp；未生成截图或二进制报告
 未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 及真实宿主中的阅读位置保持和图片延迟布局均待复核。阅读位置按滚动比例保持，不提供精确源行或 Markdown 节点映射；后续 BUG-015 仍需处理更广泛的滚动缓存与范围变化架构问题。
+```
+
+## BUG-007 交回验证
+
+```text
+单据编号：BUG-007
+状态：修复完成／待验证
+基于的提交：1868f3e6a117a794297cd538215df7d8b0dda635
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-002，e71f14f4c067b271711c128259cf4f6e164025bb
+修改文件：docs/architecture.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；src/markdown_preview_dock.cpp；src/markdown_preview_dock.h；tests/markdown_preview_dock_lifecycle_test.cpp
+问题复现与根因：静态确认备用 QTextBrowser 的 anchorClicked 已连接 openLink()，但正常预览实际显示宿主 MarkdownView 内只读 QTextEdit；adoptNativePreview() 只接入样式和滚动条，没有给该控件安装链接激活入口，所以外部链接、相对链接和页内锚点均绕过插件逻辑。
+实际修改方案：在原生 QTextEdit viewport 上安装 Dock 局部事件过滤器，仅把同一链接上的无修饰左键短点击且未形成选区识别为激活；纯片段链接扫描当前文档命名锚点并调整原生预览滚动条；相对链接按当前 Markdown 文件目录解析；外部协议限定为 http、https、mailto、file；不支持协议和打开失败写诊断日志并在文档栏反馈；QDesktopServices 调用封装为可注入 UrlOpener，测试仅记录 URL。扩展 lifecycle Qt Test 覆盖原生点击、相对解析、页内锚点、协议拒绝和拖选不误开。
+相较本单计划的偏差及原因：未替换宿主原生 QTextEdit，也未引入浏览器级控件；采用 viewport 事件过滤器作为最小局部适配。页内锚点通过 QTextDocument 的命名锚点定位，不增加源代码行到节点映射。
+验收标准逐项结果：支持的外部链接能打开——注入打开器记录 HTTPS 请求，测试源码覆盖，运行 blocked；有效锚点跳转正确——原生文档命名锚点定位测试源码覆盖，运行 blocked；相对路径与当前文档对应——/tmp/docs/current.md 下 guide/next.md 解析断言覆盖，运行 blocked；不支持协议不被打开——javascript 协议拒绝且显示反馈的测试源码覆盖，运行 blocked；文字选择、复制、滚动保持正常——拖选形成选区且打开次数为零的测试源码覆盖，复制和滚轮因事件过滤器不拦截对应事件而静态 passed，真实交互 not verified。
+静态检查：passed（git diff --check；核对原生 QTextEdit、事件范围、协议白名单、相对 baseUrl、ABI 与 notepad--/ 未修改）
+自动化测试：blocked（扩展 markdownview_lifecycle_tests；cmake -S . -B /tmp/markdownview-bug007-build -DBUILD_TESTING=ON 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败）
+Windows Release 编译：blocked（当前 Linux 环境无 Qt 5.15.2 与 MSVC v142）
+Artifact 校验：not run（未生成 DLL 或 Artifact）
+真实宿主测试：not verified（未在 notepad-- x64 点击 HTTPS、mailto、file、相对文档、页内锚点及执行拖选／复制／滚轮测试）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug007-build；测试源码 tests/markdown_preview_dock_lifecycle_test.cpp；未生成截图或二进制报告
+未验证项与已知限制：Qt Test 未实际编译运行；Windows Release DLL、Artifact 和真实宿主链接交互均待复核。只处理 QTextDocument 可识别的命名锚点和明确允许协议，不支持脚本执行、浏览器导航历史或源行级定位。
 ```

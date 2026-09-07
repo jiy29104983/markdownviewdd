@@ -3,6 +3,7 @@
 #include "diagnostics.h"
 
 #include <QAbstractSlider>
+#include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QFile>
@@ -11,6 +12,7 @@
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMainWindow>
+#include <QMouseEvent>
 #include <QMenuBar>
 #include <QMessageBox>
 #include <QPalette>
@@ -19,20 +21,27 @@
 #include <QSignalBlocker>
 #include <QStatusBar>
 #include <QTextBrowser>
+#include <QTextBlock>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QTextFragment>
 #include <QtMath>
 #include <QTimer>
 #include <QToolButton>
 #include <QToolBar>
 #include <QVBoxLayout>
 
+#include <utility>
+
 namespace {
 constexpr int kLayoutSyncDelayMs = 32;
 }
 
 MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
-    : QDockWidget(tr("Markdown 预览"), parent)
+    : QDockWidget(tr("Markdown 预览"), parent),
+      m_urlOpener([](const QUrl &url) {
+          return QDesktopServices::openUrl(url);
+      })
 {
     setObjectName(QStringLiteral("NddMarkdownPreviewDock"));
     setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
@@ -140,6 +149,11 @@ MarkdownPreviewDock::~MarkdownPreviewDock()
     m_currentNativePreviewObject = nullptr;
 }
 
+void MarkdownPreviewDock::setUrlOpener(UrlOpener opener)
+{
+    m_urlOpener = opener ? std::move(opener) : UrlOpener();
+}
+
 bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
                                              const QString &filePath,
                                              QWidget *editor,
@@ -165,6 +179,9 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     }
 
     if (m_nativePreview != previewWindow) {
+        if (m_nativeTextEdit) {
+            m_nativeTextEdit->viewport()->removeEventFilter(this);
+        }
         previewWindow->hide();
         previewWindow->setParent(widget(), Qt::Widget);
 
@@ -186,6 +203,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_contentLayout->addWidget(previewWindow);
         m_nativePreview = previewWindow;
         m_nativeTextEdit = textEdit;
+        m_nativeTextEdit->viewport()->installEventFilter(this);
         m_currentNativePreviewObject = previewWindow;
         connectNativeScrollBar(textEdit->verticalScrollBar());
         trackNativePreview(previewWindow);
@@ -268,6 +286,7 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     m_preservedScrollVersion = 0;
     m_hasPreservedScrollRatio = false;
     m_currentNativePreviewObject = nullptr;
+    m_pressedLink = QUrl();
     if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();
     }
@@ -563,7 +582,13 @@ void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
 void MarkdownPreviewDock::openLink(const QUrl &url)
 {
     if (url.path().isEmpty() && !url.fragment().isEmpty()) {
-        m_browser->scrollToAnchor(url.fragment());
+        if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
+            if (!scrollNativeToAnchor(url.fragment())) {
+                showLinkFailure(url, tr("页内锚点不存在"));
+            }
+        } else {
+            m_browser->scrollToAnchor(url.fragment());
+        }
         return;
     }
 
@@ -577,7 +602,95 @@ void MarkdownPreviewDock::openLink(const QUrl &url)
         scheme == QStringLiteral("https") ||
         scheme == QStringLiteral("mailto") ||
         scheme == QStringLiteral("file")) {
-        QDesktopServices::openUrl(resolved);
+        if (!m_urlOpener || !m_urlOpener(resolved)) {
+            showLinkFailure(resolved, tr("系统未能打开此链接"));
+        }
+        return;
+    }
+
+    showLinkFailure(resolved, tr("不支持协议 %1").arg(scheme));
+}
+
+bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
+{
+    if (!m_nativeTextEdit || watched != m_nativeTextEdit->viewport()) {
+        return QDockWidget::eventFilter(watched, event);
+    }
+
+    if (event->type() == QEvent::MouseButtonPress) {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        m_pressedLink = QUrl();
+        if (mouseEvent->button() == Qt::LeftButton &&
+            mouseEvent->modifiers() == Qt::NoModifier) {
+            m_pressedLink = QUrl(m_nativeTextEdit->anchorAt(mouseEvent->pos()));
+            m_linkPressPosition = mouseEvent->pos();
+        }
+    } else if (event->type() == QEvent::MouseButtonRelease) {
+        auto *mouseEvent = static_cast<QMouseEvent *>(event);
+        const QUrl releasedLink(m_nativeTextEdit->anchorAt(mouseEvent->pos()));
+        const QTextCursor cursor = m_nativeTextEdit->textCursor();
+        const bool isClick = mouseEvent->button() == Qt::LeftButton &&
+            mouseEvent->modifiers() == Qt::NoModifier &&
+            !m_pressedLink.isEmpty() && releasedLink == m_pressedLink &&
+            (mouseEvent->pos() - m_linkPressPosition).manhattanLength() <
+                QApplication::startDragDistance() &&
+            !cursor.hasSelection();
+        const QUrl activatedLink = m_pressedLink;
+        m_pressedLink = QUrl();
+        if (isClick) {
+            openLink(activatedLink);
+            return true;
+        }
+    }
+
+    return QDockWidget::eventFilter(watched, event);
+}
+
+bool MarkdownPreviewDock::scrollNativeToAnchor(const QString &anchor)
+{
+    if (!m_nativeTextEdit || anchor.isEmpty()) {
+        return false;
+    }
+
+    for (QTextBlock block = m_nativeTextEdit->document()->begin();
+         block.isValid(); block = block.next()) {
+        int anchorPosition = -1;
+        if (block.charFormat().anchorNames().contains(anchor)) {
+            anchorPosition = block.position();
+        }
+        for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
+            const QTextFragment fragment = it.fragment();
+            if (anchorPosition < 0 && fragment.isValid() &&
+                fragment.charFormat().anchorNames().contains(anchor)) {
+                anchorPosition = fragment.position();
+            }
+        }
+        if (anchorPosition < 0) {
+            continue;
+        }
+
+        QTextCursor cursor(m_nativeTextEdit->document());
+        cursor.setPosition(anchorPosition);
+        QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
+        if (bar) {
+            const int target = bar->value() +
+                m_nativeTextEdit->cursorRect(cursor).top();
+            bar->setValue(qBound(bar->minimum(), target, bar->maximum()));
+        }
+        return true;
+    }
+    return false;
+}
+
+void MarkdownPreviewDock::showLinkFailure(const QUrl &url,
+                                          const QString &reason)
+{
+    Diagnostics::write(
+        QStringLiteral("link open rejected or failed: %1 (%2)")
+            .arg(url.toDisplayString(), reason));
+    if (m_documentLabel) {
+        m_documentLabel->setText(tr("链接未打开：%1").arg(reason));
+        m_documentLabel->setToolTip(url.toDisplayString());
     }
 }
 

@@ -5,7 +5,10 @@
 #include <QHash>
 #include <QMetaObject>
 #include <QPointer>
+#include <QPoint>
 #include <QUrl>
+
+#include <functional>
 
 class QAbstractScrollArea;
 class QLabel;
@@ -22,6 +25,8 @@ class MarkdownPreviewDock final : public QDockWidget
     Q_OBJECT
 
 public:
+    using UrlOpener = std::function<bool(const QUrl &)>;
+
     explicit MarkdownPreviewDock(QWidget *parent = nullptr);
     ~MarkdownPreviewDock() override;
 
@@ -45,6 +50,7 @@ public:
     static bool writeHtmlSnapshot(const QByteArray &html,
                                   const QString &targetPath,
                                   QString *errorMessage = nullptr);
+    void setUrlOpener(UrlOpener opener);
 
 signals:
     void refreshRequested();
@@ -56,6 +62,7 @@ private slots:
     void openLink(const QUrl &url);
 
 private:
+    bool eventFilter(QObject *watched, QEvent *event) override;
     QAbstractScrollArea *activeScrollArea() const;
     void connectNativeScrollBar(QScrollBar *scrollBar);
     void trackNativePreview(QWidget *previewWindow);
@@ -63,6 +70,8 @@ private:
     void disconnectNativePreviews();
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
     void restorePreservedScrollRatio();
+    bool scrollNativeToAnchor(const QString &anchor);
+    void showLinkFailure(const QUrl &url, const QString &reason);
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
@@ -81,6 +90,9 @@ private:
     QHash<QObject *, QMetaObject::Connection> m_nativePreviewDestroyConnections;
     QTimer *m_layoutSyncTimer = nullptr;
     QString m_currentFilePath;
+    UrlOpener m_urlOpener;
+    QUrl m_pressedLink;
+    QPoint m_linkPressPosition;
     quint64 m_previewContentVersion = 0;
     quint64 m_preservedScrollVersion = 0;
     double m_preservedScrollRatio = 0.0;
