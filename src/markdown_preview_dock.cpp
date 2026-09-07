@@ -197,6 +197,8 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     toolbarLayout->setContentsMargins(8, 4, 5, 4);
 
     m_documentLabel = new QLabel(tr("没有活动文档"), toolbar);
+    m_documentLabel->setObjectName(
+        QStringLiteral("NddMarkdownPreviewDocumentLabel"));
     m_documentLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_documentLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     toolbarLayout->addWidget(m_documentLabel);
@@ -505,6 +507,16 @@ void MarkdownPreviewDock::setDocumentInfo(const QString &filePath,
         ? tr("%1 · 长度 %2").arg(displayName).arg(characterCount)
         : displayName);
     m_documentLabel->setToolTip(filePath);
+}
+
+void MarkdownPreviewDock::setRefreshStatus(const QString &status,
+                                           const QString &toolTip)
+{
+    if (!m_documentLabel) {
+        return;
+    }
+    m_documentLabel->setText(status);
+    m_documentLabel->setToolTip(toolTip);
 }
 
 void MarkdownPreviewDock::setSyncScrolling(bool enabled)

@@ -39,6 +39,7 @@ public:
     void renderMarkdown(const QString &markdown, const QString &filePath);
     void showMessage(const QString &title, const QString &message);
     void setDocumentInfo(const QString &filePath, int characterCount);
+    void setRefreshStatus(const QString &status, const QString &toolTip);
     void setSyncScrolling(bool enabled);
     bool nativeScrollRatioFor(QWidget *editor, double *ratio) const;
     void preserveNativeScrollRatio(QWidget *editor, quint64 contentVersion,

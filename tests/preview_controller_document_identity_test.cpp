@@ -6,6 +6,7 @@
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
 #include <QScrollBar>
@@ -53,6 +54,11 @@ public:
         m_simulateDelayedLayout = enabled;
     }
 
+    void setRenderDelayMs(int delayMs)
+    {
+        m_renderDelayMs = delayMs;
+    }
+
 signals:
     void textChanged();
 
@@ -73,6 +79,9 @@ public slots:
     void on_updataMarkdown()
     {
         ++m_renderCount;
+        if (m_renderDelayMs > 0) {
+            QTest::qWait(m_renderDelayMs);
+        }
         if (m_textEdit) {
             m_textEdit->setMarkdown(m_markdown);
             m_textEdit->verticalScrollBar()->setRange(0, 100);
@@ -99,6 +108,7 @@ private:
     QTextEdit *m_textEdit = nullptr;
     int m_renderCount = 0;
     bool m_simulateDelayedLayout = false;
+    int m_renderDelayMs = 0;
 };
 
 class PreviewControllerDocumentIdentityTest final : public QObject
@@ -115,6 +125,10 @@ private slots:
     void snapshotWriterHandlesCancelAndAtomicReplacement();
     void filePathChangeRefreshesTypeMetadataAndResources();
     void refreshPreservesReadingPositionOnlyWhenSyncIsDisabled();
+    void unchangedScheduledRefreshDoesNotRenderAgain();
+    void switchingBackReusesUnchangedNativePreview();
+    void largeFileDefersAutomaticRefreshUntilManualRequest();
+    void slowRenderEnablesManualRefreshPolicy();
 };
 
 namespace {
@@ -494,6 +508,106 @@ void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyW
     editorB->edit(QStringLiteral("# B updated"));
     QTRY_COMPARE_WITH_TIMEOUT(editorB->renderCount(), 2, 1000);
     QTRY_COMPARE_WITH_TIMEOUT(previewB->verticalScrollBar()->value(), 80, 500);
+}
+
+void PreviewControllerDocumentIdentityTest::unchangedScheduledRefreshDoesNotRenderAgain()
+{
+    Fixture fixture;
+    auto *editor = new QsciScintilla(QStringLiteral("ordinary.md"),
+                                     QStringLiteral("# Current"));
+    fixture.tabs.addTab(editor, QStringLiteral("Ordinary"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+    QCOMPARE(editor->renderCount(), 1);
+
+    QVERIFY(QMetaObject::invokeMethod(&fixture.controller, "scheduleRender",
+                                     Qt::DirectConnection));
+    QTest::qWait(450);
+    QCOMPARE(editor->renderCount(), 1);
+}
+
+void PreviewControllerDocumentIdentityTest::switchingBackReusesUnchangedNativePreview()
+{
+    Fixture fixture;
+    auto *editorA = new QsciScintilla(QStringLiteral("a.md"),
+                                     QStringLiteral("# A"));
+    auto *editorB = new QsciScintilla(QStringLiteral("b.md"),
+                                     QStringLiteral("# B"));
+    fixture.tabs.addTab(editorA, QStringLiteral("A"));
+    fixture.tabs.addTab(editorB, QStringLiteral("B"));
+    fixture.tabs.setCurrentWidget(editorA);
+    fixture.renderNow();
+    fixture.tabs.setCurrentWidget(editorB);
+    fixture.renderNow();
+    QCOMPARE(editorA->renderCount(), 1);
+    QCOMPARE(editorB->renderCount(), 1);
+
+    fixture.tabs.setCurrentWidget(editorA);
+    fixture.pollEditor();
+    QTest::qWait(450);
+    QCOMPARE(editorA->renderCount(), 1);
+    QTextEdit *previewTextEdit = fixture.dock()->findChild<QTextEdit *>(
+        QStringLiteral("textEdit"));
+    QVERIFY(previewTextEdit);
+    QVERIFY(previewTextEdit->toPlainText().contains(QStringLiteral("A")));
+}
+
+void PreviewControllerDocumentIdentityTest::largeFileDefersAutomaticRefreshUntilManualRequest()
+{
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString filePath = directory.filePath(QStringLiteral("large.md"));
+    QFile file(filePath);
+    QVERIFY(file.open(QIODevice::WriteOnly));
+    const QByteArray content(1024 * 1024, 'x');
+    QCOMPARE(file.write(content), qint64(content.size()));
+    file.close();
+
+    Fixture fixture;
+    auto *editor = new QsciScintilla(filePath, QStringLiteral("# Initial"));
+    fixture.tabs.addTab(editor, QStringLiteral("Large"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+    QCOMPARE(editor->renderCount(), 1);
+
+    editor->edit(QStringLiteral("# Latest"));
+    QTest::qWait(500);
+    QCOMPARE(editor->renderCount(), 1);
+
+    QLabel *documentLabel = fixture.dock()->findChild<QLabel *>(
+        QStringLiteral("NddMarkdownPreviewDocumentLabel"));
+    QVERIFY(documentLabel);
+    QVERIFY(documentLabel->text().contains(QStringLiteral("待手工刷新")));
+
+    QAction *refreshAction = fixture.action(QStringLiteral("立即刷新"));
+    QVERIFY(refreshAction);
+    refreshAction->trigger();
+    QCOMPARE(editor->renderCount(), 2);
+    QTextEdit *previewTextEdit = fixture.dock()->findChild<QTextEdit *>(
+        QStringLiteral("textEdit"));
+    QVERIFY(previewTextEdit);
+    QVERIFY(previewTextEdit->toPlainText().contains(QStringLiteral("Latest")));
+}
+
+void PreviewControllerDocumentIdentityTest::slowRenderEnablesManualRefreshPolicy()
+{
+    Fixture fixture;
+    auto *editor = new QsciScintilla(QStringLiteral("measured.md"),
+                                     QStringLiteral("# Initial"));
+    editor->setRenderDelayMs(800);
+    fixture.tabs.addTab(editor, QStringLiteral("Measured"));
+    fixture.tabs.setCurrentWidget(editor);
+    fixture.renderNow();
+    QCOMPARE(editor->renderCount(), 1);
+
+    editor->edit(QStringLiteral("# Deferred"));
+    QTest::qWait(2200);
+    QCOMPARE(editor->renderCount(), 1);
+
+    QAction *refreshAction = fixture.action(QStringLiteral("立即刷新"));
+    QVERIFY(refreshAction);
+    refreshAction->trigger();
+    QCOMPARE(editor->renderCount(), 2);
 }
 
 QTEST_MAIN(PreviewControllerDocumentIdentityTest)

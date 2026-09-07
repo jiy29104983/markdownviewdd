@@ -815,3 +815,95 @@ release job 增加固定 SHA 的 `actions/checkout`，用于取得仓库脚本�
 测试终端结果为 `release publishing tests: passed`，未生成持久日志或截图。尚未在隔离 GitHub
 仓库或真实标签 workflow rerun 中验证在线 API 权限、附件二进制下载响应及并发竞态，也未修改
 任何现有生产 Release。后续复核不能只凭本地 mock 测试关闭 BUG-010。
+
+## BUG-011：全文同步渲染缺少大文档性能治理
+
+### 交付信息
+
+- **状态**：修复完成／待验证
+- **基于的提交**：`3e4b16f2fcf40f1ec2700b0a6e40740590ba06c5`
+- **修复提交**：本记录所在提交；交回时使用 `git rev-parse HEAD` 核验
+- **前置单据及对应提交**：BUG-002 `e71f14f4c067b271711c128259cf4f6e164025bb`；
+  BUG-006 `1868f3e6a117a794297cd538215df7d8b0dda635`；
+  BUG-009 `559d64b4b28efe227af5241ae44935ff80ec4d09`
+- **修改文件**：`docs/architecture.md`、`docs/bug-backlog-2026-09-07.md`、
+  `docs/bug-fix-handoffs-2026-09-07.md`、`src/markdown_preview_dock.cpp`、
+  `src/markdown_preview_dock.h`、`src/preview_controller.cpp`、
+  `src/preview_controller.h`、`tests/preview_controller_document_identity_test.cpp`
+
+### 问题核实与根因
+
+静态确认文本变化已有 trailing-edge 防抖，但计时器到期后仍在 GUI 线程同步调用宿主全文
+渲染；最近耗时只用于把延迟扩大到最多 2 秒，不能阻止较大或已证明较慢的文档在停顿后再次
+阻塞输入。显示 Dock、轮询和重复调度也没有在自动计时器入口跳过已经是当前内容版本的预览。
+原界面没有独立的“内容已变化但自动渲染暂停”反馈。
+
+当前 Linux 环境缺少 Qt 5.15.2 开发包和 Windows 宿主，无法取得真实设备上普通、大型以及
+表格／图片密集文档的前后输入延迟与完整布局数据。因此同步全文路径成立，但实际卡顿阈值仍
+按“影响待测量”处理，不能描述为已证明消除所有大文档卡顿。
+
+### 实际修改方案
+
+保留宿主原生 `QTextEdit`、`on_viewMarkdown`／`on_updataMarkdown` 和 GUI 线程调用边界。自动
+计时器触发时先同步活动编辑器，并核对编辑器身份、内容版本和 Dock 预览版本；未变化直接
+跳过，不再次解析。
+
+采用两类有界阈值：当前文件达到 1 MiB，或最近一次从控制器进入渲染到宿主调用及同步样式
+处理返回达到 750 ms。首次打开仍允许渲染；满足任一阈值后，后续文本变化只推进内容版本、
+停止自动计时器，并在文档栏显示“预览已暂停自动刷新，待手工刷新”。菜单和工具栏手工刷新、
+以及导出最新快照等明确操作仍能同步生成最终版本。每次显式渲染完成后重新评估文件大小与
+耗时，小文件且耗时恢复到阈值以下时继续使用原 350 ms 至 2 秒自适应防抖。
+
+诊断日志新增宿主 `on_viewMarkdown`／`on_updataMarkdown` 调用耗时、文档样式刷新耗时和控制器
+总耗时。Qt 富文本返回后的异步布局仍通过已有滚动范围变化观察，不把同步返回耗时冒充完整
+排版时间。
+
+扩展 `markdownview_document_identity_tests`，增加以下可重复场景：
+
+- 已是当前内容版本的自动调度不会重复渲染；
+- 1 MiB 文件编辑后超过普通防抖窗口仍不自动渲染，并显示待刷新状态；
+- 800 ms 模拟慢渲染后等待超过原最大 2 秒自动窗口仍不再次渲染；
+- 手工刷新后预览包含最新内容。
+
+### 相较计划的偏差
+
+没有引入后台解析或更换渲染器。宿主 QWidget、QTextEdit 和原生槽不能安全移到工作线程，若
+更换解析边界或渲染器会扩大兼容性范围。1 MiB 和 750 ms 是本次防御性治理阈值，并非真实宿主
+性能结论；真实设备前后性能数据保留为关闭前必需复核项。
+
+### 验收标准逐项结果
+
+1. **提交同条件前后性能数据及采用阈值**：1 MiB／750 ms 阈值及 800 ms 模拟慢渲染场景已
+   编码；静态 `passed`，Qt 测试运行 `blocked`，真实宿主前后数据 `not verified`。
+2. **普通文档没有明显退化**：保留原 350 ms trailing-edge 防抖，既有连续输入测试与新增
+   未变化调度跳过测试源码覆盖；运行 `blocked`。
+3. **大文档策略可预测且可手工刷新**：任一阈值满足即显示明确状态并停止自动计时器；手工
+   刷新测试源码覆盖最终内容；运行 `blocked`。
+4. **连续输入不恢复逐键全文解析**：宿主即时连接仍会断开；阈值内继续合并，阈值外暂停自动
+   全文渲染；静态 `passed`。
+5. **最终预览版本正确**：手工刷新和导出继续经过编辑器身份／内容版本门控，测试源码断言
+   最新文本；运行 `blocked`，真实快速输入 `not verified`。
+
+### 验证证据
+
+| 验证层级 | 结果 | 证据或原因 |
+| --- | --- | --- |
+| 静态检查 | `passed` | `git diff --check`；前置提交均为 HEAD 祖先；阈值、状态反馈、版本跳过、手工刷新、诊断计时和范围边界复核；ABI、导出入口与 `notepad--/` 未修改 |
+| 自动化测试 | `blocked` | 扩展 `markdownview_document_identity_tests`；CMake 在 `find_package(Qt5 5.15)` 因缺少 `Qt5Config.cmake` 配置失败 |
+| Windows Release 编译 | `blocked` | 当前 Linux 环境没有 Qt 5.15.2 与 MSVC v142 |
+| Artifact 校验 | `not run` | 未生成 DLL 或 Artifact |
+| 真实宿主测试 | `not verified` | 未在 notepad-- x64 测量普通、较大、表格／图片密集文档的首次打开、连续输入、停顿刷新和手工刷新 |
+
+### 实际环境与未验证项
+
+- **Qt**：Qt 5.15.2 开发包不可用
+- **MSVC**：不可用
+- **notepad--**：`v3.8.3`，提交 `91105f68b74382128f3313ac5af8accdc77de918`
+- **操作系统**：Linux x86_64
+- **CMake 配置目录**：`/tmp/markdownview-bug011-build`
+- **测试源码**：`tests/preview_controller_document_identity_test.cpp`
+- **日志、截图或性能报告**：未生成
+
+Qt Test 尚未实际编译运行，Windows Release DLL 与 Artifact 未生成。真实宿主输入响应、宿主
+同步调用、Qt 异步布局和不同设备上的同条件前后性能数据均待复核。未保存且首次渲染尚未暴露
+慢耗时的超大内存文档，只能在首次渲染之后按耗时进入手工策略；本单不能据此直接标记关闭。

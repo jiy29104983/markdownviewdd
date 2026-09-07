@@ -28,6 +28,7 @@ private slots:
     void pollEditor();
     void onEditorTextChanged();
     void scheduleRender();
+    void renderScheduled();
     void renderNow();
     void togglePreview(bool visible);
     void setSyncScrolling(bool enabled);
@@ -54,12 +55,16 @@ private:
     void synchronizeActiveEditor();
     void handleFilePathChanged();
     void markPreviewPending();
+    void scheduleAutomaticRender();
+    void updateLargeDocumentPolicy(qint64 renderDurationMs);
+    bool fileExceedsAutomaticRefreshLimit() const;
     bool isPreviewCurrent() const;
-    bool renderCurrentDocument(bool allowHiddenDock);
+    bool renderCurrentDocument(bool allowHiddenDock,
+                               bool forceHostUpdate = false);
     void updateExportActionState();
     QWidget *nativePreviewForEditor() const;
     bool disconnectHostImmediateRefresh(bool force = false);
-    bool activateNativePreview();
+    bool activateNativePreview(bool forceHostUpdate);
     void updateSynchronizedScroll();
     QString currentFilePath() const;
     bool isMarkdownDocument(const QString &filePath) const;
@@ -78,6 +83,7 @@ private:
     bool m_syncScrolling = true;
     int m_lastEditorScrollValue = -1;
     qint64 m_lastRenderDurationMs = 0;
+    bool m_manualRefreshOnly = false;
     QString m_editorFilePath;
     quint64 m_contentVersion = 0;
     quint64 m_renderedVersion = 0;
