@@ -10,7 +10,7 @@
 
 ## 触发普通构建
 
-以下操作会运行 `Build plugin` job，但不会创建 GitHub Release：
+以下操作会运行 `Build plugin` job，并在独立步骤执行回归测试，但不会创建 GitHub Release：
 
 - 向 `main` 分支推送提交。
 - 创建或更新目标分支为 `main` 的 Pull Request。
@@ -22,7 +22,7 @@
   gh workflow run windows-release.yml --ref main
   ```
 
-普通构建成功后，Actions 运行页面会提供保存 14 天的
+只有 Windows Release 构建与回归测试步骤均成功后，工作流才会打包。Actions 运行页面会提供保存 14 天的
 `markdownviewdd-v<版本>-windows-x64-<短提交号>` Artifact。产物中包含 ZIP 和
 SHA256 文件；ZIP 内应只有：
 
@@ -33,7 +33,8 @@ LICENSE
 ```
 
 发布前应下载候选 Artifact，验证校验和，并在兼容性基线指定的 notepad-- x64 宿主中
-完成手工测试。云端编译成功不能替代真实宿主验证。
+完成手工测试。云端编译成功不能替代真实宿主验证。本地统一测试命令和各测试的覆盖边界见
+[testing.md](testing.md)。
 
 ## 发布新版本
 

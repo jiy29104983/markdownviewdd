@@ -79,6 +79,7 @@ $ConfigureArguments = @(
     "-A"
     "x64"
     "-DCMAKE_PREFIX_PATH=$QtRoot"
+    "-DBUILD_TESTING=ON"
 )
 if (-not [string]::IsNullOrWhiteSpace($Toolset)) {
     $ConfigureArguments += @("-T", $Toolset)

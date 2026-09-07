@@ -307,7 +307,7 @@
 
 ## BUG-012：缺少统一的关键行为回归测试入口
 
-- **优先级／状态**：P2／待处理。
+- **优先级／状态**：P2／修复完成／待验证。
 - **证据性质**：静态确认；属于验证建设单。
 - **代码位置**：[CMakeLists.txt](../CMakeLists.txt)、
   [windows-release.yml](../.github/workflows/windows-release.yml)、
@@ -657,4 +657,27 @@ Artifact 校验：not run（未生成 DLL 或 Artifact）
 实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64
 日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug011-build；测试源码 tests/preview_controller_document_identity_test.cpp；未生成可执行测试报告、性能日志或截图
 未验证项与已知限制：Qt Test 尚未实际编译运行；Windows Release DLL 和 Artifact 未生成；真实宿主输入响应、同步调用、异步布局及不同设备上的前后性能数据均待复核。1 MiB 和 750 ms 是本次防御性治理阈值，不代表已证明所有大文档卡顿消失；未保存且首次渲染尚未暴露慢耗时的超大内存文档只能在首次渲染后切换到手工策略。
+```
+
+## BUG-012 交回验证
+
+```text
+单据编号：BUG-012
+状态：修复完成／待验证
+基于的提交：a968289319f30158ddc2dcddbfd0ea6e7337e583
+修复提交或补丁位置：本记录所在提交；交回时使用 git rev-parse HEAD 核验
+前置单据及对应提交：BUG-001，ba87695e48576e0711dadbcc2a97832b22efc5e4；BUG-002，e71f14f4c067b271711c128259cf4f6e164025bb；BUG-003，5c54499e5204376ac629ad6012f9564d888708ff；BUG-004，9121b4b85b97b621b503ae1ba171d486eba051d0；BUG-005，b1fd83a22e0f3c066c7f0f4f2206ea576cd3b1b3；BUG-006，1868f3e6a117a794297cd538215df7d8b0dda635；BUG-007，3e2b00848101fb2f9074761e446962f593897efd；BUG-008，6d47180c3a10fae8ae18720d63e4af53e8851625；BUG-009，559d64b4b28efe227af5241ae44935ff80ec4d09；BUG-010，3e4b16f2fcf40f1ec2700b0a6e40740590ba06c5；BUG-011，a968289319f30158ddc2dcddbfd0ea6e7337e583
+修改文件：.github/workflows/windows-release.yml；CMakeLists.txt；README.md；docs/bug-backlog-2026-09-07.md；docs/bug-fix-handoffs-2026-09-07.md；docs/releasing.md；docs/testing.md；examples/assets/相对 图片.xpm；examples/preview-demo.md；scripts/build-windows.ps1；scripts/run-regression-tests.ps1
+问题复现与根因：静态核实 BUG-001～BUG-011 已留下三套 Qt Test 可执行目标和一套隔离发布脚本测试，但执行方式分散：CMake 目标没有分类与超时，Windows 构建脚本未显式保证 BUILD_TESTING=ON，GitHub Actions 只构建和打包、不运行 CTest，发布脚本测试也没有并入统一入口。原 preview-demo.md 只有基础语法，不含相对图片实体、页内锚点、主题切换、长文档、销毁顺序和多窗口的集中手工输入。
+实际修改方案：新增 scripts/run-regression-tests.ps1 作为 Windows 统一入口：可先调用现有 Release 构建脚本，再以 --no-tests=error 运行全部 CTest，最后通过 Git for Windows 的 bash.exe 运行使用临时目录和 mock gh 的发布幂等测试，任一缺失、超时或失败均返回非零。构建脚本显式配置 BUILD_TESTING=ON；三个 Qt 测试增加 behavior 及专项标签和 60/120 秒超时。Windows 工作流在构建与打包之间增加独立的 Run regression test suite 步骤，使 Release 编译与测试结果分别可见且测试失败阻止打包发布。新增 docs/testing.md 记录统一命令、分组命令、覆盖矩阵和真实宿主边界；扩充 preview-demo.md，并加入含中文和空格路径的本地 XPM 图片，覆盖图片、锚点、主题、滚动、较长文本及 BUG-001～BUG-011 手工场景。
+相较本单计划的偏差及原因：没有合并三套既有 Qt Test 源码或创建第四套重复测试，统一的是执行入口、分类、超时、CI 门禁和验证文档。当前 Linux 环境没有 PowerShell、Qt 5.15.2 和 MSVC v142，无法实际执行 Windows 统一入口或 Qt Test；仅实际运行了平台可用的隔离发布测试，并将 Windows CI 与真实宿主结果保留为待验证。
+验收标准逐项结果：提供可执行命令和测试结果——统一命令及 CTest 分组命令已写入 docs/testing.md，发布幂等测试实际 passed，Qt/Windows 统一入口 blocked；代表性回归测试能区分修复前后行为——现有测试覆盖生命周期、多窗口、快速切换、路径变化、导出与资源、滚动恢复、防抖、链接、主题和大文档策略，覆盖矩阵已核对，运行因缺 Qt blocked；测试不打开真实外部链接、不覆盖生产 Release、不依赖个人路径——URL opener 为注入回调，release test 使用 mktemp 和 mock gh，统一脚本仅接受参数或标准 Qt 环境变量，静态 passed；Windows Release 构建与测试分别可见——工作流保留 Build Release DLL 并新增 Run regression test suite，YAML 解析 passed，实际 Actions not run；真实宿主未运行时明确标注——docs/testing.md 与本交回记录均标记 not verified。
+静态检查：passed（git diff --check；GitHub Actions YAML 解析；CTest 目标、标签、超时、--no-tests=error、BUILD_TESTING=ON、CI 步骤顺序、mock gh 和 URL opener 边界复核；Markdown 相对链接目标存在；BUG-001～BUG-011 提交均为 HEAD 祖先；src/ndd_plugin_api.h、导出入口和 notepad--/ 未修改）
+自动化测试：partial（./tests/release_publish_test.sh passed；Qt Test blocked，cmake -S . -B /tmp/markdownview-bug012-build -DBUILD_TESTING=ON 在 find_package(Qt5 5.15) 因缺少 Qt5Config.cmake 失败；PowerShell 统一入口 not run，环境无 powershell/pwsh）
+Windows Release 编译：blocked（当前 Linux 环境没有 Qt 5.15.2、MSVC v142 和 Windows runner；未触发 GitHub Actions）
+Artifact 校验：not run（未生成或下载 DLL、ZIP、SHA256 或 GitHub Artifact）
+真实宿主测试：not verified（未在 notepad-- v3.8.3 x64 执行新增手工回归清单）
+实际环境（Qt、MSVC、notepad--、OS）：Qt 5.15.2 开发包不可用；MSVC 不可用；notepad-- v3.8.3 / 91105f68b74382128f3313ac5af8accdc77de918；Linux x86_64；GNU bash；CMake 3.28.3；无 PowerShell
+日志、截图或测试报告位置：CMake 配置目录 /tmp/markdownview-bug012-build；发布测试终端输出 release publishing tests: passed；统一命令和覆盖矩阵 docs/testing.md；手工输入 examples/preview-demo.md 与 examples/assets/相对 图片.xpm；未生成 Qt Test 报告、Windows CI 日志、Artifact 或宿主截图
+未验证项与已知限制：scripts/run-regression-tests.ps1 尚未在 Windows PowerShell 中实际执行；三个 Qt Test 尚未编译运行；GitHub Actions 新增测试步骤、Windows Release DLL、Artifact 内容和 SHA256 均待云端验证；真实 notepad-- x64 的销毁、多窗口、快速切换、路径变化、导出、相对图片、链接、主题、滚动及大文档性能仍需按 docs/testing.md 单独复核。模拟宿主测试不能证明真实 ABI 或宿主窗口结构兼容性。
 ```

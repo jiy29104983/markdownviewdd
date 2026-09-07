@@ -96,6 +96,13 @@ jobs:
               -Toolset "v142" `
               -Clean
 
+      - name: Run regression test suite
+        shell: pwsh
+        run: |
+          & ".\scripts\run-regression-tests.ps1" `
+              -QtRoot $env:QT_ROOT_DIR `
+              -SkipBuild
+
       - name: Package plugin
         id: package
         shell: pwsh

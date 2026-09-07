@@ -81,6 +81,9 @@ if(BUILD_TESTING)
 
     add_test(NAME markdownview_lifecycle_tests
         COMMAND markdownview_lifecycle_tests -platform offscreen)
+    set_tests_properties(markdownview_lifecycle_tests PROPERTIES
+        LABELS "behavior;lifecycle"
+        TIMEOUT 60)
 
     add_executable(markdownview_document_identity_tests
         tests/preview_controller_document_identity_test.cpp
@@ -114,6 +117,9 @@ if(BUILD_TESTING)
 
     add_test(NAME markdownview_document_identity_tests
         COMMAND markdownview_document_identity_tests -platform offscreen)
+    set_tests_properties(markdownview_document_identity_tests PROPERTIES
+        LABELS "behavior;document"
+        TIMEOUT 120)
 
     add_executable(markdownview_multi_window_tests
         tests/plugin_multi_window_test.cpp
@@ -149,4 +155,7 @@ if(BUILD_TESTING)
 
     add_test(NAME markdownview_multi_window_tests
         COMMAND markdownview_multi_window_tests -platform offscreen)
+    set_tests_properties(markdownview_multi_window_tests PROPERTIES
+        LABELS "behavior;multi-window"
+        TIMEOUT 60)
 endif()

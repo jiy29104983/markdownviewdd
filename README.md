@@ -47,6 +47,9 @@ Qt 或 CMake。
 Artifact 验证、标签创建、失败处理和发布检查步骤见
 [`docs/releasing.md`](docs/releasing.md)。
 
+统一回归测试命令、自动化覆盖边界和真实宿主手工检查表见
+[`docs/testing.md`](docs/testing.md)。
+
 ## 一键构建
 
 把代码下载到 Windows 后，双击仓库根目录的 `build-windows.bat`。脚本默认使用：
