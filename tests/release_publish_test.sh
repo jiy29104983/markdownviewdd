@@ -23,11 +23,14 @@ write_mock_gh()
 
 run_publisher()
 {
-    PATH="$case_dir/bin:$PATH" \
-        MOCK_ROOT="$case_dir" \
-        GH_REPO="owner/repo" \
-        TAG_NAME="v1.2.3" \
-        "$publisher" "$case_dir/dist/plugin.zip" "$case_dir/dist/plugin.zip.sha256"
+    (
+        cd "$repo_root"
+        PATH="$case_dir/bin:$PATH" \
+            MOCK_ROOT="$case_dir" \
+            GH_REPO="owner/repo" \
+            TAG_NAME="${TEST_TAG_NAME:-v1.2.3}" \
+            "$publisher" "$case_dir/dist/plugin.zip" "$case_dir/dist/plugin.zip.sha256"
+    )
 }
 
 assert_log()
@@ -45,6 +48,17 @@ fi
 [[ "$1 $2" == "release create" ]]'
 run_publisher
 assert_log "release create v1.2.3 $case_dir/dist/plugin.zip $case_dir/dist/plugin.zip.sha256 --verify-tag --title v1.2.3 --generate-notes"
+
+make_case create_with_notes
+write_mock_gh '
+printf "%s\n" "$*" >>"$MOCK_ROOT/calls.log"
+if [[ "$1 $2" == "api repos/owner/repo/releases/tags/v0.2.8" ]]; then
+    printf "gh: release not found (HTTP 404)\n" >&2
+    exit 1
+fi
+[[ "$1 $2" == "release create" ]]'
+TEST_TAG_NAME=v0.2.8 run_publisher
+assert_log "release create v0.2.8 $case_dir/dist/plugin.zip $case_dir/dist/plugin.zip.sha256 --verify-tag --title v0.2.8 --notes-file docs/releases/v0.2.8.md"
 
 make_case identical
 cp "$case_dir/dist/plugin.zip" "$case_dir/published/101"

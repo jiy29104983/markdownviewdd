@@ -76,7 +76,15 @@ if ! grep -Eq '\(HTTP 404\)|HTTP[^0-9]*404|status[^0-9]*404' "$query_error"; the
 fi
 
 printf "Release '%s' does not exist; creating it with immutable assets.\n" "$TAG_NAME"
-gh release create "$TAG_NAME" "$@" \
-    --verify-tag \
-    --title "$TAG_NAME" \
-    --generate-notes
+release_notes="docs/releases/${TAG_NAME}.md"
+if [[ -f "$release_notes" ]]; then
+    gh release create "$TAG_NAME" "$@" \
+        --verify-tag \
+        --title "$TAG_NAME" \
+        --notes-file "$release_notes"
+else
+    gh release create "$TAG_NAME" "$@" \
+        --verify-tag \
+        --title "$TAG_NAME" \
+        --generate-notes
+fi
