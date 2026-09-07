@@ -104,6 +104,18 @@ jobs:
           $PSNativeCommandUseErrorActionPreference = $false
           ctest --test-dir build -C Release --verbose --no-tests=error
           $exitCode = $LASTEXITCODE
+          $testLogs = Get-ChildItem "build/markdownview_*_tests.txt"
+          foreach ($log in $testLogs) {
+              $text = Get-Content -Raw $log.FullName
+              Write-Host $text
+              if ($text -match '(?m)^(FAIL!|QFATAL)') {
+                  $annotation = $text `
+                      -replace '%', '%25' `
+                      -replace "`r", '%0D' `
+                      -replace "`n", '%0A'
+                  Write-Host "::error title=$($log.BaseName)::$annotation"
+              }
+          }
           if ($exitCode -ne 0) {
               $logPath = "build/Testing/Temporary/LastTest.log"
               $output = if (Test-Path $logPath) {
@@ -129,7 +141,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: test-diagnostics-${{ github.run_id }}-${{ github.run_attempt }}
-          path: build/Testing/Temporary/*.log
+          path: |
+            build/Testing/Temporary/*.log
+            build/markdownview_*_tests.txt
           if-no-files-found: warn
           retention-days: 14
 

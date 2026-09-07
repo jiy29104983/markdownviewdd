@@ -56,8 +56,12 @@ $env:PATH = "$(Join-Path $QtRoot 'bin');$env:PATH"
 
 Write-Host "Running Qt behavior regression tests..."
 & $CTestExe --test-dir $BuildDir -C Release --output-on-failure --no-tests=error
-if ($LASTEXITCODE -ne 0) {
-    throw "Qt behavior regression tests failed with exit code $LASTEXITCODE"
+$CTestExitCode = $LASTEXITCODE
+Get-ChildItem (Join-Path $BuildDir "markdownview_*_tests.txt") | ForEach-Object {
+    Get-Content $_.FullName | ForEach-Object { Write-Host $_ }
+}
+if ($CTestExitCode -ne 0) {
+    throw "Qt behavior regression tests failed with exit code $CTestExitCode"
 }
 
 $BashCommand = Get-Command "bash.exe" -ErrorAction SilentlyContinue

@@ -21,9 +21,10 @@ Windows 提供的 `bash.exe` 运行隔离的 Release 发布测试。已有同配
 Qt 测试固定使用 offscreen 平台，不打开真实外部链接。发布测试使用临时目录和 mock `gh`，
 不访问 GitHub API、不创建或覆盖 Release。任一测试缺失、超时或失败时统一入口返回非零状态。
 
-CTest 显式向标准输出写入 QtTest 文本结果（`-o -,txt`），避免 Windows 下默认日志输出渠道
-导致流水线只看到退出码。云端一次执行全部四组 Qt 测试，失败也继续执行其他组及隔离发布测试；
-详细记录保存在 `build/Testing/Temporary/LastTest.log`，并作为独立诊断 Artifact 上传。
+CTest 显式将 QtTest 文本结果写入 `build/markdownview_*_tests.txt`，统一入口和云端脚本读取
+并显示这些文件，避免 Windows 下标准输出为空时只看到退出码。云端一次执行全部四组 Qt 测试，
+失败也继续执行其他组及隔离发布测试；QtTest 文本记录与 `build/Testing/Temporary/LastTest.log`
+一同作为独立诊断 Artifact 上传。直接调用 CTest 时，应同时查看这些 QtTest 文本记录。
 任一回归失败仍会阻止插件打包和发布。
 
 需要定位单组测试时，可在完成配置后执行：
