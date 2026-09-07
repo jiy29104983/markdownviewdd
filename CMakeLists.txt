@@ -87,7 +87,7 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME markdownview_lifecycle_tests
-        COMMAND markdownview_lifecycle_tests -platform offscreen)
+        COMMAND markdownview_lifecycle_tests -platform offscreen -v1 -o -,txt)
     set_tests_properties(markdownview_lifecycle_tests PROPERTIES
         LABELS "behavior;lifecycle"
         TIMEOUT 60)
@@ -125,7 +125,7 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME markdownview_document_identity_tests
-        COMMAND markdownview_document_identity_tests -platform offscreen)
+        COMMAND markdownview_document_identity_tests -platform offscreen -v1 -o -,txt)
     set_tests_properties(markdownview_document_identity_tests PROPERTIES
         LABELS "behavior;document"
         TIMEOUT 120)
@@ -165,7 +165,7 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME markdownview_multi_window_tests
-        COMMAND markdownview_multi_window_tests -platform offscreen)
+        COMMAND markdownview_multi_window_tests -platform offscreen -v1 -o -,txt)
     set_tests_properties(markdownview_multi_window_tests PROPERTIES
         LABELS "behavior;multi-window"
         TIMEOUT 60)
@@ -194,7 +194,7 @@ if(BUILD_TESTING)
     endif()
 
     add_test(NAME markdownview_diagnostics_tests
-        COMMAND markdownview_diagnostics_tests -platform offscreen)
+        COMMAND markdownview_diagnostics_tests -platform offscreen -v1 -o -,txt)
     set_tests_properties(markdownview_diagnostics_tests PROPERTIES
         LABELS "behavior;diagnostics"
         TIMEOUT 60)
