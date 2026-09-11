@@ -3,6 +3,8 @@
 
 #include <QAbstractScrollArea>
 #include <QApplication>
+#include <QBuffer>
+#include <QImage>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QJsonDocument>
@@ -99,10 +101,16 @@ int main(int argc, char **argv)
             text += QStringLiteral("## Heading %1\n\nParagraph.\n\n").arg(i);
         }
     } else if (sample == QStringLiteral("tables-images")) {
+        QImage pixel(1, 1, QImage::Format_RGB32);
+        pixel.fill(Qt::blue);
+        QByteArray png;
+        QBuffer buffer(&png);
+        if (!buffer.open(QIODevice::WriteOnly) || !pixel.save(&buffer, "PNG")) {
+            return 5;
+        }
         text = QStringLiteral("| Key | Value |\n| --- | --- |\n| A | B |\n\n"
-                              "![pixel](data:image/png;base64,"
-                              "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aV6sAAAAASUVORK5CYII=)\n\n")
-                   .repeated(100);
+                              "![pixel](data:image/png;base64,%1)\n\n")
+                   .arg(QString::fromLatin1(png.toBase64())).repeated(100);
     } else {
         const int bytes = sample == QStringLiteral("5m") ? 5 * 1024 * 1024
             : sample == QStringLiteral("1m") ? 1024 * 1024 : 100 * 1024;
