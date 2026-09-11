@@ -21,6 +21,7 @@ add_library(markdownview SHARED
     src/plugin_exports.cpp
     src/preview_controller.cpp
     src/preview_controller.h
+    src/preview_status.h
     src/ndd_plugin_api.h
     resources/markdownview.qrc)
 

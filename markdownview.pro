@@ -18,7 +18,8 @@ HEADERS += \
     src/host_adapter.h \
     src/markdown_preview_dock.h \
     src/ndd_plugin_api.h \
-    src/preview_controller.h
+    src/preview_controller.h \
+    src/preview_status.h
 
 RESOURCES += resources/markdownview.qrc
 

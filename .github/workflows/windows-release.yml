@@ -101,6 +101,7 @@ jobs:
         shell: pwsh
         run: |
           $env:PATH = "$(Join-Path $env:QT_ROOT_DIR 'bin');$env:PATH"
+          $env:MARKDOWNVIEW_SCREENSHOT_DIR = Join-Path $PWD "build/screenshots"
           $PSNativeCommandUseErrorActionPreference = $false
           ctest --test-dir build -C Release --verbose --no-tests=error
           $exitCode = $LASTEXITCODE
@@ -150,6 +151,7 @@ jobs:
           path: |
             build/Testing/Temporary/*.log
             build/markdownview_*_tests.txt
+            build/screenshots/*.png
           if-no-files-found: warn
           retention-days: 14
 

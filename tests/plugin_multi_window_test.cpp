@@ -4,6 +4,7 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
+#include <QComboBox>
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QEvent>
@@ -178,6 +179,7 @@ private slots:
     void closingOneWindowKeepsTheOtherControllerAlive();
     void contextMenuBridgeOnlyHandlesItsOwnWindow();
     void filePathChangeOnlyUpdatesOwningWindow();
+    void refreshModesAndContextMenusAreWindowLocal();
 };
 
 void PluginMultiWindowTest::initializesAndOperatesEachHostWindowIndependently()
@@ -371,6 +373,34 @@ void PluginMultiWindowTest::filePathChangeOnlyUpdatesOwningWindow()
     QVERIFY(second.controller()->currentHtmlSnapshot(&html, &path));
     QCOMPARE(path, QStringLiteral("second.md"));
     QVERIFY(html.contains("Second path"));
+}
+
+void PluginMultiWindowTest::refreshModesAndContextMenusAreWindowLocal()
+{
+    HostFixture first(QStringLiteral("First"), QStringLiteral("first.md"), QStringLiteral("# First"));
+    HostFixture second(QStringLiteral("Second"), QStringLiteral("second.md"), QStringLiteral("# Second"));
+    QCOMPARE(first.initialize(), 0);
+    QCOMPARE(second.initialize(), 0);
+    first.action(QStringLiteral("手动刷新"))->trigger();
+    QCOMPARE(first.controller()->previewStatus().mode, RefreshMode::Manual);
+    QCOMPARE(second.controller()->previewStatus().mode, RefreshMode::Automatic);
+    QCOMPARE(first.dock()->findChild<QComboBox *>()->currentIndex(), 1);
+    QCOMPARE(second.dock()->findChild<QComboBox *>()->currentIndex(), 0);
+    QMenu context(first.editor);
+    QAction *native = context.addAction(QStringLiteral("Markdown Preview"));
+    connect(native, &QAction::triggered, first.editor, &QsciScintilla::on_viewMarkdown);
+    QEvent show(QEvent::Show);
+    QCoreApplication::sendEvent(&context, &show);
+    native->trigger();
+    second.action(QStringLiteral("显示/隐藏预览"))->setChecked(true);
+    QTRY_COMPARE_WITH_TIMEOUT(second.editor->renderCount(), 1, 1200);
+    QCOMPARE(first.editor->renderCount(), 0);
+    QVERIFY(first.dock()->isVisible());
+    first.dock()->hide();
+    first.dock()->show();
+    QCOMPARE(first.initialize(), 0);
+    QCOMPARE(first.controller()->previewStatus().mode, RefreshMode::Manual);
+    QCOMPARE(first.editor->renderCount(), 0);
 }
 
 QTEST_MAIN(PluginMultiWindowTest)

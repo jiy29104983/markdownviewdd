@@ -221,7 +221,7 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewRejectsUnsupportedSchemes()
         &dock, "openLink", Qt::DirectConnection,
         Q_ARG(QUrl, QUrl(QStringLiteral("https://example.com/failure")))));
     QCOMPARE(openCount, 1);
-    QLabel *label = dock.findChild<QLabel *>();
+    QLabel *label = dock.findChild<QLabel *>(QStringLiteral("NddMarkdownLinkFeedback"));
     QVERIFY(label);
     QVERIFY(label->text().contains(QStringLiteral("系统未能打开")));
 

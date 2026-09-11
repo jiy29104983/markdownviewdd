@@ -76,3 +76,45 @@ ctest --test-dir build -C Release -L multi-window --output-on-failure
 
 失败时保存 `%TEMP%\markdownview-<进程号>.log` 及适用的 `.1`～`.3` 轮转文件，并分别标注静态检查、自动化测试、Windows Release
 编译、Artifact 校验和真实宿主测试为 `passed`、`blocked`、`not run` 或 `not verified`。
+
+## REQ-001 刷新模式回归
+
+控制器文档测试新增手动模式连续输入超过 2 秒、首次显示与重开侧栏、A→B→A 缓存归属、
+后台变更、模式切换／过期计时器、受保护与普通文档切换、隐藏导出、失败重试、错误正文拒绝
+导出、双向滚动门控、缓存淘汰、控件销毁及同步渲染中重入。多窗口测试同时检查菜单、工具栏
+和右键入口的窗口隔离。文件名标签与刷新状态标签分别断言，不能再要求错误覆盖文件名。
+
+手工使用 `examples/preview-demo.md` 的刷新模式步骤检查以下组合：
+
+1. 手动首次显示无缓存；手动已同步；手动编辑后旧正文仍可读且双向同步暂停。
+2. 自动输入停顿后更新；保护暂停；显式刷新后已同步并保留保护说明。
+3. 两窗口使用不同模式；A→B→A 且 B 没缓存；隐藏后导出 B 的最新正文。
+4. 失败后旧正文保持或错误提示、详情复制与重试；窄侧栏下文件名、模式、状态均可辨认。
+
+设置环境变量 `MARKDOWNVIEW_SCREENSHOT_DIR` 可让行为测试将实际 Qt 控件的 10 种状态截图
+写到指定目录。普通测试没有此变量时不写截图。Windows Actions 将其设为 `build/screenshots`，
+截图随 `test-diagnostics-<run>-<attempt>` 上传。Qt/offscreen 截图只能证明模拟界面呈现，
+不能作为 notepad-- 真机加载或操作证据。
+
+### 同机性能基线采样
+
+`tests/benchmark` 是独立、可选的 Qt 模拟宿主采样程序，不加入正常回归的耗时预算。
+用相同程序测量未改动源码和候选源码，`MARKDOWNVIEW_SOURCE_DIR` 指定待测源码检出目录：
+
+```bash
+cmake -S tests/benchmark -B build/refresh-benchmark \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$VERIFY_QT_PREFIX" \
+  -DMARKDOWNVIEW_SOURCE_DIR="$VERIFY_SOURCE_DIR"
+cmake --build build/refresh-benchmark --parallel 4
+build/refresh-benchmark/refresh_benchmark 100k -platform offscreen
+```
+
+可选样本名为 `100k`、`1m`、`5m`、`tables-images`、`headings`、`unsaved`、`two-windows`。
+每类预热一次、采样 20 次，输出 JSON 中位数、P95 和 Linux 进程峰值 RSS（其他平台该值缺省）。
+固定窗口为 1000×700；测量首次同步渲染、20 次输入突发、显式同步刷新、最新 HTML 导出及
+缓存标签接入；缓存接入测量包含取得 HTML 快照，以适配基线的延迟接入语义。
+
+此采样不代表真实宿主性能。首次渲染在已启动的同一进程中创建新控件，不能称为进程冷启动；
+后续异步布局、真实输入到停顿刷新的延迟、实际图片 IO／布局与 Windows 峰值内存仍需真机测量。
+1 MiB／5 MiB 样本按磁盘文件大小生成，未保存样本为 100 KiB 加 20 次递增输入；不宣称已实现
+未保存缓冲区规模保护。P95 或峰值 RSS 变化超过 10% 时复测并记录原因。

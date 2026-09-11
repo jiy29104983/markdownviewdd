@@ -5,6 +5,8 @@
 #include <QAbstractSlider>
 #include <QApplication>
 #include <QDesktopServices>
+#include <QClipboard>
+#include <QComboBox>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -192,15 +194,27 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 4, 5, 4);
 
-    m_documentLabel = new QLabel(tr("没有活动文档"), toolbar);
+    m_documentLabel = new QLabel(tr("没有活动文档"), container);
+    m_documentLabel->setMargin(8);
+    m_documentLabel->setTextFormat(Qt::PlainText);
     m_documentLabel->setObjectName(
         QStringLiteral("NddMarkdownPreviewDocumentLabel"));
     m_documentLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
-    m_documentLabel->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
-    toolbarLayout->addWidget(m_documentLabel);
+    m_documentLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    layout->addWidget(m_documentLabel);
+
+    m_modeCombo = new QComboBox(toolbar);
+    m_modeCombo->setObjectName(QStringLiteral("NddMarkdownRefreshMode"));
+    m_modeCombo->setAccessibleName(tr("刷新模式"));
+    m_modeCombo->addItem(tr("自动刷新"));
+    m_modeCombo->addItem(tr("手动刷新"));
+    m_modeCombo->setToolTip(tr("选择当前窗口的刷新模式；手动模式下点击刷新更新预览。"));
+    toolbarLayout->addWidget(m_modeCombo);
+    toolbarLayout->addStretch();
 
     auto *refreshButton = new QToolButton(toolbar);
     refreshButton->setText(tr("刷新"));
+    refreshButton->setObjectName(QStringLiteral("NddMarkdownRefreshButton"));
     refreshButton->setToolTip(tr("立即重新渲染当前文档"));
     toolbarLayout->addWidget(refreshButton);
 
@@ -226,10 +240,50 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_browser->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     layout->addWidget(toolbar);
+    auto *statusRow = new QWidget(container);
+    auto *statusLayout = new QVBoxLayout(statusRow);
+    statusLayout->setContentsMargins(8, 4, 8, 4);
+    m_statusLabel = new QLabel(tr("没有活动文档"), statusRow);
+    m_statusLabel->setObjectName(QStringLiteral("NddMarkdownPreviewStatusLabel"));
+    m_statusLabel->setTextFormat(Qt::PlainText);
+    m_statusLabel->setWordWrap(true);
+    m_statusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse |
+                                         Qt::TextSelectableByKeyboard);
+    statusLayout->addWidget(m_statusLabel);
+    auto *statusActions = new QHBoxLayout;
+    statusActions->addStretch();
+    statusLayout->addLayout(statusActions);
+    m_retryButton = new QToolButton(statusRow);
+    m_retryButton->setObjectName(QStringLiteral("NddMarkdownRetryButton"));
+    m_retryButton->setText(tr("重试"));
+    m_retryButton->hide();
+    statusActions->addWidget(m_retryButton);
+    m_detailsButton = new QToolButton(statusRow);
+    m_detailsButton->setText(tr("复制详情"));
+    m_detailsButton->setObjectName(QStringLiteral("NddMarkdownStatusDetails"));
+    m_detailsButton->hide();
+    statusActions->addWidget(m_detailsButton);
+    layout->addWidget(statusRow);
+    m_feedbackLabel = new QLabel(container);
+    m_feedbackLabel->setObjectName(QStringLiteral("NddMarkdownLinkFeedback"));
+    m_feedbackLabel->setTextFormat(Qt::PlainText);
+    m_feedbackLabel->setWordWrap(true);
+    m_feedbackLabel->setMargin(8);
+    m_feedbackLabel->hide();
+    layout->addWidget(m_feedbackLabel);
     layout->addWidget(m_browser, 1);
     m_contentLayout = layout;
     setWidget(container);
 
+    connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
+            this, [this](int index) {
+        emit refreshModeChanged(index == 0 ? RefreshMode::Automatic : RefreshMode::Manual);
+    });
+    connect(m_retryButton, &QToolButton::clicked,
+            this, &MarkdownPreviewDock::refreshRequested);
+    connect(m_detailsButton, &QToolButton::clicked, this, [this]() {
+        QApplication::clipboard()->setText(m_statusDetails);
+    });
     connect(refreshButton, &QToolButton::clicked,
             this, &MarkdownPreviewDock::refreshRequested);
     connect(m_syncButton, &QToolButton::toggled,
@@ -351,6 +405,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     m_currentFilePath = filePath;
     m_previewEditor = editor;
     m_previewContentVersion = contentVersion;
+    m_previewIsCurrent = true;
     applyDocumentStyle(textEdit);
     m_browser->hide();
     previewWindow->show();
@@ -360,17 +415,30 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
 
 void MarkdownPreviewDock::invalidatePreview()
 {
-    cancelPreservedScroll();
+    markPreviewStale();
+    m_pressedLink = QUrl();
     m_previewEditor = nullptr;
     m_previewContentVersion = 0;
+}
+
+void MarkdownPreviewDock::markPreviewStale()
+{
+    cancelPreservedScroll();
+    m_previewIsCurrent = false;
 }
 
 bool MarkdownPreviewDock::hasPreviewFor(QWidget *editor,
                                        quint64 contentVersion) const
 {
+    return m_previewIsCurrent && hasDisplayedPreviewFor(editor, contentVersion);
+}
+
+bool MarkdownPreviewDock::hasDisplayedPreviewFor(QWidget *editor,
+                                                quint64 contentVersion) const
+{
     return editor && m_previewEditor == editor &&
         m_previewContentVersion == contentVersion &&
-        m_nativePreview && m_nativeTextEdit;
+        m_nativePreview && m_nativeTextEdit && !m_nativePreview->isHidden();
 }
 
 QByteArray MarkdownPreviewDock::htmlSnapshotFor(
@@ -428,6 +496,7 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     if (m_browser) {
         m_browser->show();
     }
+    emit displayedPreviewDestroyed();
 }
 
 void MarkdownPreviewDock::disconnectNativePreviews()
@@ -478,25 +547,33 @@ void MarkdownPreviewDock::showMessage(const QString &title,
 }
 
 void MarkdownPreviewDock::setDocumentInfo(const QString &filePath,
-                                          int characterCount)
+                                          int characterCount,
+                                          bool hasDocument)
 {
-    const QString displayName = filePath.isEmpty()
-        ? tr("未命名文档")
-        : QFileInfo(filePath).fileName();
+    const QString displayName = !hasDocument ? tr("没有活动文档")
+        : filePath.isEmpty() ? tr("未命名文档") : QFileInfo(filePath).fileName();
     m_documentLabel->setText(characterCount >= 0
         ? tr("%1 · 长度 %2").arg(displayName).arg(characterCount)
         : displayName);
     m_documentLabel->setToolTip(filePath);
+    m_feedbackLabel->hide();
 }
 
 void MarkdownPreviewDock::setRefreshStatus(const QString &status,
-                                           const QString &toolTip)
+                                           const QString &details,
+                                           bool failed)
 {
-    if (!m_documentLabel) {
-        return;
-    }
-    m_documentLabel->setText(status);
-    m_documentLabel->setToolTip(toolTip);
+    m_statusLabel->setText(status);
+    m_statusLabel->setToolTip(details);
+    m_statusDetails = details;
+    m_retryButton->setVisible(failed);
+    m_detailsButton->setVisible(!details.isEmpty());
+}
+
+void MarkdownPreviewDock::setRefreshMode(RefreshMode mode)
+{
+    const QSignalBlocker blocker(m_modeCombo);
+    m_modeCombo->setCurrentIndex(mode == RefreshMode::Automatic ? 0 : 1);
 }
 
 void MarkdownPreviewDock::setSyncScrolling(bool enabled)
@@ -548,7 +625,7 @@ void MarkdownPreviewDock::preserveNativeScrollRatio(
 void MarkdownPreviewDock::refreshDocumentStyle(QWidget *editor,
                                                quint64 contentVersion)
 {
-    if (!hasPreviewFor(editor, contentVersion) || !m_nativeTextEdit) {
+    if (!hasDisplayedPreviewFor(editor, contentVersion) || !m_nativeTextEdit) {
         return;
     }
 
@@ -557,7 +634,7 @@ void MarkdownPreviewDock::refreshDocumentStyle(QWidget *editor,
     const quint64 interactionGeneration = m_scrollInteractionGeneration;
     QTimer::singleShot(0, this, [this, editor = QPointer<QWidget>(editor),
                                  contentVersion, ratio, interactionGeneration]() {
-        if (hasPreviewFor(editor.data(), contentVersion) &&
+        if (hasDisplayedPreviewFor(editor.data(), contentVersion) &&
             interactionGeneration == m_scrollInteractionGeneration) {
             scrollToRatio(ratio);
         }
@@ -975,9 +1052,10 @@ void MarkdownPreviewDock::showLinkFailure(const QUrl &url,
     Diagnostics::write(this,
         QStringLiteral("link open rejected or failed: %1 (%2)")
             .arg(url.toDisplayString(), reason));
-    if (m_documentLabel) {
-        m_documentLabel->setText(tr("链接未打开：%1").arg(reason));
-        m_documentLabel->setToolTip(url.toDisplayString());
+    if (m_feedbackLabel) {
+        m_feedbackLabel->setText(tr("链接未打开：%1").arg(reason));
+        m_feedbackLabel->setToolTip(url.toDisplayString());
+        m_feedbackLabel->show();
     }
 }
 

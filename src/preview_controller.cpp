@@ -6,6 +6,7 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
+#include <QActionGroup>
 #include <QApplication>
 #include <QElapsedTimer>
 #include <QEvent>
@@ -16,6 +17,9 @@
 #include <QMessageBox>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QScopedValueRollback>
+#include <QTextEdit>
+#include <QTextDocument>
 #include <QStringList>
 #include <QTimer>
 #include <QtMath>
@@ -65,6 +69,19 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
             this, &PreviewController::synchronizeFromHostEvent);
     connect(m_dock, &MarkdownPreviewDock::refreshRequested,
             this, &PreviewController::renderNow);
+    connect(m_dock, &MarkdownPreviewDock::displayedPreviewDestroyed, this, [this]() {
+        m_previewEditor = nullptr;
+        m_renderedVersion = 0;
+        if (PreviewCacheEntry *entry = previewCacheEntry(m_editor.data())) {
+            entry->renderedVersion = 0;
+            entry->hasNativePreview = false;
+        }
+        m_hostAdapter->setPreviewCurrent(m_editor.data(), false);
+        showCachedPreviewOrMessage();
+        publishStatus();
+    });
+    connect(m_dock, &MarkdownPreviewDock::refreshModeChanged,
+            this, &PreviewController::setRefreshMode);
     connect(m_dock, &MarkdownPreviewDock::syncScrollingChanged,
             this, &PreviewController::setSyncScrolling);
     connect(m_dock, &MarkdownPreviewDock::previewScrollRatioChanged,
@@ -108,6 +125,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     ensureHostEventConnection();
     pollEditor();
     updatePollTimerState();
+    publishStatus();
     qApp->installEventFilter(this);
     Diagnostics::write(this, QStringLiteral("PreviewController constructor completed"));
 }
@@ -144,6 +162,22 @@ bool PreviewController::installMenu(QMenu *rootMenu)
     connect(refreshAction, &QAction::triggered,
             this, &PreviewController::renderNow);
 
+    auto *modeGroup = new QActionGroup(this);
+    modeGroup->setExclusive(true);
+    m_automaticAction = rootMenu->addAction(tr("自动刷新"));
+    m_manualAction = rootMenu->addAction(tr("手动刷新"));
+    for (QAction *action : {m_automaticAction.data(), m_manualAction.data()}) {
+        action->setCheckable(true);
+        modeGroup->addAction(action);
+    }
+    connect(m_automaticAction, &QAction::triggered, this, [this]() {
+        setRefreshMode(RefreshMode::Automatic);
+    });
+    connect(m_manualAction, &QAction::triggered, this, [this]() {
+        setRefreshMode(RefreshMode::Manual);
+    });
+    publishStatus();
+
     m_syncAction = rootMenu->addAction(tr("同步编辑器滚动"));
     m_syncAction->setCheckable(true);
     m_syncAction->setChecked(m_syncScrolling);
@@ -171,6 +205,8 @@ bool PreviewController::eventFilter(QObject *watched, QEvent *event)
         } else if (PreviewCacheEntry *entry = previewCacheEntry(
                        qobject_cast<QWidget *>(watched))) {
             entry->filePath = m_hostAdapter->filePath(entry->editor.data());
+            entry->contentVersion = ++m_nextContentVersion;
+            entry->error.clear();
             m_hostAdapter->setPreviewCurrent(entry->editor.data(), false);
         }
     }
@@ -282,8 +318,11 @@ void PreviewController::onEditorTextChanged()
     }
     m_hostAdapter->setPreviewCurrent(changedEditor, false);
     if (changedEditor != m_editor) {
-        // Cached documents can change through the host's replace-all or
-        // background update paths. Keep them dirty without rendering them.
+        // Keep the displayed snapshot version, but advance the source version.
+        if (PreviewCacheEntry *entry = previewCacheEntry(changedEditor)) {
+            entry->contentVersion = ++m_nextContentVersion;
+            entry->error.clear();
+        }
         return;
     }
     markPreviewPending();
@@ -295,71 +334,181 @@ QWidget *PreviewController::resolveCurrentEditor() const
     return m_hostAdapter ? m_hostAdapter->currentEditor() : nullptr;
 }
 
+bool PreviewController::automaticRenderAllowed(bool allowInitialRender) const
+{
+    if (m_refreshMode != RefreshMode::Automatic || m_renderInProgress ||
+        !m_editor || !isMarkdownDocument(m_editorFilePath) ||
+        !m_dock || !m_dock->isVisible() || isPreviewCurrent()) {
+        return false;
+    }
+    if (!m_performanceProtected) {
+        return true;
+    }
+    // Preserve the existing first-open policy; buffer-size/first-render
+    // protection is REQ-009. Mode changes and edits never use this exception.
+    if (allowInitialRender) {
+        for (const PreviewCacheEntry &entry : m_previewCache) {
+            if (entry.editor == m_editor) {
+                return !entry.hasRendered;
+            }
+        }
+    }
+    return false;
+}
+
 void PreviewController::scheduleRender()
 {
-    if (!m_renderTimer) {
-        return;
-    }
-
-    if (!m_dock || !m_dock->isVisible()) {
+    if (!automaticRenderAllowed(true)) {
         m_renderTimer->stop();
         return;
     }
-
-    // Repeated start() calls form a trailing-edge debounce.  Let expensive
-    // documents remain stale slightly longer so rendering never competes with
-    // a continuous typing burst.
     const qint64 adaptiveDelay = qBound<qint64>(
         kMinimumRenderDebounceMs,
         m_lastRenderDurationMs * kRenderDurationMultiplier,
         kMaximumRenderDebounceMs);
+    m_scheduledEditor = m_editor;
+    m_scheduledVersion = m_contentVersion;
+    m_allowInitialAutomaticRender = true;
     m_renderTimer->start(static_cast<int>(adaptiveDelay));
 }
 
 void PreviewController::scheduleAutomaticRender()
 {
-    m_manualRefreshOnly = fileExceedsAutomaticRefreshLimit() ||
-        m_lastRenderDurationMs >= kSlowRenderThresholdMs;
-    if (m_manualRefreshOnly) {
-        if (m_renderTimer) {
-            m_renderTimer->stop();
-        }
-        if (m_dock) {
-            m_dock->setRefreshStatus(
-                tr("预览已暂停自动刷新，待手工刷新"),
-                tr("为避免输入卡顿，自动全文渲染已暂停；点击“刷新”应用最新内容。"));
-        }
-        Diagnostics::write(this, QStringLiteral(
-            "automatic render deferred: manual refresh policy active"));
-        return;
+    updateLargeDocumentPolicy(m_lastRenderDurationMs);
+    if (!automaticRenderAllowed(false)) {
+        m_renderTimer->stop();
+    } else {
+        scheduleRender();
+        m_allowInitialAutomaticRender = false;
     }
-
-    scheduleRender();
+    publishStatus();
 }
 
 void PreviewController::renderScheduled()
 {
+    const QPointer<QWidget> scheduledEditor = m_scheduledEditor;
+    const quint64 scheduledVersion = m_scheduledVersion;
+    const bool allowInitialRender = m_allowInitialAutomaticRender;
     synchronizeActiveEditor();
-    if (isPreviewCurrent()) {
-        Diagnostics::write(this, QStringLiteral(
-            "scheduled render skipped: preview version already current"));
+    if (!scheduledEditor || scheduledEditor != m_editor ||
+        scheduledVersion != m_contentVersion ||
+        !automaticRenderAllowed(allowInitialRender)) {
         return;
     }
     renderCurrentDocument(false);
 }
 
+void PreviewController::setRefreshMode(RefreshMode mode)
+{
+    if (m_refreshMode == mode) {
+        return;
+    }
+    m_refreshMode = mode;
+    m_renderTimer->stop();
+    m_scheduledEditor = nullptr;
+    synchronizeActiveEditor();
+    if (mode == RefreshMode::Automatic) {
+        scheduleAutomaticRender();
+    } else {
+        publishStatus();
+    }
+}
+
+PreviewStatus PreviewController::previewStatus() const
+{
+    PreviewStatus status;
+    status.mode = m_refreshMode;
+    status.state = m_previewState;
+    status.activeEditor = m_editor;
+    status.displayedEditor = m_previewEditor;
+    status.filePath = m_editorFilePath;
+    status.contentVersion = m_contentVersion;
+    status.displayedVersion = m_renderedVersion;
+    status.performanceProtected = m_performanceProtected;
+    status.protectionReason = protectionReason();
+    status.error = m_lastHostError;
+    if (status.state == PreviewState::Pending &&
+        m_refreshMode == RefreshMode::Automatic && m_performanceProtected) {
+        status.state = PreviewState::Paused;
+    }
+    return status;
+}
+
+QString PreviewController::protectionReason() const
+{
+    if (!m_performanceProtected) {
+        return QString();
+    }
+    return m_lastRenderDurationMs >= kSlowRenderThresholdMs
+        ? tr("最近完整渲染耗时达到 750 ms，后续自动刷新受性能保护限制。")
+        : tr("文件大小达到 1 MiB，后续自动刷新受性能保护限制。");
+}
+
+void PreviewController::publishStatus()
+{
+    const PreviewStatus status = previewStatus();
+    if (m_automaticAction && m_manualAction) {
+        const QSignalBlocker automaticBlocker(m_automaticAction);
+        const QSignalBlocker manualBlocker(m_manualAction);
+        m_automaticAction->setChecked(status.mode == RefreshMode::Automatic);
+        m_manualAction->setChecked(status.mode == RefreshMode::Manual);
+    }
+    if (m_dock) {
+        m_dock->setRefreshMode(status.mode);
+        m_dock->setDocumentInfo(status.filePath, -1, !status.activeEditor.isNull());
+        QString text;
+        QString details;
+        switch (status.state) {
+        case PreviewState::NoDocument:
+            text = tr("没有活动文档");
+            break;
+        case PreviewState::Unsupported:
+            text = tr("不支持当前文件类型");
+            break;
+        case PreviewState::Ready:
+            text = tr("已同步");
+            if (status.performanceProtected) {
+                text += tr(" · 后续自动刷新受性能保护限制");
+            }
+            details = status.protectionReason;
+            break;
+        case PreviewState::Paused:
+            text = tr("性能保护暂停 · 待手工刷新");
+            details = status.protectionReason;
+            break;
+        case PreviewState::Pending:
+            text = status.displayedEditor ? tr("待刷新 · 正在显示旧快照")
+                                          : tr("待刷新 · 点击刷新生成预览");
+            break;
+        case PreviewState::Failed:
+            text = status.displayedEditor ? tr("刷新失败 · 正在显示旧快照")
+                                          : tr("刷新失败 · 点击重试");
+            text += tr("：%1").arg(status.error);
+            details = status.error;
+            break;
+        }
+        m_dock->setRefreshStatus(text, details, status.state == PreviewState::Failed);
+    }
+    updateExportActionState();
+    emit previewStatusChanged();
+}
+
 void PreviewController::renderNow()
 {
-    renderCurrentDocument(false, true);
+    renderCurrentDocument(true, true);
 }
 
 bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
                                               bool forceHostUpdate)
 {
-    // Manual refreshes and explicit renders supersede any pending automatic
-    // refresh for the same editor state.
+    // Synchronous host callbacks can process events. Never start a nested render.
+    if (m_renderInProgress) {
+        return false;
+    }
     synchronizeActiveEditor();
     m_renderTimer->stop();
+    m_scheduledEditor = nullptr;
+    QScopedValueRollback<bool> rendering(m_renderInProgress, true);
     Diagnostics::write(this, QStringLiteral("renderNow entered"),
                        Diagnostics::Level::Debug);
     if (!m_dock || (!allowHiddenDock && !m_dock->isVisible())) {
@@ -367,32 +516,12 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         return false;
     }
 
-    if (!m_editor) {
-        m_previewState = PreviewState::NoDocument;
-        m_previewEditor = nullptr;
-        m_renderedVersion = 0;
-        Diagnostics::write(this, QStringLiteral("renderNow: no active editor"));
-        m_dock->showMessage(tr("没有活动文档"),
-                            tr("打开一个 Markdown 文件后即可预览。"));
-        updateExportActionState();
+    if (!m_editor || !isMarkdownDocument(m_editorFilePath)) {
+        showCachedPreviewOrMessage();
+        publishStatus();
         return false;
     }
-
-    const QString filePath = currentFilePath();
-    Diagnostics::write(this, QStringLiteral("filePath read: %1")
-                                 .arg(Diagnostics::pathIdentity(filePath)),
-                       Diagnostics::Level::Debug);
-    if (!isMarkdownDocument(filePath)) {
-        m_previewState = PreviewState::Unsupported;
-        m_previewEditor = nullptr;
-        m_renderedVersion = 0;
-        m_dock->showMessage(
-            tr("当前文档不是 Markdown 文件"),
-            tr("支持 .md、.markdown、.mdown、.mkd、.mkdn 和 .mdwn 文件。"));
-        m_dock->setDocumentInfo(filePath, -1);
-        updateExportActionState();
-        return false;
-    }
+    const QString filePath = m_editorFilePath;
 
     QPointer<QWidget> renderEditor = m_editor;
     const quint64 renderVersion = m_contentVersion;
@@ -406,22 +535,21 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     if (!activateNativePreview(forceHostUpdate, &performedFullRender)) {
         synchronizeActiveEditor();
         if (m_editor != renderEditor || m_contentVersion != renderVersion) {
-            Diagnostics::write(this, QStringLiteral(
-                "renderNow failure discarded: editor state changed"));
-            scheduleRender();
+            // A new document/version is scheduled only after this call unwinds.
+            QTimer::singleShot(0, this, &PreviewController::scheduleAutomaticRender);
             return false;
         }
-        if (m_editor == renderEditor && m_contentVersion == renderVersion) {
-            m_previewState = PreviewState::Failed;
-            m_previewEditor = nullptr;
-            m_renderedVersion = 0;
+        if (m_lastHostError.isEmpty()) {
+            m_lastHostError = tr("宿主未提供可用的原生 Markdown 预览能力。");
         }
-        m_dock->showMessage(
-            tr("无法打开原生 Markdown 预览"),
-            m_lastHostError.isEmpty()
-                ? tr("notepad-- 未提供可用的原生 Markdown 预览能力。")
-                : m_lastHostError);
-        updateExportActionState();
+        if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor.data())) {
+            entry->error = m_lastHostError;
+        }
+        showCachedPreviewOrMessage();
+        m_previewState = PreviewState::Failed;
+        m_hostAdapter->setPreviewCurrent(renderEditor.data(), false);
+        m_dock->markPreviewStale();
+        publishStatus();
         return false;
     }
     const qint64 operationDurationMs = elapsed.elapsed();
@@ -431,7 +559,14 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     synchronizeActiveEditor();
     if (m_editor != renderEditor || m_contentVersion != renderVersion) {
         Diagnostics::write(this, QStringLiteral("renderNow discarded: editor state changed"));
-        scheduleRender();
+        if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor.data())) {
+            // The native QTextDocument was mutated but has no accepted version.
+            entry->renderedVersion = 0;
+            m_hostAdapter->setPreviewCurrent(renderEditor.data(), false);
+        }
+        showCachedPreviewOrMessage();
+        publishStatus();
+        QTimer::singleShot(0, this, &PreviewController::scheduleAutomaticRender);
         return false;
     }
 
@@ -446,6 +581,13 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
     m_previewEditor = renderEditor;
     m_renderedVersion = renderVersion;
     m_previewState = PreviewState::Ready;
+    m_lastHostError.clear();
+    if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor.data())) {
+        entry->renderedVersion = renderVersion;
+        entry->snapshotFilePath = filePath;
+        entry->hasRendered = true;
+        entry->error.clear();
+    }
     m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
     m_dock->setDocumentInfo(filePath, -1);
     m_hasLastEditorScrollState = false;
@@ -455,7 +597,8 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         m_dock->preserveNativeScrollRatio(
             renderEditor.data(), renderVersion, preservedScrollRatio);
     }
-    updateExportActionState();
+    m_renderInProgress = false;
+    publishStatus();
     return true;
 }
 
@@ -603,7 +746,8 @@ void PreviewController::attachEditor(QWidget *editor)
     m_editor = editor;
     observeEditor(editor);
     m_editorFilePath = currentFilePath();
-    ++m_contentVersion;
+    const PreviewCacheEntry *entry = previewCacheEntry(editor);
+    m_contentVersion = entry ? entry->contentVersion : 0;
     m_previewEditor = nullptr;
     m_renderedVersion = 0;
     m_previewState = m_editor ? PreviewState::Pending : PreviewState::NoDocument;
@@ -612,10 +756,9 @@ void PreviewController::attachEditor(QWidget *editor)
     }
     m_lastScrollEditor = nullptr;
     m_hasLastEditorScrollState = false;
-    const PreviewCacheEntry *entry = previewCacheEntry(editor);
     m_lastRenderDurationMs = entry ? entry->lastFullRenderDurationMs : 0;
-    m_manualRefreshOnly = fileExceedsAutomaticRefreshLimit() ||
-        m_lastRenderDurationMs >= kSlowRenderThresholdMs;
+    m_lastHostError = entry ? entry->error : QString();
+    updateLargeDocumentPolicy(m_lastRenderDurationMs);
 
     if (m_editor) {
         Diagnostics::write(this, QStringLiteral("attaching editor class=%1")
@@ -634,7 +777,8 @@ void PreviewController::attachEditor(QWidget *editor)
                 QStringLiteral("existing host immediate refresh disconnected on attach"));
         }
     }
-    updateExportActionState();
+    showCachedPreviewOrMessage();
+    publishStatus();
 }
 
 void PreviewController::observeEditor(QWidget *editor)
@@ -646,6 +790,8 @@ void PreviewController::observeEditor(QWidget *editor)
         const QString filePath = m_hostAdapter->filePath(editor);
         if (entry->filePath != filePath) {
             entry->filePath = filePath;
+            entry->contentVersion = ++m_nextContentVersion;
+            entry->error.clear();
             m_hostAdapter->setPreviewCurrent(editor, false);
         }
         return;
@@ -654,6 +800,7 @@ void PreviewController::observeEditor(QWidget *editor)
     PreviewCacheEntry entry;
     entry.editor = editor;
     entry.filePath = m_hostAdapter->filePath(editor);
+    entry.contentVersion = ++m_nextContentVersion;
     entry.textConnection = connect(editor, SIGNAL(textChanged()),
                                    this, SLOT(onEditorTextChanged()),
                                    Qt::UniqueConnection);
@@ -678,7 +825,7 @@ void PreviewController::onEditorDestroyed(QObject *editor)
     }
     m_editor = nullptr;
     m_editorFilePath.clear();
-    ++m_contentVersion;
+    m_contentVersion = 0;
     m_previewEditor = nullptr;
     m_renderedVersion = 0;
     m_previewState = PreviewState::NoDocument;
@@ -687,8 +834,13 @@ void PreviewController::onEditorDestroyed(QObject *editor)
     if (m_dock) {
         m_dock->invalidatePreview();
     }
-    updateExportActionState();
-    scheduleRender();
+    m_renderTimer->stop();
+    m_lastRenderDurationMs = 0;
+    m_performanceProtected = false;
+    m_lastHostError.clear();
+    showCachedPreviewOrMessage();
+    publishStatus();
+    m_hostEventTimer->start();
 }
 
 void PreviewController::handleFilePathChanged()
@@ -713,19 +865,19 @@ void PreviewController::handleFilePathChanged()
     if (m_dock) {
         m_dock->setDocumentInfo(filePath, -1);
     }
-    if (m_dock && m_dock->isVisible()) {
-        scheduleAutomaticRender();
-    }
+    showCachedPreviewOrMessage();
+    scheduleAutomaticRender();
 }
 
 void PreviewController::updateLargeDocumentPolicy(qint64 renderDurationMs)
 {
     const bool fileIsLarge = fileExceedsAutomaticRefreshLimit();
     const bool renderWasSlow = renderDurationMs >= kSlowRenderThresholdMs;
-    m_manualRefreshOnly = fileIsLarge || renderWasSlow;
-    if (m_manualRefreshOnly) {
+    const bool wasProtected = m_performanceProtected;
+    m_performanceProtected = fileIsLarge || renderWasSlow;
+    if (m_performanceProtected && !wasProtected) {
         Diagnostics::write(this,
-            QStringLiteral("manual refresh policy enabled: fileBytes=%1, renderMs=%2")
+            QStringLiteral("performance protection enabled: fileBytes=%1, renderMs=%2")
                 .arg(QFileInfo(currentFilePath()).size())
                 .arg(renderDurationMs));
     }
@@ -763,21 +915,70 @@ void PreviewController::markPreviewPending()
     if (!m_editor) {
         return;
     }
-
-    ++m_contentVersion;
-    m_previewState = PreviewState::Pending;
-    m_previewEditor = nullptr;
-    m_renderedVersion = 0;
+    m_contentVersion = ++m_nextContentVersion;
+    if (PreviewCacheEntry *entry = previewCacheEntry(m_editor.data())) {
+        entry->contentVersion = m_contentVersion;
+        entry->error.clear();
+    }
+    m_lastHostError.clear();
+    m_previewState = isMarkdownDocument(m_editorFilePath)
+        ? PreviewState::Pending : PreviewState::Unsupported;
     m_hostAdapter->setPreviewCurrent(m_editor.data(), false);
     if (m_dock) {
-        m_dock->invalidatePreview();
+        m_dock->markPreviewStale();
     }
-    updateExportActionState();
+    // scheduleAutomaticRender publishes the complete mode/protection state.
+}
+
+void PreviewController::showCachedPreviewOrMessage()
+{
+    if (!m_dock) {
+        return;
+    }
+    m_previewEditor = nullptr;
+    m_renderedVersion = 0;
+    m_dock->invalidatePreview();
+    if (!m_editor) {
+        m_previewState = PreviewState::NoDocument;
+        m_dock->showMessage(tr("没有活动文档"), tr("打开一个 Markdown 文件后即可预览。"));
+        return;
+    }
+    if (!isMarkdownDocument(m_editorFilePath)) {
+        m_previewState = PreviewState::Unsupported;
+        m_dock->showMessage(tr("当前文档不是 Markdown 文件"),
+                           tr("支持 .md、.markdown、.mdown、.mkd、.mkdn 和 .mdwn 文件。"));
+        return;
+    }
+    const PreviewCacheEntry *cached = previewCacheEntry(m_editor.data());
+    if (cached && cached->renderedVersion && cached->previewWindow && cached->previewTextEdit) {
+        // Copy before adoption: Qt signals may re-enter the controller.
+        const PreviewCacheEntry entry = *cached;
+        if (m_dock->adoptNativePreview(entry.previewWindow, entry.previewTextEdit,
+                                      entry.snapshotFilePath, m_editor.data(),
+                                      entry.renderedVersion)) {
+            m_previewEditor = m_editor;
+            m_renderedVersion = entry.renderedVersion;
+            const bool current = entry.error.isEmpty() &&
+                entry.renderedVersion == m_contentVersion &&
+                m_hostAdapter->previewIsCurrent(m_editor.data());
+            m_previewState = !entry.error.isEmpty() ? PreviewState::Failed
+                : current ? PreviewState::Ready : PreviewState::Pending;
+            if (!current) {
+                m_dock->markPreviewStale();
+            }
+            touchPreviewCache(m_editor.data());
+            return;
+        }
+    }
+    m_previewState = m_lastHostError.isEmpty() ? PreviewState::Pending : PreviewState::Failed;
+    m_dock->showMessage(m_lastHostError.isEmpty() ? tr("尚无可用预览") : tr("刷新失败"),
+                       m_lastHostError.isEmpty() ? tr("点击“刷新”生成当前文档的预览。")
+                                                 : m_lastHostError);
 }
 
 bool PreviewController::isPreviewCurrent() const
 {
-    return m_previewState == PreviewState::Ready && m_editor &&
+    return !m_renderInProgress && m_previewState == PreviewState::Ready && m_editor &&
         m_previewEditor == m_editor && m_renderedVersion == m_contentVersion &&
         m_dock && m_dock->hasPreviewFor(m_editor.data(), m_contentVersion);
 }
@@ -802,76 +1003,84 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate,
                                                bool *performedFullRender)
 {
     *performedFullRender = false;
-    if (!m_editor || !m_dock) {
+    const QPointer<QWidget> editor = m_editor;
+    const quint64 version = m_contentVersion;
+    if (!editor || !m_dock) {
         return false;
     }
-
     m_lastHostError.clear();
-    HostAdapter::PreviewResult preview = m_hostAdapter->ensurePreview(m_editor.data());
+    const HostAdapter::PreviewResult preview = m_hostAdapter->ensurePreview(editor.data());
     Diagnostics::write(this,
         QStringLiteral("host preview ensure created=%1, duration=%2 ms, error=%3")
             .arg(preview.created).arg(preview.durationMs).arg(preview.error));
-    if (!preview.isValid()) {
+    synchronizeActiveEditor();
+    if (!preview.isValid() || !editor || editor != m_editor || version != m_contentVersion) {
         m_lastHostError = preview.error;
+        if (preview.isValid() && editor) {
+            // A first host render may have processed events and changed source.
+            m_hostAdapter->setPreviewCurrent(editor.data(), false);
+        }
         return false;
     }
-
-    const bool reusablePreview = m_hostAdapter->previewIsCurrent(m_editor.data());
-    if (!m_dock->adoptNativePreview(preview.window, preview.textEdit,
-                                    currentFilePath(),
-                                    m_editor.data(), m_contentVersion)) {
+    const bool reusablePreview = m_hostAdapter->previewIsCurrent(editor.data());
+    QPointer<QTextEdit> textEdit = preview.textEdit;
+    QPointer<QWidget> previewWindow = preview.window;
+    if (!m_dock->adoptNativePreview(previewWindow, textEdit, m_editorFilePath,
+                                    editor.data(), version)) {
         return false;
     }
-
-    touchPreviewCache(m_editor.data());
-
-    // The host creation call has already rendered the initial document. Reuse that
-    // result instead of immediately parsing and laying out the whole document
-    // a second time.
-    if (preview.created) {
-        *performedFullRender = true;
-        if (!m_syncScrolling) {
-            PreviewCacheEntry *entry = previewCacheEntry(m_editor.data());
+    touchPreviewCache(editor.data());
+    if (PreviewCacheEntry *entry = previewCacheEntry(editor.data())) {
+        entry->previewWindow = previewWindow;
+        entry->previewTextEdit = textEdit;
+    }
+    if (preview.created || (reusablePreview && !forceHostUpdate)) {
+        *performedFullRender = preview.created;
+        if (preview.created && !m_syncScrolling) {
+            const PreviewCacheEntry *entry = previewCacheEntry(editor.data());
             if (entry && entry->hasScrollRatio) {
-                m_dock->preserveNativeScrollRatio(
-                    m_editor.data(), m_contentVersion, entry->scrollRatio);
+                m_dock->preserveNativeScrollRatio(editor.data(), version, entry->scrollRatio);
             }
         }
         enforcePreviewCacheLimit();
-        Diagnostics::write(this, QStringLiteral("host initial render reused"));
-        return true;
-    }
-    if (reusablePreview && !forceHostUpdate) {
-        enforcePreviewCacheLimit();
-        Diagnostics::write(this, QStringLiteral(
-            "existing current host preview reused without full render"));
         return true;
     }
 
-    // Render through the host module after embedding.  This is also the only
-    // render performed for debounced editor textChanged notifications.
+    // Do not clone the entire rich-text document on every refresh. Keep the
+    // last successful snapshot only if a failed host call left it untouched.
+    const QPointer<QTextDocument> previousDocument = textEdit->document();
+    bool documentChanged = previousDocument->signalsBlocked();
+    const QMetaObject::Connection contentConnection = connect(
+        previousDocument, &QTextDocument::contentsChanged, this,
+        [&documentChanged]() { documentChanged = true; }, Qt::DirectConnection);
     qint64 hostRenderDuration = 0;
     QString hostError;
     const bool updated = m_hostAdapter->refreshPreview(
-        m_editor.data(), &hostRenderDuration, &hostError);
-    *performedFullRender = updated;
+        editor.data(), &hostRenderDuration, &hostError);
+    disconnect(contentConnection);
     Diagnostics::write(this,
         QStringLiteral("host preview refresh returned: %1, duration=%2 ms, error=%3")
-            .arg(updated)
-            .arg(hostRenderDuration)
-            .arg(hostError));
-    if (updated) {
+            .arg(updated).arg(hostRenderDuration).arg(hostError));
+    *performedFullRender = updated;
+    if (!updated) {
+        if (!textEdit || !previousDocument || textEdit->document() != previousDocument ||
+            documentChanged) {
+            if (PreviewCacheEntry *entry = previewCacheEntry(editor.data())) {
+                entry->renderedVersion = 0;
+            }
+        }
+        m_lastHostError = hostError;
+        m_hostAdapter->setPreviewCurrent(editor.data(), false);
+    } else if (editor && editor == m_editor && version == m_contentVersion &&
+               previewWindow && textEdit) {
         QElapsedTimer styleElapsed;
         styleElapsed.start();
-        m_dock->refreshDocumentStyle(m_editor.data(), m_contentVersion);
+        m_dock->refreshDocumentStyle(editor.data(), version);
         Diagnostics::write(this, QStringLiteral("document style refresh duration=%1 ms")
                                .arg(styleElapsed.elapsed()));
     }
-    if (!updated) {
-        m_lastHostError = hostError;
-    }
     enforcePreviewCacheLimit();
-    return updated;
+    return updated && previewWindow && textEdit;
 }
 
 void PreviewController::rememberCurrentPreviewScroll()
@@ -941,6 +1150,9 @@ void PreviewController::enforcePreviewCacheLimit()
         const bool released = m_hostAdapter->releasePreview(entry.editor.data(), &error);
         if (released) {
             entry.hasNativePreview = false;
+            entry.previewWindow = nullptr;
+            entry.previewTextEdit = nullptr;
+            entry.renderedVersion = 0;
             --cachedPreviewCount;
         }
         Diagnostics::write(this,

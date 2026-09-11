@@ -1,5 +1,7 @@
 #pragma once
 
+#include "preview_status.h"
+
 #include <QByteArray>
 #include <QDockWidget>
 #include <QHash>
@@ -12,6 +14,7 @@
 
 class QAbstractScrollArea;
 class QLabel;
+class QComboBox;
 class QLayout;
 class QScrollBar;
 class QTextBrowser;
@@ -34,13 +37,17 @@ public:
                             const QString &filePath,
                             QWidget *editor, quint64 contentVersion);
     void invalidatePreview();
+    void markPreviewStale();
     bool hasPreviewFor(QWidget *editor, quint64 contentVersion) const;
     QByteArray htmlSnapshotFor(QWidget *editor,
                                quint64 contentVersion) const;
     void renderMarkdown(const QString &markdown, const QString &filePath);
     void showMessage(const QString &title, const QString &message);
-    void setDocumentInfo(const QString &filePath, int characterCount);
-    void setRefreshStatus(const QString &status, const QString &toolTip);
+    void setDocumentInfo(const QString &filePath, int characterCount,
+                         bool hasDocument = true);
+    void setRefreshStatus(const QString &status, const QString &details,
+                          bool failed = false);
+    void setRefreshMode(RefreshMode mode);
     void setSyncScrolling(bool enabled);
     bool nativeScrollRatioFor(QWidget *editor, double *ratio) const;
     void preserveNativeScrollRatio(QWidget *editor, quint64 contentVersion,
@@ -57,9 +64,11 @@ public:
 
 signals:
     void refreshRequested();
+    void refreshModeChanged(RefreshMode mode);
     void syncScrollingChanged(bool enabled);
     void previewScrollRatioChanged(double ratio);
     void previewScrollRangeChanged();
+    void displayedPreviewDestroyed();
 
 protected:
     void changeEvent(QEvent *event) override;
@@ -81,12 +90,20 @@ private:
     void scheduleThemeStyleRefresh();
     bool scrollNativeToAnchor(const QString &anchor);
     void showLinkFailure(const QUrl &url, const QString &reason);
+    bool hasDisplayedPreviewFor(QWidget *editor, quint64 contentVersion) const;
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
     QTextBrowser *m_browser = nullptr;
     QLayout *m_contentLayout = nullptr;
     QLabel *m_documentLabel = nullptr;
+    QLabel *m_statusLabel = nullptr;
+    QLabel *m_feedbackLabel = nullptr;
+    QComboBox *m_modeCombo = nullptr;
+    QToolButton *m_retryButton = nullptr;
+    QToolButton *m_detailsButton = nullptr;
+    QString m_statusDetails;
+    bool m_previewIsCurrent = false;
     QToolButton *m_syncButton = nullptr;
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;

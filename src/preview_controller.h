@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ndd_plugin_api.h"
+#include "preview_status.h"
 
 #include <QByteArray>
 #include <QList>
@@ -15,6 +16,7 @@ class MarkdownPreviewDock;
 class QMainWindow;
 class QMenu;
 class QTimer;
+class QTextEdit;
 class HostAdapter;
 
 class PreviewController final : public QObject
@@ -27,6 +29,13 @@ public:
 
     bool installMenu(QMenu *rootMenu);
     bool currentHtmlSnapshot(QByteArray *html, QString *sourceFilePath);
+    PreviewStatus previewStatus() const;
+
+public slots:
+    void setRefreshMode(RefreshMode mode);
+
+signals:
+    void previewStatusChanged();
 
 private slots:
     void pollEditor();
@@ -55,14 +64,13 @@ private:
         double scrollRatio = 0.0;
         bool hasScrollRatio = false;
         bool hasNativePreview = false;
-    };
-
-    enum class PreviewState {
-        NoDocument,
-        Unsupported,
-        Pending,
-        Ready,
-        Failed
+        bool hasRendered = false;
+        QPointer<QWidget> previewWindow;
+        QPointer<QTextEdit> previewTextEdit;
+        QString snapshotFilePath;
+        QString error;
+        quint64 contentVersion = 0;
+        quint64 renderedVersion = 0;
     };
 
     void bridgeEditorContextMenu(QMenu *menu);
@@ -80,6 +88,10 @@ private:
     bool renderCurrentDocument(bool allowHiddenDock,
                                bool forceHostUpdate = false);
     void updateExportActionState();
+    void publishStatus();
+    void showCachedPreviewOrMessage();
+    bool automaticRenderAllowed(bool allowInitialRender) const;
+    QString protectionReason() const;
     bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview(bool forceHostUpdate, bool *performedFullRender);
     void rememberCurrentPreviewScroll();
@@ -104,6 +116,8 @@ private:
     QPointer<QAction> m_toggleAction;
     QPointer<QAction> m_syncAction;
     QPointer<QAction> m_exportAction;
+    QPointer<QAction> m_automaticAction;
+    QPointer<QAction> m_manualAction;
     QTimer *m_pollTimer = nullptr;
     QTimer *m_hostEventTimer = nullptr;
     QTimer *m_renderTimer = nullptr;
@@ -118,7 +132,13 @@ private:
     QMetaObject::Connection m_editorScrollValueConnection;
     QMetaObject::Connection m_editorScrollRangeConnection;
     qint64 m_lastRenderDurationMs = 0;
-    bool m_manualRefreshOnly = false;
+    RefreshMode m_refreshMode = RefreshMode::Automatic;
+    bool m_performanceProtected = false;
+    bool m_renderInProgress = false;
+    bool m_allowInitialAutomaticRender = false;
+    QPointer<QWidget> m_scheduledEditor;
+    quint64 m_scheduledVersion = 0;
+    quint64 m_nextContentVersion = 0;
     QString m_editorFilePath;
     QString m_lastHostError;
     quint64 m_contentVersion = 0;
