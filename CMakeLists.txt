@@ -14,6 +14,8 @@ find_package(Qt5 5.15 REQUIRED COMPONENTS Core Gui Widgets)
 add_library(markdownview SHARED
     src/diagnostics.cpp
     src/diagnostics.h
+    src/saved_markdown_font.cpp
+    src/saved_markdown_font.h
     src/host_adapter.cpp
     src/host_adapter.h
     src/markdown_preview_dock.cpp
@@ -62,6 +64,8 @@ if(BUILD_TESTING)
         tests/markdown_preview_dock_lifecycle_test.cpp
         src/diagnostics.cpp
         src/diagnostics.h
+        src/saved_markdown_font.cpp
+        src/saved_markdown_font.h
         src/host_adapter.cpp
         src/host_adapter.h
         src/markdown_preview_dock.cpp
@@ -98,6 +102,8 @@ if(BUILD_TESTING)
         tests/preview_controller_document_identity_test.cpp
         src/diagnostics.cpp
         src/diagnostics.h
+        src/saved_markdown_font.cpp
+        src/saved_markdown_font.h
         src/host_adapter.cpp
         src/host_adapter.h
         src/markdown_preview_dock.cpp
@@ -137,6 +143,8 @@ if(BUILD_TESTING)
         tests/plugin_multi_window_test.cpp
         src/diagnostics.cpp
         src/diagnostics.h
+        src/saved_markdown_font.cpp
+        src/saved_markdown_font.h
         src/host_adapter.cpp
         src/host_adapter.h
         src/markdown_preview_dock.cpp
@@ -204,6 +212,31 @@ if(BUILD_TESTING)
         LABELS "behavior;diagnostics"
         TIMEOUT 60)
 
+    add_executable(markdownview_font_tests
+        tests/saved_markdown_font_test.cpp
+        src/diagnostics.cpp
+        src/saved_markdown_font.cpp
+        src/host_adapter.cpp
+        src/markdown_preview_dock.cpp
+        src/preview_controller.cpp
+        resources/markdownview.qrc)
+    target_include_directories(markdownview_font_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(markdownview_font_tests PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
+    target_compile_definitions(markdownview_font_tests PRIVATE
+        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+    if(MSVC)
+        target_compile_options(markdownview_font_tests PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_font_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME markdownview_font_tests
+        COMMAND markdownview_font_tests -platform offscreen -v1
+            -o markdownview_font_tests.txt,txt)
+    set_tests_properties(markdownview_font_tests PROPERTIES
+        LABELS "behavior;font" TIMEOUT 90)
+
     if(WIN32)
         # Qt 5.15's offscreen backend uses the basic font database, which
         # otherwise searches Qt's empty lib/fonts directory on Windows.
@@ -216,6 +249,7 @@ if(BUILD_TESTING)
             markdownview_document_identity_tests
             markdownview_multi_window_tests
             markdownview_diagnostics_tests
+            markdownview_font_tests
             PROPERTIES ENVIRONMENT "QT_QPA_FONTDIR=${windows_font_directory}")
     endif()
 endif()

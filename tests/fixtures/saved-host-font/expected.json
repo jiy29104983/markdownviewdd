@@ -1,0 +1,74 @@
+[
+  {
+    "file": "font_change_after_host_save.ini",
+    "themeId": 0,
+    "theme": "Default",
+    "hostFamily": "Unsaved Font",
+    "hostPointSize": 22,
+    "source": "user-style0",
+    "sha256": "2bd5fb27db89c558154ea85d58b44f913653f7ef85a00934dc4afff763884758"
+  },
+  {
+    "file": "saved_Deep_Black_selected.ini",
+    "themeId": 6,
+    "theme": "Deep Black",
+    "hostFamily": "Dark Body",
+    "hostPointSize": 18,
+    "source": "user-style0",
+    "sha256": "8ac4e647ee779bba390e6ba9c43e9977cc34edbaafaf3eac01aa4dd40f0e72af"
+  },
+  {
+    "file": "no_second_AllGlobal_override.ini",
+    "themeId": 6,
+    "theme": "Deep Black",
+    "hostFamily": "全局字体",
+    "hostPointSize": 21,
+    "source": "user-style0",
+    "sha256": "21d8294f8360836ce37eaf29cc7c06681d78b7605a6f79d2d1c89eafbac727a4"
+  },
+  {
+    "file": "nondefault_missing_style0_uses_defaultfont.ini",
+    "themeId": 6,
+    "theme": "Deep Black",
+    "hostFamily": "Theme Default",
+    "hostPointSize": 17,
+    "source": "user-defaultfont",
+    "sha256": "d5b8b1e8d718441693f90c6603c192c074165c7af88d7127a8b3e010a3e877ef"
+  },
+  {
+    "file": "Default_missing_style0_uses_builtin.ini",
+    "themeId": 0,
+    "theme": "Default",
+    "hostFamily": "Courier 10 Pitch",
+    "hostPointSize": 12,
+    "source": "builtin-missing-style0",
+    "sha256": "b1dae628a6b392a8aed152d1ca250ccbaca1df77a68e0c1540deccc02d5db372"
+  },
+  {
+    "file": "user_overrides_installation_template.ini",
+    "themeId": 6,
+    "theme": "Deep Black",
+    "hostFamily": "User Priority",
+    "hostPointSize": 15,
+    "source": "user-style0",
+    "sha256": "c809288ea4befce4247963761754afc6c913c82e1c8f0e9b4b2368c121cefb7b"
+  },
+  {
+    "file": "existing_user_file_is_not_merged_with_template.ini",
+    "themeId": 6,
+    "theme": "Deep Black",
+    "hostFamily": "Partial User",
+    "hostPointSize": 16,
+    "source": "user-defaultfont",
+    "sha256": "a4b24b55e9af32eb8a77c126ac76bb2e98f3792af7fba49a28373016992018b2"
+  },
+  {
+    "file": "host_persistence_uses_integer_font_size.ini",
+    "themeId": 0,
+    "theme": "Default",
+    "hostFamily": "Fractional Font",
+    "hostPointSize": 15,
+    "source": "user-style0",
+    "sha256": "03843cf1668291de7a045d221fb2454e64d424d4f6d1c45be83d78780b9359a1"
+  }
+]

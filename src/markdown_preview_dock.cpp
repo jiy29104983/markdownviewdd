@@ -1,6 +1,7 @@
 #include "markdown_preview_dock.h"
 
 #include "diagnostics.h"
+#include "saved_markdown_font.h"
 
 #include <QAbstractSlider>
 #include <QApplication>
@@ -22,6 +23,8 @@
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QSignalBlocker>
+#include <QScopedValueRollback>
+#include <QWheelEvent>
 #include <QTextBrowser>
 #include <QTextBlock>
 #include <QTextDocument>
@@ -38,6 +41,21 @@
 
 namespace {
 constexpr int kLayoutSyncDelayMs = 32;
+constexpr auto kStyleRevision = "_markdownview_font_style_revision";
+constexpr auto kDocumentRevision = "_markdownview_font_document_revision";
+
+qreal headingRatio(int level)
+{
+    static const qreal ratios[] = {1.0, 2.0, 1.75, 1.50, 1.30, 1.15, 1.05};
+    return level >= 1 && level <= 6 ? ratios[level] : 1.0;
+}
+
+double barRatio(const QScrollBar *bar)
+{
+    return bar && bar->maximum() > bar->minimum()
+        ? static_cast<double>(bar->value() - bar->minimum()) /
+            static_cast<double>(bar->maximum() - bar->minimum()) : 0.0;
+}
 
 void applyFrameStyle(QTextFrame *frame, const QPalette &palette)
 {
@@ -179,6 +197,10 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
           return QDesktopServices::openUrl(url);
       })
 {
+    const SavedMarkdownFont font = defaultMarkdownFont();
+    m_bodyFont = QFont(font.family);
+    m_bodyFont.setPointSizeF(font.pointSize);
+    m_codeFontFamily = markdownCodeFontFamily(font.family);
     setObjectName(QStringLiteral("NddMarkdownPreviewDock"));
     setAllowedAreas(Qt::LeftDockWidgetArea | Qt::RightDockWidgetArea);
     setFeatures(QDockWidget::DockWidgetClosable |
@@ -294,8 +316,11 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         if (!isVisible() || !m_syncButton) {
             return;
         }
-        if (!m_syncButton->isChecked()) {
+        if (m_hasPreservedScrollRatio) {
             restorePreservedScrollRatio();
+            return;
+        }
+        if (!m_syncButton->isChecked()) {
             return;
         }
         if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
@@ -304,6 +329,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         emit previewScrollRangeChanged();
     });
     connect(m_themeStyleTimer, &QTimer::timeout, this, [this]() {
+        ++m_styleRevision;
         if (m_nativeTextEdit && m_previewEditor && m_previewContentVersion != 0) {
             refreshDocumentStyle(m_previewEditor.data(), m_previewContentVersion);
         }
@@ -363,12 +389,14 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
                                              QTextEdit *textEdit,
                                              const QString &filePath,
                                              QWidget *editor,
-                                             quint64 contentVersion)
+                                             quint64 contentVersion,
+                                             bool current)
 {
     if (!previewWindow || !textEdit || !editor || !m_contentLayout || !widget()) {
         return false;
     }
 
+    const double previousRatio = barRatio(textEdit->verticalScrollBar());
     textEdit->document()->setBaseUrl(baseUrlForFile(filePath));
 
     if (m_nativePreview && m_nativePreview != previewWindow) {
@@ -405,8 +433,13 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     m_currentFilePath = filePath;
     m_previewEditor = editor;
     m_previewContentVersion = contentVersion;
-    m_previewIsCurrent = true;
-    applyDocumentStyle(textEdit);
+    m_previewIsCurrent = current;
+    if (current && m_syncButton->isChecked()) {
+        m_hasPreservedScrollRatio = false;
+        m_preservedScrollEditor = nullptr;
+        m_preservedScrollVersion = 0;
+    }
+    restyleNativePreview(previousRatio);
     m_browser->hide();
     previewWindow->show();
     Diagnostics::write(this, QStringLiteral("native MarkdownView embedded in dock"));
@@ -523,6 +556,7 @@ void MarkdownPreviewDock::renderMarkdown(const QString &markdown,
     document->setDefaultStyleSheet(loadStyleSheet());
     Diagnostics::write(this, QStringLiteral("calling QTextDocument::setMarkdown"));
     document->setMarkdown(markdown, QTextDocument::MarkdownDialectGitHub);
+    applyDocumentStyle(m_browser);
     Diagnostics::write(this, QStringLiteral("QTextDocument::setMarkdown returned"));
 
     if (!m_syncButton->isChecked()) {
@@ -611,64 +645,113 @@ void MarkdownPreviewDock::preserveNativeScrollRatio(
     QWidget *editor, quint64 contentVersion, double ratio)
 {
     if (!editor || m_nativePreviewEditor != editor || !m_nativeTextEdit ||
-        !m_syncButton || m_syncButton->isChecked()) {
+        !m_syncButton || (m_syncButton->isChecked() && m_previewIsCurrent) ||
+        !qIsFinite(ratio)) {
         return;
     }
 
     m_preservedScrollEditor = editor;
     m_preservedScrollVersion = contentVersion;
     m_preservedScrollRatio = qBound(0.0, ratio, 1.0);
+    m_preservedStyleGeneration = m_styleUpdateGeneration;
+    m_preservedInteractionGeneration = m_scrollInteractionGeneration;
     m_hasPreservedScrollRatio = true;
     m_layoutSyncTimer->start();
+}
+
+void MarkdownPreviewDock::setReadingFont(const QFont &font, qreal zoom)
+{
+    const qreal points = font.pointSizeF() * zoom;
+    if (font.family().isEmpty() || !qIsFinite(zoom) || zoom <= 0.0 ||
+        !qIsFinite(points * 2.0) || points <= 0.0) {
+        return;
+    }
+    if (m_bodyFont == font && m_zoom == zoom) {
+        return;
+    }
+    m_bodyFont = font;
+    m_codeFontFamily = markdownCodeFontFamily(font.family());
+    m_zoom = zoom;
+    ++m_styleRevision;
+    refreshDocumentStyle(m_previewEditor.data(), m_previewContentVersion);
 }
 
 void MarkdownPreviewDock::refreshDocumentStyle(QWidget *editor,
                                                quint64 contentVersion)
 {
-    if (!hasDisplayedPreviewFor(editor, contentVersion) || !m_nativeTextEdit) {
+    if (hasDisplayedPreviewFor(editor, contentVersion) && m_nativeTextEdit) {
+        restyleNativePreview(barRatio(m_nativeTextEdit->verticalScrollBar()));
+    }
+}
+
+void MarkdownPreviewDock::restyleNativePreview(double ratio)
+{
+    if (!m_nativeTextEdit || !m_previewEditor || !m_previewContentVersion) {
         return;
     }
-
-    const double ratio = scrollRatio();
-    applyDocumentStyle(m_nativeTextEdit);
+    if (!applyDocumentStyle(m_nativeTextEdit)) {
+        return;
+    }
+    const quint64 styleGeneration = ++m_styleUpdateGeneration;
+    m_hasPreservedScrollRatio = false;
+    m_preservedScrollEditor = nullptr;
+    m_preservedScrollVersion = 0;
     const quint64 interactionGeneration = m_scrollInteractionGeneration;
-    QTimer::singleShot(0, this, [this, editor = QPointer<QWidget>(editor),
-                                 contentVersion, ratio, interactionGeneration]() {
-        if (hasDisplayedPreviewFor(editor.data(), contentVersion) &&
-            interactionGeneration == m_scrollInteractionGeneration) {
-            scrollToRatio(ratio);
+    const quint64 version = m_previewContentVersion;
+    const QPointer<QWidget> editor = m_previewEditor;
+    const QPointer<QTextEdit> textEdit = m_nativeTextEdit;
+    // Old snapshots retain their own position even when the sync toggle is on.
+    // A current synchronized snapshot remains driven by the editor's position.
+    preserveNativeScrollRatio(editor.data(), version, ratio);
+    QTimer::singleShot(0, this, [this, editor, textEdit, version,
+                                 styleGeneration, interactionGeneration]() {
+        if (textEdit != m_nativeTextEdit ||
+            !hasDisplayedPreviewFor(editor.data(), version) ||
+            styleGeneration != m_styleUpdateGeneration ||
+            interactionGeneration != m_scrollInteractionGeneration) {
+            return;
+        }
+        if (m_hasPreservedScrollRatio) {
+            restorePreservedScrollRatio();
+        } else if (m_previewIsCurrent && m_syncButton->isChecked()) {
+            emit previewScrollRangeChanged();
         }
     });
 }
 
-void MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
+bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
 {
     if (!textEdit || !textEdit->document()) {
-        return;
+        return false;
     }
-
+    QFont bodyFont = m_bodyFont;
+    bodyFont.setPointSizeF(m_bodyFont.pointSizeF() * m_zoom);
     const QPalette colors = palette();
+    QTextDocument *document = textEdit->document();
+    if (textEdit->palette() == colors && document->defaultFont() == bodyFont &&
+        document->property(kStyleRevision).toULongLong() == m_styleRevision &&
+        document->property(kDocumentRevision).toInt() == document->revision()) {
+        return false;
+    }
     if (textEdit->palette() != colors) {
         textEdit->setPalette(colors);
     }
-    QTextDocument *document = textEdit->document();
-    document->setDefaultStyleSheet(loadStyleSheet());
 
+    // Batch formatting so QTextDocument does not lay out the entire document
+    // after each fragment. Preserve the user's cursor/selection and all semantic
+    // properties; use absolute sizes, never multiply previously styled values.
+    QTextCursor edit(document);
+    edit.beginEditBlock();
+    document->setDefaultFont(bodyFont);
+    document->setDefaultStyleSheet(loadStyleSheet());
     for (QTextBlock block = document->begin(); block.isValid(); block = block.next()) {
         QTextBlockFormat blockFormat = block.blockFormat();
-        const int headingLevel = blockFormat.property(QTextFormat::HeadingLevel).toInt();
+        const int headingLevel = blockFormat.headingLevel();
         const int quoteLevel = blockFormat.property(QTextFormat::BlockQuoteLevel).toInt();
         const bool codeBlock = blockFormat.hasProperty(QTextFormat::BlockCodeFence) ||
             blockFormat.hasProperty(QTextFormat::BlockCodeLanguage);
-
+        const qreal points = bodyFont.pointSizeF() * headingRatio(headingLevel);
         if (headingLevel > 0) {
-            QTextCharFormat headingFormat;
-            headingFormat.setFontWeight(QFont::DemiBold);
-            headingFormat.setFontPointSize(qMax(11.0, 22.0 - headingLevel * 2.0));
-            headingFormat.setForeground(colors.brush(QPalette::Text));
-            QTextCursor cursor(block);
-            cursor.select(QTextCursor::BlockUnderCursor);
-            cursor.mergeCharFormat(headingFormat);
             blockFormat.setTopMargin(12.0);
             blockFormat.setBottomMargin(6.0);
         }
@@ -682,46 +765,93 @@ void MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
             blockFormat.setRightMargin(10.0);
             blockFormat.setTopMargin(6.0);
             blockFormat.setBottomMargin(6.0);
-            QTextCharFormat codeFormat;
-            codeFormat.setFontFamily(QStringLiteral("Consolas"));
-            codeFormat.setFontFixedPitch(true);
-            codeFormat.setForeground(colors.brush(QPalette::Text));
-            QTextCursor cursor(block);
-            cursor.select(QTextCursor::BlockUnderCursor);
-            cursor.mergeCharFormat(codeFormat);
         }
         QTextCursor blockCursor(block);
-        blockCursor.setBlockFormat(blockFormat);
-
+        if (block.blockFormat() != blockFormat) {
+            blockCursor.setBlockFormat(blockFormat);
+        }
+        auto styledFormat = [&](QTextCharFormat format) {
+            const bool code = codeBlock || format.fontFixedPitch();
+            format.setFontFamily(code ? m_codeFontFamily : bodyFont.family());
+            format.clearProperty(QTextFormat::FontSizeAdjustment);
+            format.clearProperty(QTextFormat::FontPixelSize);
+            format.setFontPointSize(points);
+            format.setForeground(colors.brush(QPalette::Text));
+            if (headingLevel > 0) {
+                format.setFontWeight(QFont::Bold);
+            }
+            if (code) {
+                format.setFontFixedPitch(true);
+                format.setBackground(colors.brush(QPalette::AlternateBase));
+            }
+            if (format.isAnchor()) {
+                format.setForeground(colors.brush(QPalette::Link));
+                format.setFontUnderline(true);
+            }
+            return format;
+        };
+        const QTextCharFormat blockChars = styledFormat(block.charFormat());
+        if (block.charFormat() != blockChars) {
+            blockCursor.setBlockCharFormat(blockChars);
+        }
         for (QTextBlock::iterator it = block.begin(); !it.atEnd(); ++it) {
             const QTextFragment fragment = it.fragment();
             if (!fragment.isValid()) {
                 continue;
             }
-            QTextCharFormat format = fragment.charFormat();
-            bool changed = false;
-            if (format.isAnchor()) {
-                format.setForeground(colors.brush(QPalette::Link));
-                format.setFontUnderline(true);
-                changed = true;
-            }
-            if (!codeBlock && format.fontFixedPitch()) {
-                format.setBackground(colors.brush(QPalette::AlternateBase));
-                format.setForeground(colors.brush(QPalette::Text));
-                changed = true;
-            }
-            if (changed) {
+            const QTextCharFormat format = styledFormat(fragment.charFormat());
+            if (format != fragment.charFormat()) {
                 QTextCursor cursor(document);
                 cursor.setPosition(fragment.position());
                 cursor.setPosition(fragment.position() + fragment.length(),
                                    QTextCursor::KeepAnchor);
-                cursor.mergeCharFormat(format);
+                cursor.setCharFormat(format);
             }
         }
     }
-
     applyFrameStyle(document->rootFrame(), colors);
+    edit.endEditBlock();
+    document->setProperty(kStyleRevision, QVariant::fromValue(m_styleRevision));
+    document->setProperty(kDocumentRevision, document->revision());
     textEdit->viewport()->update();
+    return true;
+}
+
+bool MarkdownPreviewDock::handleNativeWheel(QObject *watched, QEvent *event)
+{
+    if (!m_nativeTextEdit || watched != m_nativeTextEdit->viewport() ||
+        event->type() != QEvent::Wheel || !m_nativeTextEdit->isReadOnly()) {
+        return false;
+    }
+    auto *wheel = static_cast<QWheelEvent *>(event);
+    if (!(wheel->modifiers() & Qt::ControlModifier)) {
+        return false;
+    }
+    const QPointer<QTextEdit> textEdit = m_nativeTextEdit;
+    const QPointer<QWidget> editor = m_previewEditor;
+    const quint64 version = m_previewContentVersion;
+    const quint64 styleRevision = m_styleRevision;
+    const double ratio = barRatio(textEdit->verticalScrollBar());
+    // Deliver this very event once to QTextEdit. Its native implementation owns
+    // angle/pixel deltas, fractional steps and limits. Read the document default
+    // font afterwards, which also works for empty and heading-only documents.
+    {
+        QScopedValueRollback<bool> handling(m_handlingNativeWheel, true);
+        QCoreApplication::sendEvent(watched, event);
+    }
+    if (!textEdit || textEdit != m_nativeTextEdit || editor != m_previewEditor ||
+        version != m_previewContentVersion || styleRevision != m_styleRevision) {
+        return true;
+    }
+    const qreal points = textEdit->document()->defaultFont().pointSizeF();
+    const qreal zoom = points / m_bodyFont.pointSizeF();
+    if (qIsFinite(zoom) && zoom > 0.0 && qIsFinite(points * 2.0) && m_zoom != zoom) {
+        m_zoom = zoom;
+        ++m_styleRevision;
+        emit nativeZoomChanged(zoom);
+        restyleNativePreview(ratio);
+    }
+    return true;
 }
 
 void MarkdownPreviewDock::scheduleThemeStyleRefresh()
@@ -890,7 +1020,9 @@ void MarkdownPreviewDock::restorePreservedScrollRatio()
         !m_nativePreview->isVisible() ||
         m_nativePreviewEditor != m_preservedScrollEditor ||
         m_previewEditor != m_preservedScrollEditor ||
-        m_previewContentVersion != m_preservedScrollVersion) {
+        m_previewContentVersion != m_preservedScrollVersion ||
+        m_preservedStyleGeneration != m_styleUpdateGeneration ||
+        m_preservedInteractionGeneration != m_scrollInteractionGeneration) {
         return;
     }
 
@@ -965,6 +1097,9 @@ void MarkdownPreviewDock::openLink(const QUrl &url)
 
 bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
 {
+    if (m_handlingNativeWheel) {
+        return QDockWidget::eventFilter(watched, event);
+    }
     if (event && (event->type() == QEvent::PaletteChange ||
                   event->type() == QEvent::ApplicationPaletteChange ||
                   event->type() == QEvent::StyleChange)) {
@@ -976,6 +1111,9 @@ bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
         (event->type() == QEvent::MouseButtonPress ||
          event->type() == QEvent::Wheel || event->type() == QEvent::KeyPress)) {
         cancelPreservedScroll();
+    }
+    if (event && handleNativeWheel(watched, event)) {
+        return true;
     }
     if (!m_nativeTextEdit || watched != m_nativeTextEdit->viewport()) {
         return QDockWidget::eventFilter(watched, event);

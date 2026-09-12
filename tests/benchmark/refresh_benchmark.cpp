@@ -2,6 +2,12 @@
 #include "markdown_preview_dock.h"
 
 #include <QAbstractScrollArea>
+#include <QAbstractTextDocumentLayout>
+#include <QSettings>
+#include <QWheelEvent>
+#ifdef MARKDOWNVIEW_FONT_BENCHMARK
+#include "saved_markdown_font.h"
+#endif
 #include <QApplication>
 #include <QBuffer>
 #include <QImage>
@@ -128,15 +134,77 @@ int main(int argc, char **argv)
             return 3;
         }
     }
+    const bool layerMetrics = app.arguments().contains(QStringLiteral("--layers"));
+#ifdef MARKDOWNVIEW_FONT_BENCHMARK
+    SavedFontPaths fontPaths;
+    fontPaths.userConfigRoot = directory.filePath(QStringLiteral("user"));
+    fontPaths.applicationDirectory = directory.filePath(QStringLiteral("installation"));
+    {
+        QSettings host(directory.filePath(QStringLiteral("user/notepad/userstyle/Default/markdown.ini")),
+                       QSettings::IniFormat);
+        host.setValue(QStringLiteral("Scintilla/Markdown/style0/font"),
+                      QStringList{QStringLiteral("DejaVu Sans"), QStringLiteral("12"),
+                          QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0")});
+        host.sync();
+    }
+#endif
+    int htmlSnapshotBytes = 0;
     QMap<QString, QList<double>> measures;
     for (int iteration = -1; iteration < 20; ++iteration) {
-        Fixture fixture(path, text);
         auto measure = [&](const QString &name, const std::function<void()> &operation) {
             const double duration = elapsedMs(operation);
             if (iteration >= 0) {
                 measures[name].append(duration);
             }
         };
+        if (layerMetrics) {
+            MarkdownPreviewDock dock;
+            QWidget editor;
+            auto *preview = new QWidget;
+            auto *layout = new QVBoxLayout(preview);
+            auto *edit = new QTextEdit(preview);
+            edit->setReadOnly(true);
+            layout->addWidget(edit);
+            dock.resize(520, 720);
+            dock.show();
+            QCoreApplication::processEvents();
+            measure(QStringLiteral("parse-setMarkdown"), [&]() { edit->setMarkdown(text); });
+            measure(QStringLiteral("adopt-and-style"), [&]() {
+                dock.adoptNativePreview(preview, edit, path, &editor, 1);
+            });
+            measure(QStringLiteral("remaining-layout-forced"), [&]() {
+                edit->document()->documentLayout()->documentSize();
+                QCoreApplication::processEvents();
+            });
+            measure(QStringLiteral("theme-style-and-events"), [&]() {
+                QPalette dark = dock.palette();
+                dark.setColor(QPalette::Base, Qt::black);
+                dark.setColor(QPalette::Text, Qt::white);
+                dock.setPalette(dark);
+                QCoreApplication::processEvents();
+            });
+            QCoreApplication::processEvents();
+            measure(QStringLiteral("native-wheel-and-style"), [&]() {
+                const QPointF pos(edit->viewport()->rect().center());
+                QWheelEvent event(pos, edit->viewport()->mapToGlobal(pos.toPoint()),
+                                  QPoint(), QPoint(0, 120), Qt::NoButton, Qt::ControlModifier,
+                                  Qt::NoScrollPhase, false);
+                QCoreApplication::sendEvent(edit->viewport(), &event);
+            });
+            measure(QStringLiteral("wheel-remaining-layout-forced"), [&]() {
+                edit->document()->documentLayout()->documentSize();
+                QCoreApplication::processEvents();
+            });
+#ifdef MARKDOWNVIEW_FONT_BENCHMARK
+            measure(QStringLiteral("saved-font-read"), [&]() {
+                if (readSavedMarkdownFont(fontPaths).pointSize != 12.0) {
+                    qFatal("font read failed");
+                }
+            });
+#endif
+            continue;
+        }
+        Fixture fixture(path, text);
         measure(QStringLiteral("first-render-sync"), [&]() { fixture.refresh(); });
         measure(QStringLiteral("typing-burst-20"), [&]() {
             for (int key = 0; key < 20; ++key) {
@@ -154,6 +222,7 @@ int main(int argc, char **argv)
             if (!fixture.controller.currentHtmlSnapshot(&html, &source) || html.isEmpty()) {
                 qFatal("snapshot unavailable");
             }
+            htmlSnapshotBytes = html.size();
         });
         auto *other = new QsciScintilla(QStringLiteral("other.md"), QStringLiteral("# Other"));
         fixture.tabs.addTab(other, QStringLiteral("Other"));
@@ -180,6 +249,10 @@ int main(int argc, char **argv)
     }
     QJsonObject result;
     result.insert(QStringLiteral("sample"), sample);
+    result.insert(QStringLiteral("layers"), layerMetrics);
+    if (!layerMetrics) {
+        result.insert(QStringLiteral("html_snapshot_bytes"), htmlSnapshotBytes);
+    }
     result.insert(QStringLiteral("qt"), QString::fromLatin1(qVersion()));
     result.insert(QStringLiteral("source_bytes"), text.toUtf8().size());
     result.insert(QStringLiteral("source_lines"), text.count(QLatin1Char('\n')) + 1);

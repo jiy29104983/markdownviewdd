@@ -2,6 +2,7 @@
 
 #include "ndd_plugin_api.h"
 #include "preview_status.h"
+#include "saved_markdown_font.h"
 
 #include <QByteArray>
 #include <QList>
@@ -30,9 +31,12 @@ public:
     bool installMenu(QMenu *rootMenu);
     bool currentHtmlSnapshot(QByteArray *html, QString *sourceFilePath);
     PreviewStatus previewStatus() const;
+    SavedMarkdownFont readingFont() const { return m_readingFont; }
+    qreal previewZoom() const { return m_previewZoom; }
 
 public slots:
     void setRefreshMode(RefreshMode mode);
+    void restoreHostFontSize();
 
 signals:
     void previewStatusChanged();
@@ -73,6 +77,8 @@ private:
         quint64 renderedVersion = 0;
     };
 
+    void beginPreviewOpen();
+    void applyReadingFont();
     void bridgeEditorContextMenu(QMenu *menu);
     void showPreviewFromNativeAction();
     QWidget *resolveCurrentEditor() const;
@@ -121,6 +127,9 @@ private:
     QTimer *m_pollTimer = nullptr;
     QTimer *m_hostEventTimer = nullptr;
     QTimer *m_renderTimer = nullptr;
+    SavedMarkdownFont m_readingFont;
+    qreal m_previewZoom = 1.0;
+    bool m_previewOpen = false;
     bool m_syncScrolling = true;
     QPointer<QWidget> m_lastScrollEditor;
     int m_lastEditorScrollMinimum = 0;

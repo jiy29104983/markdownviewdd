@@ -32,9 +32,14 @@ constexpr auto kUpdateMarkdownSlot = "on_updataMarkdown";
 class NotepadHostAdapter final : public HostAdapter
 {
 public:
-    explicit NotepadHostAdapter(QWidget *notepad)
-        : m_notepad(notepad)
+    NotepadHostAdapter(QWidget *notepad, const SavedFontPaths &paths)
+        : m_notepad(notepad), m_fontPaths(paths)
     {
+    }
+
+    SavedMarkdownFont savedMarkdownFont() const override
+    {
+        return readSavedMarkdownFont(m_fontPaths);
     }
 
     QWidget *currentEditor() const override
@@ -287,10 +292,11 @@ private:
     }
 
     QPointer<QWidget> m_notepad;
+    SavedFontPaths m_fontPaths;
 };
 }
 
-HostAdapter *createNotepadHostAdapter(QWidget *notepad)
+HostAdapter *createNotepadHostAdapter(QWidget *notepad, const SavedFontPaths &paths)
 {
-    return new NotepadHostAdapter(notepad);
+    return new NotepadHostAdapter(notepad, paths);
 }

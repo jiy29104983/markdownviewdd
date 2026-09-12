@@ -50,6 +50,8 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         m_dock->resize(520, 720);
     }
     m_dock->hide();
+    m_readingFont = defaultMarkdownFont();
+    applyReadingFont();
 
     m_renderTimer = new QTimer(this);
     m_renderTimer->setSingleShot(true);
@@ -67,6 +69,9 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     connect(m_pollTimer, &QTimer::timeout, this, &PreviewController::pollEditor);
     connect(m_hostEventTimer, &QTimer::timeout,
             this, &PreviewController::synchronizeFromHostEvent);
+    connect(m_dock, &MarkdownPreviewDock::nativeZoomChanged, this, [this](qreal zoom) {
+        m_previewZoom = zoom;
+    });
     connect(m_dock, &MarkdownPreviewDock::refreshRequested,
             this, &PreviewController::renderNow);
     connect(m_dock, &MarkdownPreviewDock::displayedPreviewDestroyed, this, [this]() {
@@ -106,7 +111,11 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
             const QSignalBlocker blocker(m_toggleAction);
             m_toggleAction->setChecked(visible);
         }
+        if (!visible && m_dock->isHidden()) {
+            m_previewOpen = false;
+        }
         if (visible) {
+            beginPreviewOpen();
             // Defer rich-text layout until the dock has finished showing.
             // Using the same debounce timer as editor updates also coalesces
             // a context-menu request with this visibility notification.
@@ -183,6 +192,11 @@ bool PreviewController::installMenu(QMenu *rootMenu)
     m_syncAction->setChecked(m_syncScrolling);
     connect(m_syncAction, &QAction::toggled,
             this, &PreviewController::setSyncScrolling);
+
+    auto *restoreFontAction = rootMenu->addAction(tr("恢复宿主字号(&R)"));
+    restoreFontAction->setObjectName(QStringLiteral("NddMarkdownRestoreHostFontSize"));
+    connect(restoreFontAction, &QAction::triggered,
+            this, &PreviewController::restoreHostFontSize);
 
     m_exportAction = rootMenu->addAction(tr("导出 HTML…"));
     connect(m_exportAction, &QAction::triggered,
@@ -262,8 +276,7 @@ void PreviewController::showPreviewFromNativeAction()
         return;
     }
 
-    m_dock->setVisible(true);
-    m_dock->raise();
+    togglePreview(true);
 
     // The original QAction connection has been removed.  Route the request
     // through the debounce timer so showing the dock and triggering the action
@@ -608,6 +621,11 @@ void PreviewController::togglePreview(bool visible)
     if (!m_dock) {
         return;
     }
+    if (visible) {
+        beginPreviewOpen();
+    } else {
+        m_previewOpen = false;
+    }
     m_dock->setVisible(visible);
     Diagnostics::write(this, QStringLiteral("dock setVisible returned"));
     if (visible) {
@@ -615,6 +633,43 @@ void PreviewController::togglePreview(bool visible)
         m_dock->raise();
         Diagnostics::write(this, QStringLiteral("dock raise returned"));
     }
+}
+
+void PreviewController::beginPreviewOpen()
+{
+    if (m_previewOpen || !m_dock) {
+        return;
+    }
+    // Set before invoking the adapter or changing layout: show/menu callbacks
+    // during this operation belong to the same open, including a failed read.
+    m_previewOpen = true;
+    m_readingFont = m_hostAdapter->savedMarkdownFont();
+    if (m_readingFont.family.isEmpty() || !qIsFinite(m_readingFont.pointSize) ||
+        m_readingFont.pointSize <= 0.0) {
+        m_readingFont = defaultMarkdownFont();
+        m_readingFont.result = SavedMarkdownFont::Result::Failed;
+        m_readingFont.reason = QStringLiteral("invalid-adapter-font");
+    }
+    if (!m_readingFont.reason.isEmpty()) {
+        Diagnostics::write(this, QStringLiteral("preview font fallback: %1")
+                                   .arg(m_readingFont.reason));
+    }
+    applyReadingFont();
+}
+
+void PreviewController::applyReadingFont()
+{
+    if (m_dock) {
+        QFont font(m_readingFont.family);
+        font.setPointSizeF(m_readingFont.pointSize);
+        m_dock->setReadingFont(font, m_previewZoom);
+    }
+}
+
+void PreviewController::restoreHostFontSize()
+{
+    m_previewZoom = 1.0;
+    applyReadingFont();
 }
 
 void PreviewController::setSyncScrolling(bool enabled)
@@ -953,19 +1008,16 @@ void PreviewController::showCachedPreviewOrMessage()
     if (cached && cached->renderedVersion && cached->previewWindow && cached->previewTextEdit) {
         // Copy before adoption: Qt signals may re-enter the controller.
         const PreviewCacheEntry entry = *cached;
+        const bool current = entry.error.isEmpty() &&
+            entry.renderedVersion == m_contentVersion &&
+            m_hostAdapter->previewIsCurrent(m_editor.data());
         if (m_dock->adoptNativePreview(entry.previewWindow, entry.previewTextEdit,
                                       entry.snapshotFilePath, m_editor.data(),
-                                      entry.renderedVersion)) {
+                                      entry.renderedVersion, current)) {
             m_previewEditor = m_editor;
             m_renderedVersion = entry.renderedVersion;
-            const bool current = entry.error.isEmpty() &&
-                entry.renderedVersion == m_contentVersion &&
-                m_hostAdapter->previewIsCurrent(m_editor.data());
             m_previewState = !entry.error.isEmpty() ? PreviewState::Failed
                 : current ? PreviewState::Ready : PreviewState::Pending;
-            if (!current) {
-                m_dock->markPreviewStale();
-            }
             touchPreviewCache(m_editor.data());
             return;
         }

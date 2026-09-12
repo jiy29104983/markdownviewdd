@@ -5,6 +5,7 @@
 #include <QByteArray>
 #include <QDockWidget>
 #include <QHash>
+#include <QFont>
 #include <QMetaObject>
 #include <QPointer>
 #include <QPoint>
@@ -35,7 +36,8 @@ public:
 
     bool adoptNativePreview(QWidget *previewWindow, QTextEdit *textEdit,
                             const QString &filePath,
-                            QWidget *editor, quint64 contentVersion);
+                            QWidget *editor, quint64 contentVersion,
+                            bool current = true);
     void invalidatePreview();
     void markPreviewStale();
     bool hasPreviewFor(QWidget *editor, quint64 contentVersion) const;
@@ -49,6 +51,7 @@ public:
                           bool failed = false);
     void setRefreshMode(RefreshMode mode);
     void setSyncScrolling(bool enabled);
+    void setReadingFont(const QFont &font, qreal zoom);
     bool nativeScrollRatioFor(QWidget *editor, double *ratio) const;
     void preserveNativeScrollRatio(QWidget *editor, quint64 contentVersion,
                                    double ratio);
@@ -63,6 +66,7 @@ public:
     void setUrlOpener(UrlOpener opener);
 
 signals:
+    void nativeZoomChanged(qreal zoom);
     void refreshRequested();
     void refreshModeChanged(RefreshMode mode);
     void syncScrollingChanged(bool enabled);
@@ -86,7 +90,9 @@ private:
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
     void restorePreservedScrollRatio();
     void cancelPreservedScroll();
-    void applyDocumentStyle(QTextEdit *textEdit);
+    bool applyDocumentStyle(QTextEdit *textEdit);
+    void restyleNativePreview(double ratio);
+    bool handleNativeWheel(QObject *watched, QEvent *event);
     void scheduleThemeStyleRefresh();
     bool scrollNativeToAnchor(const QString &anchor);
     void showLinkFailure(const QUrl &url, const QString &reason);
@@ -123,6 +129,14 @@ private:
     quint64 m_previewContentVersion = 0;
     quint64 m_preservedScrollVersion = 0;
     quint64 m_scrollInteractionGeneration = 0;
+    quint64 m_styleRevision = 1;
+    quint64 m_styleUpdateGeneration = 0;
+    quint64 m_preservedStyleGeneration = 0;
+    quint64 m_preservedInteractionGeneration = 0;
+    QFont m_bodyFont;
+    QString m_codeFontFamily;
+    qreal m_zoom = 1.0;
+    bool m_handlingNativeWheel = false;
     double m_preservedScrollRatio = 0.0;
     bool m_hasPreservedScrollRatio = false;
     bool m_isDestroying = false;

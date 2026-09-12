@@ -1,5 +1,7 @@
 #pragma once
 
+#include "saved_markdown_font.h"
+
 #include <QString>
 #include <QMetaObject>
 #include <QtGlobal>
@@ -37,6 +39,7 @@ public:
 
     virtual ~HostAdapter() = default;
 
+    virtual SavedMarkdownFont savedMarkdownFont() const { return defaultMarkdownFont(); }
     virtual QWidget *currentEditor() const = 0;
     virtual QMetaObject::Connection connectActiveEditorChanged(
         QObject *context, std::function<void()> callback) = 0;
@@ -59,4 +62,5 @@ public:
     virtual bool releasePreview(QWidget *editor, QString *error) = 0;
 };
 
-HostAdapter *createNotepadHostAdapter(QWidget *notepad);
+HostAdapter *createNotepadHostAdapter(
+    QWidget *notepad, const SavedFontPaths &paths = SavedFontPaths());
