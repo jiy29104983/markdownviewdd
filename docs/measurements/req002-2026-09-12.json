@@ -1570,6 +1570,387 @@
           "p95_ms": 0.129945
         }
       }
+    },
+    {
+      "phase": "windows-fix",
+      "variant": "baseline",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 55.069830499999995,
+          "n": 20,
+          "p95_ms": 56.335769
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 132.243313,
+          "n": 20,
+          "p95_ms": 143.869137
+        },
+        "first-render-sync": {
+          "median_ms": 3.446703,
+          "n": 20,
+          "p95_ms": 3.614316
+        },
+        "html_snapshot_bytes": 114900,
+        "latest-html-export": {
+          "median_ms": 1.3031380000000001,
+          "n": 20,
+          "p95_ms": 1.407333
+        },
+        "layers": false,
+        "process_peak_rss": "34148 kB",
+        "qt": "5.15.13",
+        "sample": "100k",
+        "source_bytes": 102400,
+        "source_lines": 199,
+        "typing-burst-20": {
+          "median_ms": 0.116682,
+          "n": 20,
+          "p95_ms": 0.11904
+        }
+      }
+    },
+    {
+      "phase": "windows-fix",
+      "variant": "baseline",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 562.9997575,
+          "n": 20,
+          "p95_ms": 574.437937
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 1096.0973425,
+          "n": 20,
+          "p95_ms": 1117.265062
+        },
+        "first-render-sync": {
+          "median_ms": 11.4014955,
+          "n": 20,
+          "p95_ms": 11.56246
+        },
+        "html_snapshot_bytes": 171287,
+        "latest-html-export": {
+          "median_ms": 4.434679,
+          "n": 20,
+          "p95_ms": 4.576249
+        },
+        "layers": false,
+        "process_peak_rss": "35412 kB",
+        "qt": "5.15.13",
+        "sample": "headings",
+        "source_bytes": 13890,
+        "source_lines": 2001,
+        "typing-burst-20": {
+          "median_ms": 0.1189615,
+          "n": 20,
+          "p95_ms": 0.128667
+        }
+      }
+    },
+    {
+      "phase": "windows-fix",
+      "variant": "baseline",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 194.228967,
+          "n": 20,
+          "p95_ms": 200.605869
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 480.9900715,
+          "n": 20,
+          "p95_ms": 500.831304
+        },
+        "first-render-sync": {
+          "median_ms": 24.867191,
+          "n": 20,
+          "p95_ms": 25.581493
+        },
+        "html_snapshot_bytes": 111097,
+        "latest-html-export": {
+          "median_ms": 4.2789044999999994,
+          "n": 20,
+          "p95_ms": 4.461085
+        },
+        "layers": false,
+        "process_peak_rss": "34700 kB",
+        "qt": "5.15.13",
+        "sample": "tables-images",
+        "source_bytes": 19500,
+        "source_lines": 601,
+        "typing-burst-20": {
+          "median_ms": 0.116422,
+          "n": 20,
+          "p95_ms": 0.125242
+        }
+      }
+    },
+    {
+      "phase": "windows-fix",
+      "variant": "candidate",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 1.7886115,
+          "n": 20,
+          "p95_ms": 1.829327
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 41.240881,
+          "n": 20,
+          "p95_ms": 41.963674
+        },
+        "first-render-sync": {
+          "median_ms": 3.5793215,
+          "n": 20,
+          "p95_ms": 3.647613
+        },
+        "html_snapshot_bytes": 118601,
+        "latest-html-export": {
+          "median_ms": 1.3734745,
+          "n": 20,
+          "p95_ms": 1.433228
+        },
+        "layers": false,
+        "process_peak_rss": "34808 kB",
+        "qt": "5.15.13",
+        "sample": "100k",
+        "source_bytes": 102400,
+        "source_lines": 199,
+        "typing-burst-20": {
+          "median_ms": 0.1149935,
+          "n": 20,
+          "p95_ms": 0.131294
+        }
+      }
+    },
+    {
+      "phase": "windows-fix",
+      "variant": "candidate",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 5.285534,
+          "n": 20,
+          "p95_ms": 5.364053
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 67.27337750000001,
+          "n": 20,
+          "p95_ms": 68.427655
+        },
+        "first-render-sync": {
+          "median_ms": 11.3058295,
+          "n": 20,
+          "p95_ms": 11.440127
+        },
+        "html_snapshot_bytes": 189788,
+        "latest-html-export": {
+          "median_ms": 4.8659615,
+          "n": 20,
+          "p95_ms": 4.960947
+        },
+        "layers": false,
+        "process_peak_rss": "34832 kB",
+        "qt": "5.15.13",
+        "sample": "headings",
+        "source_bytes": 13890,
+        "source_lines": 2001,
+        "typing-burst-20": {
+          "median_ms": 0.117714,
+          "n": 20,
+          "p95_ms": 0.138201
+        }
+      }
+    },
+    {
+      "phase": "windows-fix",
+      "variant": "candidate",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 4.971105,
+          "n": 20,
+          "p95_ms": 5.073269
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 116.0884765,
+          "n": 20,
+          "p95_ms": 117.547596
+        },
+        "first-render-sync": {
+          "median_ms": 27.919872499999997,
+          "n": 20,
+          "p95_ms": 29.601723
+        },
+        "html_snapshot_bytes": 121498,
+        "latest-html-export": {
+          "median_ms": 4.5648175,
+          "n": 20,
+          "p95_ms": 4.860309
+        },
+        "layers": false,
+        "process_peak_rss": "34976 kB",
+        "qt": "5.15.13",
+        "sample": "tables-images",
+        "source_bytes": 19500,
+        "source_lines": 601,
+        "typing-burst-20": {
+          "median_ms": 0.11834349999999999,
+          "n": 20,
+          "p95_ms": 0.134768
+        }
+      }
+    },
+    {
+      "phase": "final-recheck",
+      "variant": "baseline",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 53.94838,
+          "n": 20,
+          "p95_ms": 55.984795
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 130.3717915,
+          "n": 20,
+          "p95_ms": 133.890753
+        },
+        "first-render-sync": {
+          "median_ms": 3.4926775,
+          "n": 20,
+          "p95_ms": 3.624086
+        },
+        "html_snapshot_bytes": 114900,
+        "latest-html-export": {
+          "median_ms": 1.3311305,
+          "n": 20,
+          "p95_ms": 1.393877
+        },
+        "layers": false,
+        "process_peak_rss": "34284 kB",
+        "qt": "5.15.13",
+        "sample": "100k",
+        "source_bytes": 102400,
+        "source_lines": 199,
+        "typing-burst-20": {
+          "median_ms": 0.11400650000000001,
+          "n": 20,
+          "p95_ms": 0.125035
+        }
+      }
+    },
+    {
+      "phase": "final-recheck",
+      "variant": "baseline",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 193.79647799999998,
+          "n": 20,
+          "p95_ms": 199.325725
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 481.60839350000003,
+          "n": 20,
+          "p95_ms": 489.176045
+        },
+        "first-render-sync": {
+          "median_ms": 25.011004,
+          "n": 20,
+          "p95_ms": 25.914083
+        },
+        "html_snapshot_bytes": 111097,
+        "latest-html-export": {
+          "median_ms": 4.2376190000000005,
+          "n": 20,
+          "p95_ms": 4.338406
+        },
+        "layers": false,
+        "process_peak_rss": "34816 kB",
+        "qt": "5.15.13",
+        "sample": "tables-images",
+        "source_bytes": 19500,
+        "source_lines": 601,
+        "typing-burst-20": {
+          "median_ms": 0.1169095,
+          "n": 20,
+          "p95_ms": 0.125031
+        }
+      }
+    },
+    {
+      "phase": "final-recheck",
+      "variant": "candidate",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 1.7735940000000001,
+          "n": 20,
+          "p95_ms": 1.824685
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 41.4554585,
+          "n": 20,
+          "p95_ms": 43.178558
+        },
+        "first-render-sync": {
+          "median_ms": 3.562948,
+          "n": 20,
+          "p95_ms": 3.721631
+        },
+        "html_snapshot_bytes": 118601,
+        "latest-html-export": {
+          "median_ms": 1.3518015,
+          "n": 20,
+          "p95_ms": 1.468194
+        },
+        "layers": false,
+        "process_peak_rss": "34680 kB",
+        "qt": "5.15.13",
+        "sample": "100k",
+        "source_bytes": 102400,
+        "source_lines": 199,
+        "typing-burst-20": {
+          "median_ms": 0.11570549999999999,
+          "n": 20,
+          "p95_ms": 0.125048
+        }
+      }
+    },
+    {
+      "phase": "final-recheck",
+      "variant": "candidate",
+      "measurements": {
+        "cached-tab-activation-sync": {
+          "median_ms": 5.0200885,
+          "n": 20,
+          "p95_ms": 5.085161
+        },
+        "explicit-refresh-sync": {
+          "median_ms": 118.72204400000001,
+          "n": 20,
+          "p95_ms": 120.791729
+        },
+        "first-render-sync": {
+          "median_ms": 28.408343000000002,
+          "n": 20,
+          "p95_ms": 29.057723
+        },
+        "html_snapshot_bytes": 121498,
+        "latest-html-export": {
+          "median_ms": 4.648866999999999,
+          "n": 20,
+          "p95_ms": 4.708776
+        },
+        "layers": false,
+        "process_peak_rss": "34980 kB",
+        "qt": "5.15.13",
+        "sample": "tables-images",
+        "source_bytes": 19500,
+        "source_lines": 601,
+        "typing-burst-20": {
+          "median_ms": 0.1175355,
+          "n": 20,
+          "p95_ms": 0.137814
+        }
+      }
     }
-  ]
+  ],
+  "final_source_commit": "e4ebe4194890455994cda8aa27b2e0d1304f86b1"
 }

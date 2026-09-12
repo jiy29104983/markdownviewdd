@@ -69,8 +69,8 @@ git diff --check
 | 发布脚本隔离测试 | `passed` | mock gh，未访问真实 Release |
 | ELF 加载与入口 | `passed` | ctypes 实际加载 x86-64 共享库并解析 NDD_PROC_IDENTIFY／NDD_PROC_MAIN |
 | Qt 模拟截图 | `passed` | 原有 10 张状态图及新增 100%／125%／深色字体图；生成于 build/req002/screenshots |
-| GitHub Windows Release 编译／测试 | `not run` | 等待推送本单候选提交并执行现有工作流 |
-| Windows Artifact | `not run` | 等待对应候选构建，校验摘要、包内清单、DLL 架构及入口 |
+| GitHub Windows Release 编译／测试 | `passed` | 修复提交 e4ebe41，Actions 34702586668；DLL、五组 Qt 回归、发布脚本测试、打包和上传全部成功 |
+| Windows Artifact | `passed` | GitHub digest、包内 SHA256、3 个文件、PE32+ x86-64 及两个入口均通过 |
 | 真实 Windows notepad-- | `not verified` | 用户负责字体、路径、操作、滚轮手感和 DPI，未作为代码交付前置条件 |
 
 本地日志位于 `build/req002/build.log`、`build/req002/markdownview_*_tests.txt` 和
@@ -123,8 +123,8 @@ git diff --check
 5 MiB 文本的完整剩余布局仍可达约 0.6 秒，属于现有 Qt 全文布局能力边界；本单不声称
 解决所有大文档卡顿。强制完整布局只用于测量，产品仍使用 Qt 分步布局和位置恢复。
 
-以上性能数据对应首个功能候选。Windows 回归随后发现的行内代码识别差异修复后，将补测
-受影响的结构密集样本；不将先前候选数据直接冒充最终候选全部测量。
+以上性能数据对应首个功能候选。Windows 回归随后发现的行内代码识别差异修复后，已补测
+100 KiB、图片／表格及标题密集样本；最终补测如下，先前候选数据仍保留其对应版本边界。
 
 ## Windows 首轮问题及修复
 
@@ -141,3 +141,49 @@ Windows Release DLL 编译通过，发布脚本隔离测试通过，Qt 回归为
 
 前四组 Windows Qt 测试均通过，失败仅在新增字体组。首轮不作为完整工作流成功证据，
 后续以修复提交的实际运行结果为准。
+
+## 最终 Windows 与产物验证
+
+修复提交：`e4ebe4194890455994cda8aa27b2e0d1304f86b1`。
+Actions **34702586668** 在 2026-09-12 完成，状态为 `completed / success`。
+运行 Windows 2022、Qt 5.15.2、Visual Studio 2022／MSVC v142／x64。
+`Build Release DLL`、`Run Qt regression tests`、`Run release publishing tests`、诊断上传、
+打包及 Artifact 上传均为 success；正式 Release job 按普通主分支运行规则跳过。
+
+下载 `test-diagnostics-34702586668-1` 后核对五组 QtTest 原始日志：
+生命周期 13、文档身份 40、多窗口 8、诊断 6、字体 62，合计 **129 passed，0 failed，0 skipped**。
+含 13 张 Windows Qt/offscreen 模拟截图；已检查字体 125% 截图，代码、正文与标题比例显示正常。
+这不能代替真实 notepad-- 的字体视觉或 DPI 验证。
+
+候选 Artifact：`markdownviewdd-v0.2.8-windows-x64-e4ebe41`，ID `10301435091`。
+下载后的检查结果：
+
+- Artifact ZIP 的 SHA256 与 GitHub digest 一致：
+  `0523c2789f5ac64da9a3e08dc2d793075d3a8b7a5b3ba2999e12adaa0e0f6d5d`。
+- 内部安装包 ZIP 与配套校验文件一致：
+  `047bd30101d9dd5d0479a314cdba82872bffcb299dc0661b0428937a207fe3d1`。
+- ZIP 仅包含 `plugin/markdownviewdd.dll`、`README.md`、`LICENSE`。
+- DLL 为 **204288 字节、PE32+ x86-64**，导出 `NDD_PROC_IDENTIFY`、`NDD_PROC_MAIN`。
+- DLL SHA256：`013b76226e774ca5caccfe9b5ce76a1d9ea7994b9b0a43bba41f8c00da9c5239`。
+- 导入依赖仅有 Qt5 Core／Gui／Widgets、MSVC 运行库和 Windows 系统库，无新增渲染依赖。
+
+下载与解包位于 `build/req002/windows-e4ebe41/`，诊断位于
+`build/req002/windows-diagnostics-e4ebe41/`；这些产物不提交。Artifact 保留期为工作流既定的
+14 天。真实 Windows notepad-- 操作仍为 `not verified`，由用户按测试文档补充结果。
+
+## Windows 修复后的性能复核
+
+补测使用最终功能提交 e4ebe41 对比同一原始基线；100 KiB 和图片／表格在出现超过 10%
+的结果后按基线→候选顺序再次复测，数据全部保留在测量 JSON：
+
+- 100 KiB 首次渲染 3.624 → 3.722 ms（+2.7%），20 次输入均约 0.125 ms；前一轮输入
+  +10.3% 未复现。显式刷新 133.891 → 43.179 ms，缓存及快照 55.985 → 1.825 ms。
+- 图片／表格首次渲染 25.914 → 29.058 ms（+12.1%，约 +3.14 ms）仍超过复核线；
+  此路径增加了代码字体身份与明确格式处理，已经使用批量修改避免逐片段布局，保留正确排版
+  所需成本。显式刷新 489.176 → 120.792 ms，缓存及快照 199.326 → 5.085 ms。
+- 图片／表格 20 次输入 0.125 → 0.138 ms（+10.2%，每次输入约 +0.64 μs），前轮为
+  +7.6%；没有改动输入处理或增加配置读取／全文解析，保留波动数据，不据此承诺固定性能。
+- 500 标题最终补测的首次渲染约 -1.1%，导出约 +8.4%；初次功能候选导出 +10.2% 的记录
+  仍保留，说明字体序列化有成本，不能只选改善数据。
+
+代码与自动化交付完成，Linux、GitHub 和 Artifact 均通过；真实 Windows 手工验收待用户验证。
