@@ -1002,6 +1002,10 @@ void SavedMarkdownFontTest::fontScreenshots()
     QPalette dark = fixture.dock()->palette();
     dark.setColor(QPalette::Base, QColor(QStringLiteral("#202124")));
     dark.setColor(QPalette::Text, QColor(QStringLiteral("#f1f3f4")));
+    dark.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#303134")));
+    dark.setColor(QPalette::Mid, QColor(QStringLiteral("#5f6368")));
+    dark.setColor(QPalette::Midlight, QColor(QStringLiteral("#5f6368")));
+    dark.setColor(QPalette::Link, QColor(QStringLiteral("#8ab4f8")));
     fixture.dock()->setPalette(dark);
     QTest::qWait(100);
     QVERIFY(fixture.window.grab().save(QDir(output).filePath(QStringLiteral("req002-font-dark.png"))));
