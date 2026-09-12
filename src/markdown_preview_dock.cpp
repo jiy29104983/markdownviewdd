@@ -13,6 +13,7 @@
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
+#include <QFontDatabase>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
@@ -43,6 +44,7 @@ namespace {
 constexpr int kLayoutSyncDelayMs = 32;
 constexpr auto kStyleRevision = "_markdownview_font_style_revision";
 constexpr auto kDocumentRevision = "_markdownview_font_document_revision";
+constexpr int kCodeFormatProperty = QTextFormat::UserProperty + 2;
 
 qreal headingRatio(int level)
 {
@@ -727,6 +729,7 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
     QFont bodyFont = m_bodyFont;
     bodyFont.setPointSizeF(m_bodyFont.pointSizeF() * m_zoom);
     const QPalette colors = palette();
+    const QString nativeCodeFamily = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
     QTextDocument *document = textEdit->document();
     if (textEdit->palette() == colors && document->defaultFont() == bodyFont &&
         document->property(kStyleRevision).toULongLong() == m_styleRevision &&
@@ -771,8 +774,23 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
             blockCursor.setBlockFormat(blockFormat);
         }
         auto styledFormat = [&](QTextCharFormat format) {
-            const bool code = codeBlock || format.fontFixedPitch();
+            // Qt 5.15.2 imports code with setFont(systemFont(FixedFont)); on
+            // Windows that QFont can have fixedPitch()==false. Its explicit
+            // font properties still distinguish it from ordinary Markdown text.
+            // Remember that distinction before normalizing the font family.
+            const bool code = codeBlock || (format.hasProperty(kCodeFormatProperty)
+                ? format.boolProperty(kCodeFormatProperty)
+                : format.fontFixedPitch() ||
+                    (format.hasProperty(QTextFormat::FontFixedPitch) &&
+                     format.hasProperty(QTextFormat::FontStyleHint) &&
+                     (format.fontFamily() == nativeCodeFamily ||
+                      format.fontFamilies().toStringList().contains(nativeCodeFamily))));
+            format.setProperty(kCodeFormatProperty, code);
             format.setFontFamily(code ? m_codeFontFamily : bodyFont.family());
+            // setFont() can also store FontFamilies/StyleName. They must not
+            // override our selected family or Markdown's bold/italic semantics.
+            format.clearProperty(QTextFormat::FontFamilies);
+            format.clearProperty(QTextFormat::FontStyleName);
             format.clearProperty(QTextFormat::FontSizeAdjustment);
             format.clearProperty(QTextFormat::FontPixelSize);
             format.setFontPointSize(points);

@@ -247,6 +247,7 @@ private slots:
     void staleSnapshotAndUserScrollCancelOldLayout();
     void consecutiveStylesAndDestroyedPreviewCancelOldWork();
     void fontScreenshots();
+    void importedCodeWithUnsetFixedPitchRemainsMonospaced();
     void synchronizedFontChangeKeepsEditorInControl();
     void savedEditorZoomAndUnrelatedStylesAreIgnored();
     void manualContextOpenAndPendingReopenDoNotParse();
@@ -648,7 +649,7 @@ void SavedMarkdownFontTest::nativeWheelAndSemanticFormats()
         QVERIFY(formatOf(edit, QStringLiteral("Header")).fontWeight() >= QFont::Bold);
         for (const QString &code : {QStringLiteral("inline code"), QStringLiteral("block code"), QStringLiteral("heading code")}) {
             const auto format = formatOf(edit, code);
-            QVERIFY(format.fontFixedPitch());
+            QVERIFY2(format.fontFixedPitch(), qPrintable(code));
             QVERIFY(QFontDatabase().isFixedPitch(format.fontFamily()));
             QCOMPARE(format.fontPointSize(), code == QStringLiteral("heading code") ? points * 2.0 : points);
         }
@@ -941,6 +942,45 @@ void SavedMarkdownFontTest::invalidStyleInputDoesNotMutateDocument()
     }
     QCOMPARE(fixture.editor->textEdit->document()->revision(), revision);
     QCOMPARE(fixture.editor->renders, 1);
+}
+
+void SavedMarkdownFontTest::importedCodeWithUnsetFixedPitchRemainsMonospaced()
+{
+    MarkdownPreviewDock dock;
+    QWidget editor;
+    auto *preview = new QWidget;
+    auto *layout = new QVBoxLayout(preview);
+    auto *edit = new QTextEdit(preview);
+    edit->setReadOnly(true);
+    layout->addWidget(edit);
+    edit->setMarkdown(sample());
+    // Reproduce the Windows Qt 5.15.2 importer without relying on the Linux
+    // font database to happen to construct the same system FixedFont QFont.
+    for (const QString &code : {QStringLiteral("inline code"), QStringLiteral("heading code")}) {
+        QTextCursor cursor = edit->document()->find(code);
+        QFont nativeCode = QFontDatabase::systemFont(QFontDatabase::FixedFont);
+        nativeCode.setFixedPitch(false);
+        QTextCharFormat format;
+        format.setFont(nativeCode);
+        cursor.setCharFormat(format);
+    }
+    const QString bodyFamily = markdownCodeFontFamily(defaultMarkdownFont().family);
+    dock.setReadingFont(QFont(bodyFamily, 12), 1.0);
+    QVERIFY(dock.adoptNativePreview(preview, edit, QStringLiteral("sample.md"), &editor, 1));
+    dock.show();
+    for (const QString &code : {QStringLiteral("inline code"), QStringLiteral("heading code")}) {
+        const auto format = formatOf(edit, code);
+        QVERIFY(format.fontFixedPitch());
+        QVERIFY(QFontDatabase().isFixedPitch(format.font().family()));
+        QCOMPARE(format.font().family(), format.fontFamily());
+    }
+    QVERIFY(!formatOf(edit, QStringLiteral("Body")).fontFixedPitch());
+    QVERIFY(formatOf(edit, QStringLiteral("Body")).background().style() == Qt::NoBrush);
+    wheel(edit, 120);
+    dock.setReadingFont(QFont(bodyFamily, 14), 1.25);
+    QCOMPARE(formatOf(edit, QStringLiteral("heading code")).fontPointSize(), 35.0);
+    QVERIFY(formatOf(edit, QStringLiteral("inline code")).fontFixedPitch());
+    QVERIFY(!formatOf(edit, QStringLiteral("Body")).fontFixedPitch());
 }
 
 void SavedMarkdownFontTest::fontScreenshots()

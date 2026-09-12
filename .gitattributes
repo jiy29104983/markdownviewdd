@@ -1,0 +1,2 @@
+# Host-generated INI fixtures are byte-for-byte regression inputs.
+/tests/fixtures/saved-host-font/*.ini -text

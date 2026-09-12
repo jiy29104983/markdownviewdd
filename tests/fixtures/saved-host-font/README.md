@@ -4,6 +4,7 @@
 其中完整配置由 notepad-- v3.8.3 的 `QtLangSet::saveLangeSet()` 与 lexer 保存链生成；
 缺少 style0 的配置由探针构造，再经同一宿主的读取链核对。期望值来自该次宿主读取输出，
 不从插件读取函数重新计算。`expected.json` 保存宿主结果、主题、文件哈希和来源。
+根目录 `.gitattributes` 将这些 INI 标为 `-text`，避免 Windows 检出转换换行符破坏原始字节。
 固定宿主提交：`91105f68b74382128f3313ac5af8accdc77de918`。
 
 正式回归只需要这些输入、Qt 和插件模块，不依赖宿主源码、QScintilla 静态库或 build 目录。
