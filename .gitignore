@@ -2,8 +2,9 @@
 /dist/
 /AGENTS.md
 /notepad--/
-/docs/bug-backlog-2026-09-07.md
-/docs/bug-fix-handoffs-2026-09-07.md
+/docs/bug-backlog-*.md
+/docs/bug-fix-handoffs-*.md
+/docs/requirements/
 /.vs/
 /.qmake.stash
 /Makefile

@@ -73,13 +73,44 @@ rg -n "project\(ndd-markdown-view VERSION|NDD_MARKDOWN_VIEW_VERSION|当前版本
   CMakeLists.txt markdownview.pro src README.md
 ```
 
-### 3. 生成并验证候选 Artifact
+### 3. 编写中文 Release Notes
+
+每个正式版本必须在打标签前新增一份中文说明，路径固定为：
+
+```text
+docs/releases/v<版本>.md
+```
+
+例如 `0.2.8` 对应 `docs/releases/v0.2.8.md`。文件名必须包含标签使用的前缀 `v`，并与
+最终标签完全一致。Release Notes 至少应包含：
+
+- 版本标题和本次发布的重点。
+- “相比上一版本的改进”，按用户可感知的功能、性能、稳定性和修复内容编写。
+- 下载、校验和安装方法。
+- 支持的 notepad--、Windows 架构及 Qt 运行库版本。
+- 云端构建、自动化测试和真实宿主测试的实际状态；未完成的验证必须明确写为
+  `not run` 或 `not verified`，不能用流水线成功代替真实宿主测试。
+
+说明应面向插件使用者，不要直接复制提交列表，也不要写入本机路径、账号、Token、内部
+排查记录或无法由当前版本证据支持的结论。可参考已发布的
+[`v0.2.8` 中文说明](releases/v0.2.8.md)。打标签前检查文件存在且非空：
+
+```bash
+test -s "docs/releases/v${VERSION}.md"
+```
+
+发布脚本会优先把该文件原样用作 GitHub Release 正文。脚本保留缺少版本说明时使用 GitHub
+自动生成说明的兼容回退，但正常正式发布不得依赖该回退；发现说明文件缺失时应停止发布准备，
+补齐中文内容并先提交到 `main`。
+
+### 4. 生成并验证候选 Artifact
 
 提交版本变更并先推送 `main`，让普通构建生成候选 Artifact：
 
 ```bash
 git diff --check
-git add CMakeLists.txt markdownview.pro src/ndd_plugin_api.h README.md
+git add CMakeLists.txt markdownview.pro src/ndd_plugin_api.h README.md \
+  "docs/releases/v${VERSION}.md"
 git commit -m "chore(release): prepare v${VERSION}"
 git push origin main
 ```
@@ -94,7 +125,7 @@ Artifact，验证 SHA256，并按仓库测试要求在 notepad-- 中完成加载
 - ZIP 内容检查。
 - Windows/notepad-- 真实加载与功能测试。
 
-### 4. 确认标签未被占用
+### 5. 确认标签未被占用
 
 确认同名标签在本地和远端都不存在：
 
@@ -105,17 +136,18 @@ git ls-remote --tags origin "refs/tags/v${VERSION}" "refs/tags/v${VERSION}^{}"
 
 两条命令都不应返回标签。已存在的发布标签不得移动、覆盖或复用。
 
-### 5. 创建并推送标签
+### 6. 创建并推送标签
 
 只在候选构建和手工测试均通过的提交上创建注释标签：
 
 ```bash
 git status --short --branch
+test -s "docs/releases/v${VERSION}.md"
 git tag -a "v${VERSION}" -m "Release v${VERSION}"
 git push origin "v${VERSION}"
 ```
 
-### 6. 自动发布
+### 7. 自动发布
 
 标签工作流会自动执行以下操作，无需手工创建 Release，也无需配置 PAT 或 Secret：
 
@@ -123,7 +155,9 @@ git push origin "v${VERSION}"
 - 重新构建 Release x64 DLL。
 - 生成 `markdownviewdd-v<版本>-windows-x64.zip`。
 - 生成同名 `.zip.sha256` 校验文件。
-- 使用仓库 `GITHUB_TOKEN` 创建非草稿、非预发布的 GitHub Release，并自动生成说明。
+- 使用仓库 `GITHUB_TOKEN` 创建非草稿、非预发布的 GitHub Release。
+- 如果存在 `docs/releases/v<版本>.md`，使用其中的中文内容作为 Release 正文；只有旧标签或
+  非标准兼容场景缺少该文件时，才回退到 GitHub 自动生成说明。
 
 发布附件一旦公开即视为不可变。同一标签的工作流重跑遵循以下规则：
 
@@ -136,15 +170,16 @@ git push origin "v${VERSION}"
 不要使用 `gh release upload --clobber` 恢复公开发布。若附件缺失，可在确认现有附件与该标签
 构建结果一致后重跑标签工作流；若内容不一致，必须人工调查并发布新版本。
 
-### 7. 验证公开 Release
+### 8. 验证公开 Release
 
 在 Actions 页面确认 `Build plugin` 和 `Publish GitHub Release` 两个 job 均为
-`success`，再在 Releases 页面确认 ZIP 与 SHA256 两个附件可下载。安装 GitHub CLI
-后也可执行：
+`success`，再在 Releases 页面确认中文正文完整显示，ZIP 与 SHA256 两个附件均可下载。
+正文应明确列出相较上一版本的改进和实际验证边界。安装 GitHub CLI 后也可执行：
 
 ```bash
 gh run list --workflow windows-release.yml --limit 5
 gh release view "v${VERSION}"
+gh release view "v${VERSION}" --json body --jq .body
 gh release download "v${VERSION}" --pattern "*.zip" --pattern "*.sha256"
 sha256sum -c "markdownviewdd-v${VERSION}-windows-x64.zip.sha256"
 unzip -l "markdownviewdd-v${VERSION}-windows-x64.zip"
@@ -156,6 +191,9 @@ unzip -l "markdownviewdd-v${VERSION}-windows-x64.zip"
 - 标签版本校验失败：不要强推标签。修正 `main` 后使用新的补丁版本发布；只有标签尚未
   公开、没有 Release，且用户明确同意时，才能删除并重建错误标签。
 - Release 已经公开后发现问题：保留原标签和附件，修复代码并发布下一个补丁版本。
+- Release Notes 缺失、不是中文或与实际改动不符：不要创建标签；补充
+  `docs/releases/v<版本>.md`，提交并等待候选流水线重新成功。Release 已公开后需要修正文案时，
+  只编辑 Release 正文，不替换或覆盖已发布附件。
 - 必须分别记录云端编译、Artifact 校验、Windows/notepad-- 手工测试和 Release 发布
   的结果；不能用其中一项成功代替其他项。
 
@@ -164,3 +202,8 @@ unzip -l "markdownviewdd-v${VERSION}-windows-x64.zip"
 2026 年 9 月 4 日，`v0.2.7` 完成首次发布流程端到端验证，包括云端 Windows 编译、
 版本校验、Release 创建、公开附件重新下载、SHA256 校验和 DLL x86-64 格式检查。
 该记录不替代后续版本各自的候选构建和真实宿主测试。
+
+2026 年 9 月 7 日，`v0.2.8` 首次使用 `docs/releases/v0.2.8.md` 作为中文 Release
+正文完成发布，并验证公开正文、ZIP、SHA256、压缩包内容和 DLL PE32+ x86-64 格式。
+该版本的 GitHub Actions Windows 构建和自动化回归测试通过；真实 notepad-- 宿主测试仍为
+`not verified`。
