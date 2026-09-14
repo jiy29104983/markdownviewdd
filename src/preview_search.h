@@ -39,6 +39,7 @@ public:
     quint64 generation() const { return m_generation; }
     qint64 lastSearchNanoseconds() const { return m_lastSearchNs; }
     qint64 maxBatchNanoseconds() const { return m_maxBatchNs; }
+    qint64 maxHighlightNanoseconds() const { return m_maxHighlightNs; }
 
 signals:
     void navigateRequested(QWidget *editor, quint64 version, int position);
@@ -97,4 +98,10 @@ private:
     QElapsedTimer m_paintElapsed;
     qint64 m_lastSearchNs = 0;
     qint64 m_maxBatchNs = 0;
+    qint64 m_maxHighlightNs = 0;
+    quint64 m_highlightGeneration = 0;
+    int m_highlightBegin = -1;
+    int m_highlightEnd = -1;
+    int m_highlightCurrent = -1;
+    QPalette m_highlightPalette;
 };

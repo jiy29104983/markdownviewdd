@@ -346,6 +346,7 @@ void PreviewSearch::restart(bool keepAnchor)
     m_bestDistance = std::numeric_limits<int>::max();
     m_searching = true;
     m_maxBatchNs = 0;
+    m_maxHighlightNs = 0;
     m_elapsed.start();
     m_paintElapsed.start();
     updateUi();
@@ -483,16 +484,37 @@ void PreviewSearch::updateHighlights()
 {
     if (!m_open || !m_active || !usable() || m_updatingHighlights) return;
     const QScopedValueRollback<bool> updating(m_updatingHighlights, true);
+    QElapsedTimer elapsed;
+    elapsed.start();
+    if (m_matches.isEmpty()) {
+        clearHighlights();
+        m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
+        return;
+    }
+    const int top = m_view->cursorForPosition(QPoint(0, 0)).position();
+    const int bottom = m_view->cursorForPosition(m_view->viewport()->rect().bottomRight()).position();
+    const auto first = std::lower_bound(m_matches.cbegin(), m_matches.cend(), top);
+    const auto last = std::upper_bound(m_matches.cbegin(), m_matches.cend(), bottom);
+    const int begin = qMax(0, int(first - m_matches.cbegin()) - 1);
+    const int end = qMin(int(last - m_matches.cbegin()), begin + kHighlightLimit - 1);
+    const QPalette colors = m_view->palette();
+    // During a long scan, new matches usually lie outside the viewport. Do not
+    // recreate hundreds of identical cursors and repaint on every progress tick.
+    if (m_highlightGeneration == m_generation && m_highlightBegin == begin &&
+        m_highlightEnd == end && m_highlightCurrent == m_current && m_highlightPalette == colors) {
+        m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
+        return;
+    }
+    m_highlightGeneration = m_generation;
+    m_highlightBegin = begin;
+    m_highlightEnd = end;
+    m_highlightCurrent = m_current;
+    m_highlightPalette = colors;
     auto selections = m_view->extraSelections();
     for (auto it = selections.begin(); it != selections.end();) {
         if (it->format.boolProperty(kSearchHighlightProperty)) it = selections.erase(it);
         else ++it;
     }
-    const int top = m_view->cursorForPosition(QPoint(0, 0)).position();
-    auto first = std::lower_bound(m_matches.cbegin(), m_matches.cend(), top);
-    const int begin = qMax(0, int(first - m_matches.cbegin()) - 1);
-    const int end = qMin(m_matches.size(), begin + kHighlightLimit - 1);
-    const QPalette colors = m_view->palette();
     auto add = [this, &selections, &colors](int index, bool current) {
         QTextEdit::ExtraSelection item;
         item.cursor = QTextCursor(m_document);
@@ -508,6 +530,7 @@ void PreviewSearch::updateHighlights()
     for (int i = begin; i < end; ++i) if (i != m_current) add(i, false);
     if (m_current >= 0) add(m_current, true);
     m_view->setExtraSelections(selections);
+    m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
 }
 
 void PreviewSearch::updateUi()

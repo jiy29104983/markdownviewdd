@@ -32,6 +32,28 @@
 #include <memory>
 
 namespace {
+class TimingApplication final : public QApplication
+{
+public:
+    TimingApplication(int &argc, char **argv) : QApplication(argc, argv) {}
+    bool measuring = false;
+    qint64 maxEventNs = 0;
+    QString slowestEvent;
+    bool notify(QObject *receiver, QEvent *event) override
+    {
+        if (!measuring) return QApplication::notify(receiver, event);
+        const QString name = QStringLiteral("%1:%2").arg(QString::fromLatin1(receiver->metaObject()->className()))
+            .arg(int(event->type()));
+        QElapsedTimer elapsed;
+        elapsed.start();
+        const bool handled = QApplication::notify(receiver, event);
+        if (elapsed.nsecsElapsed() > maxEventNs) {
+            maxEventNs = elapsed.nsecsElapsed();
+            slowestEvent = name;
+        }
+        return handled;
+    }
+};
 class SearchAdapter final : public HostAdapter
 {
 public:
@@ -631,16 +653,37 @@ void PreviewSearchTest::longDocument()
         gap.restart();
     });
     heartbeat.start(2);
+    auto *app = static_cast<TimingApplication *>(qApp);
+    app->maxEventNs = 0;
+    app->measuring = true;
     setQuery(&s, QStringLiteral("needle"));
     QTRY_VERIFY_WITH_TIMEOUT(!s.isSearching(), 30000);
+    app->measuring = false;
     QCOMPARE(s.matchCount(), repeats * 8);
     QVERIFY(ticks > 1);
     QVERIFY(view.extraSelections().size() <= 256);
     QVERIFY(feedback(&s).contains(QStringLiteral("完整计数")));
     QVERIFY2(s.maxBatchNanoseconds() < 250000000, "A search batch blocked input for >=250ms");
-    qInfo().noquote() << QStringLiteral("search bytes=%1 matches=%2 elapsed_ms=%3 max_batch_ms=%4 ticks=%5 max_event_gap_ms=%6")
+    qInfo().noquote() << QStringLiteral("search bytes=%1 matches=%2 elapsed_ms=%3 max_batch_ms=%4 ticks=%5 max_event_gap_ms=%6 highlight_ms=%7 event_ms=%8 event=%9")
         .arg(bytes).arg(s.matchCount()).arg(s.lastSearchNanoseconds() / 1e6)
-        .arg(s.maxBatchNanoseconds() / 1e6).arg(ticks).arg(longestGap / 1e6);
+        .arg(s.maxBatchNanoseconds() / 1e6).arg(ticks).arg(longestGap / 1e6)
+        .arg(s.maxHighlightNanoseconds() / 1e6).arg(app->maxEventNs / 1e6).arg(app->slowestEvent);
+    // Search on an already displayed snapshot is measured separately from Qt's
+    // initial document layout. Include a no-hit query to isolate highlight cost.
+    for (const QString &pattern : {QStringLiteral("absent"), QStringLiteral("needle")}) {
+        longestGap = 0;
+        gap.restart();
+        app->maxEventNs = 0;
+        app->measuring = true;
+        setQuery(&s, pattern);
+        QTRY_VERIFY_WITH_TIMEOUT(!s.isSearching(), 30000);
+        app->measuring = false;
+        QCOMPARE(s.matchCount(), pattern == QStringLiteral("needle") ? repeats * 8 : 0);
+        qInfo().noquote() << QStringLiteral("warm-search bytes=%1 query=%2 elapsed_ms=%3 max_batch_ms=%4 highlight_ms=%5 max_event_gap_ms=%6 event_ms=%7 event=%8")
+            .arg(bytes).arg(pattern).arg(s.lastSearchNanoseconds() / 1e6).arg(s.maxBatchNanoseconds() / 1e6)
+            .arg(s.maxHighlightNanoseconds() / 1e6).arg(longestGap / 1e6)
+            .arg(app->maxEventNs / 1e6).arg(app->slowestEvent);
+    }
 }
 
 void PreviewSearchTest::measurementsAndScreenshots()
@@ -671,5 +714,11 @@ void PreviewSearchTest::measurementsAndScreenshots()
     }
 }
 
-QTEST_MAIN(PreviewSearchTest)
+int main(int argc, char **argv)
+{
+    TimingApplication app(argc, argv);
+    app.setAttribute(Qt::AA_Use96Dpi, true);
+    PreviewSearchTest test;
+    return QTest::qExec(&test, argc, argv);
+}
 #include "preview_search_test.moc"
