@@ -1106,10 +1106,23 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
         [this, scrollBar](int) {
             cancelPreservedScroll();
             const QPointer<QScrollBar> guardedScrollBar(scrollBar);
-            QTimer::singleShot(0, this, [this, guardedScrollBar]() {
-                if (guardedScrollBar) {
-                    emitPreviewScrollRatio(guardedScrollBar.data());
+            const QPointer<QWidget> editor = m_previewEditor;
+            const quint64 version = m_previewContentVersion;
+            const quint64 interaction = m_scrollInteractionGeneration;
+            // actionTriggered precedes value propagation. Capture the intended
+            // slider position now; a queued source/layout update must not turn
+            // this user action into a read of an older programmatic value.
+            const int range = scrollBar->maximum() - scrollBar->minimum();
+            const double ratio = range > 0
+                ? double(scrollBar->sliderPosition() - scrollBar->minimum()) / range : 0.0;
+            QTimer::singleShot(0, this, [this, guardedScrollBar, editor, version,
+                                         interaction, ratio]() {
+                if (!guardedScrollBar || interaction != m_scrollInteractionGeneration ||
+                    !hasDisplayedPreviewFor(editor, version)) {
+                    return;
                 }
+                scrollToRatio(ratio);
+                emitPreviewScrollRatio(guardedScrollBar.data());
             });
         });
 

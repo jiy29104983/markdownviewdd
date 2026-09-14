@@ -192,6 +192,7 @@ private slots:
     void nullSourceCapability();
     void delayedSourceLayoutKeepsHeading();
     void layoutDoesNotReviveOldSourceTarget();
+    void queuedLayoutCannotReplaceUserScroll();
     void fiveHundredHeadings();
 };
 
@@ -432,6 +433,7 @@ void HeadingOutlineTest::keyboardAndSectionHighlight()
     auto *selected = tree->currentItem();
     auto *outline = f.dock->findChild<HeadingOutline *>();
     f.preview()->verticalScrollBar()->triggerAction(QAbstractSlider::SliderToMinimum);
+    QTRY_VERIFY(!f.dock->hasNavigationTarget());
     QTRY_COMPARE(outline->currentHeading(), -1);
     f.preview()->verticalScrollBar()->triggerAction(QAbstractSlider::SliderToMaximum);
     QTRY_COMPARE(outline->currentHeading(), 11);
@@ -624,6 +626,20 @@ void HeadingOutlineTest::layoutDoesNotReviveOldSourceTarget()
     f.editor->setFont(font);
     QTest::qWait(80);
     QCOMPARE(f.adapter.navigations, calls);
+}
+
+
+void HeadingOutlineTest::queuedLayoutCannotReplaceUserScroll()
+{
+    Fixture f;
+    f.activate(5);
+    QScrollBar *bar = f.preview()->verticalScrollBar();
+    const int oldPosition = bar->value();
+    bar->triggerAction(QAbstractSlider::SliderToMaximum);
+    // Simulate a queued compatibility/layout write overtaking value delivery.
+    bar->setValue(oldPosition);
+    QTRY_COMPARE(bar->value(), bar->maximum());
+    QTRY_COMPARE(f.dock->findChild<HeadingOutline *>()->currentHeading(), 11);
 }
 
 QTEST_MAIN(HeadingOutlineTest)

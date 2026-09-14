@@ -23,14 +23,14 @@
 | --- | --- | --- |
 | 静态检查 | passed | ABI／宿主无改动、依赖检查、Markdown 链接及 git diff --check |
 | Linux Release 编译 | passed | GCC 13.3、Qt 5.15.13、C++14；无新增编译警告 |
-| Linux Qt 回归 | passed | 六组 CTest，158 项 QtTest，0 失败／跳过 |
+| Linux Qt 回归 | passed | 六组 CTest，159 项 QtTest，0 失败／跳过 |
 | 发布脚本隔离测试 | passed | mock gh；未操作真实 Release |
 | Linux 真实 QScintilla 控件探针 | passed | 正式 source_navigation.cpp 的独立 Qt 模块，13 场景，0 失败 |
-| GitHub Windows Release／Qt 回归 | not run | 推送后补充该提交的流水线结果 |
+| GitHub Windows Release／Qt 回归 | blocked | 首轮 DLL 编译成功，1 项新增回归失败；修复后重新验证 |
 | Windows Artifact | not run | 待工作流产物生成及下载校验 |
 | 真实 Windows notepad-- | not verified | 由用户验证加载、实际源码跳转、键鼠、主题／DPI 与设备性能 |
 
-当前六组计数：lifecycle 13、document identity 40、multi-window 8、diagnostics 6、font 62、outline 29。
+当前六组计数：lifecycle 13、document identity 40、multi-window 8、diagnostics 6、font 62、outline 30。
 Linux 日志位于 `build/req003/markdownview_*_tests.txt`、`build/req003/ctest.log` 与 `build/req003/build.log`。
 Linux Qt offscreen 的平台提示及 Fontconfig 缓存提示保存在运行日志，不作为 Windows 兼容性结论。
 
@@ -106,3 +106,16 @@ bash tests/release_publish_test.sh
 10% 以内。默认可见侧栏缩窄正文导致的换行布局属于可见功能成本，提供显隐和可调宽度。
 源码 accessibility 读取与真实滚动不在既有模拟性能程序中，正式真实控件探针证明行为，
 不冒充真机性能预算；实际 Windows 数据仍待用户采样。
+
+## 首轮 Windows 回归与修复
+
+提交 `e3ea6a19aad3c8b6fda37aa7d58be09a67abe1ba` 的工作流 `34804303181`
+完成 Windows Release DLL 编译；原有五组测试共 129 项全部通过。大纲组 28 项通过、
+`keyboardAndSectionHighlight` 1 项失败：预览滚到文末后仍标记先前激活的第 6 章，
+预期最后一章。流水线正确阻止打包。
+
+诊断 Artifact `test-diagnostics-34804303181-1` 已下载并与 GitHub digest 核对一致：
+`6cb8773a1a4613b130f4ec737a32bd2cae7c5535d01ea7d378bf267e8cf06b89`。
+修复在 `actionTriggered` 阶段记录用户期望的 sliderPosition，延迟交付时核对文档、版本
+和交互代次，并恢复该用户目标，避免把中途旧布局写入当作本次用户意图。新增模拟旧布局
+抢先写回的独立回归，保留 Windows 原失败断言。修复后的云端结果另行记录。
