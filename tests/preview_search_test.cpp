@@ -4,6 +4,7 @@
 #include "preview_controller.h"
 
 #include <QAction>
+#include <QAbstractEventDispatcher>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
@@ -23,6 +24,7 @@
 #include <QTabWidget>
 #include <QTextBlock>
 #include <QTextEdit>
+#include <QTextLayout>
 #include <QTimer>
 #include <QToolButton>
 #include <QTreeWidget>
@@ -41,7 +43,8 @@ public:
     QString slowestEvent;
     bool notify(QObject *receiver, QEvent *event) override
     {
-        if (!measuring) return QApplication::notify(receiver, event);
+        if (!measuring || qobject_cast<QAbstractEventDispatcher *>(receiver))
+            return QApplication::notify(receiver, event);
         const QString name = QStringLiteral("%1:%2").arg(QString::fromLatin1(receiver->metaObject()->className()))
             .arg(int(event->type()));
         QElapsedTimer elapsed;
@@ -224,6 +227,7 @@ private slots:
     void formattingDuringSearch();
     void failureRejectsPartialDocument();
     void themeAndZoom();
+    void nativeLayoutWithoutSearch();
     void longDocument_data();
     void longDocument();
     void measurementsAndScreenshots();
@@ -621,6 +625,24 @@ void PreviewSearchTest::themeAndZoom()
     QCOMPARE(s->matchCount(), 2);
 }
 
+void PreviewSearchTest::nativeLayoutWithoutSearch()
+{
+    QTextEdit view;
+    view.resize(640, 480);
+    const QString line = QStringLiteral("needle ").repeated(8) + QStringLiteral("padding\n");
+    view.setPlainText(line.repeated(5 * 1024 * 1024 / 64));
+    auto *app = static_cast<TimingApplication *>(qApp);
+    app->maxEventNs = 0;
+    app->measuring = true;
+    QElapsedTimer elapsed;
+    elapsed.start();
+    view.show();
+    QTRY_VERIFY_WITH_TIMEOUT(view.document()->lastBlock().layout()->lineCount() > 0, 30000);
+    app->measuring = false;
+    qInfo().noquote() << QStringLiteral("native-layout-no-search bytes=5242880 elapsed_ms=%1 max_event_ms=%2 event=%3")
+        .arg(elapsed.nsecsElapsed() / 1e6).arg(app->maxEventNs / 1e6).arg(app->slowestEvent);
+}
+
 void PreviewSearchTest::longDocument_data()
 {
     QTest::addColumn<int>("bytes");
@@ -658,12 +680,16 @@ void PreviewSearchTest::longDocument()
     app->measuring = true;
     setQuery(&s, QStringLiteral("needle"));
     QTRY_VERIFY_WITH_TIMEOUT(!s.isSearching(), 30000);
+    QTRY_VERIFY_WITH_TIMEOUT(view.document()->lastBlock().layout()->lineCount() > 0, 30000);
+    QTRY_VERIFY(!view.extraSelections().isEmpty());
+    QTest::qWait(50);
     app->measuring = false;
     QCOMPARE(s.matchCount(), repeats * 8);
     QVERIFY(ticks > 1);
     QVERIFY(view.extraSelections().size() <= 256);
     QVERIFY(feedback(&s).contains(QStringLiteral("完整计数")));
     QVERIFY2(s.maxBatchNanoseconds() < 250000000, "A search batch blocked input for >=250ms");
+    QVERIFY2(s.maxHighlightNanoseconds() < 250000000, "Search highlighting blocked input for >=250ms");
     qInfo().noquote() << QStringLiteral("search bytes=%1 matches=%2 elapsed_ms=%3 max_batch_ms=%4 ticks=%5 max_event_gap_ms=%6 highlight_ms=%7 event_ms=%8 event=%9")
         .arg(bytes).arg(s.matchCount()).arg(s.lastSearchNanoseconds() / 1e6)
         .arg(s.maxBatchNanoseconds() / 1e6).arg(ticks).arg(longestGap / 1e6)
@@ -679,6 +705,8 @@ void PreviewSearchTest::longDocument()
         QTRY_VERIFY_WITH_TIMEOUT(!s.isSearching(), 30000);
         app->measuring = false;
         QCOMPARE(s.matchCount(), pattern == QStringLiteral("needle") ? repeats * 8 : 0);
+        QVERIFY2(longestGap < 250000000, "Searching a displayed snapshot blocked input for >=250ms");
+        QVERIFY2(s.maxHighlightNanoseconds() < 250000000, "Search highlighting blocked input for >=250ms");
         qInfo().noquote() << QStringLiteral("warm-search bytes=%1 query=%2 elapsed_ms=%3 max_batch_ms=%4 highlight_ms=%5 max_event_gap_ms=%6 event_ms=%7 event=%8")
             .arg(bytes).arg(pattern).arg(s.lastSearchNanoseconds() / 1e6).arg(s.maxBatchNanoseconds() / 1e6)
             .arg(s.maxHighlightNanoseconds() / 1e6).arg(longestGap / 1e6)

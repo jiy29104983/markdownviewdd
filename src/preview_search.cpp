@@ -17,6 +17,7 @@
 #include <QScopedValueRollback>
 #include <QTextDocument>
 #include <QTextEdit>
+#include <QTextLayout>
 #include <QTimer>
 #include <QToolButton>
 #include <QVBoxLayout>
@@ -316,6 +317,8 @@ bool PreviewSearch::eventFilter(QObject *watched, QEvent *event)
 void PreviewSearch::stop(bool repaint)
 {
     ++m_generation;
+    m_highlightRetryPending = false;
+    m_waitingForLayout = false;
     m_searching = false;
     m_matches.clear();
     m_current = -1;
@@ -491,6 +494,31 @@ void PreviewSearch::updateHighlights()
         m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
         return;
     }
+    // Geometry queries during Qt's lazy initial layout can synchronously advance
+    // many unlaid blocks. Inspect existing public QTextLayout data without asking
+    // for documentSize()/hitTest(), and let the native layout timer finish first.
+    const QTextBlock lastBlock = m_document->lastBlock();
+    if (lastBlock.isValid() && lastBlock.layout()->lineCount() == 0) {
+        if (!m_waitingForLayout) {
+            m_waitingForLayout = true;
+            updateUi();
+        }
+        if (!m_highlightRetryPending) {
+            m_highlightRetryPending = true;
+            const quint64 generation = m_generation;
+            QTimer::singleShot(50, this, [this, generation]() {
+                if (generation != m_generation) return;
+                m_highlightRetryPending = false;
+                updateHighlights();
+            });
+        }
+        m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
+        return;
+    }
+    if (m_waitingForLayout) {
+        m_waitingForLayout = false;
+        updateUi();
+    }
     const int top = m_view->cursorForPosition(QPoint(0, 0)).position();
     const int bottom = m_view->cursorForPosition(m_view->viewport()->rect().bottomRight()).position();
     const auto first = std::lower_bound(m_matches.cbegin(), m_matches.cend(), top);
@@ -547,6 +575,7 @@ void PreviewSearch::updateUi()
         messages.append(tr("待刷新 · 搜索当前展示的旧快照"));
     if (m_matches.size() > kHighlightLimit)
         messages.append(tr("完整计数；仅高亮阅读位置附近的结果和当前项（最多 %1 项）").arg(kHighlightLimit));
+    if (m_waitingForLayout) messages.append(tr("正文排版中，高亮稍后显示"));
     if (!m_notice.isEmpty()) messages.append(m_notice);
     m_message->setText(messages.join(QStringLiteral(" · ")));
     m_message->setVisible(!messages.isEmpty());

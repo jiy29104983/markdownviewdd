@@ -104,4 +104,6 @@ private:
     int m_highlightEnd = -1;
     int m_highlightCurrent = -1;
     QPalette m_highlightPalette;
+    bool m_waitingForLayout = false;
+    bool m_highlightRetryPending = false;
 };
