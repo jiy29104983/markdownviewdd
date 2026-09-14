@@ -514,13 +514,16 @@ void HeadingOutlineTest::fiveHundredHeadings()
     qInfo().noquote() << QJsonDocument(metrics).toJson(QJsonDocument::Compact);
     f.tree()->setCurrentItem(f.tree()->topLevelItem(6));
     f.activate(6);
-    QTest::qWait(50);
+    QTRY_COMPARE(f.dock->findChild<HeadingOutline *>()->currentHeading(), 6);
+    QCOMPARE(f.tree()->topLevelItem(6)->text(1), QStringLiteral("●"));
     const QString directory = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
     if (!directory.isEmpty()) {
         QDir().mkpath(directory);
         QVERIFY(f.window.grab().save(QDir(directory).filePath(QStringLiteral("req003-outline-left.png"))));
         f.dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineRight"))->trigger();
-        QCoreApplication::processEvents();
+        QTest::qWait(100);
+        QTRY_COMPARE(f.dock->findChild<HeadingOutline *>()->currentHeading(), 6);
+        QCOMPARE(f.tree()->topLevelItem(6)->text(1), QStringLiteral("●"));
         QVERIFY(f.window.grab().save(QDir(directory).filePath(QStringLiteral("req003-outline-right.png"))));
     }
 }

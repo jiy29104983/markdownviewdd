@@ -26,8 +26,8 @@
 | Linux Qt 回归 | passed | 六组 CTest，159 项 QtTest，0 失败／跳过 |
 | 发布脚本隔离测试 | passed | mock gh；未操作真实 Release |
 | Linux 真实 QScintilla 控件探针 | passed | 正式 source_navigation.cpp 的独立 Qt 模块，13 场景，0 失败 |
-| GitHub Windows Release／Qt 回归 | blocked | 首轮 DLL 编译成功，1 项新增回归失败；修复后重新验证 |
-| Windows Artifact | not run | 待工作流产物生成及下载校验 |
+| GitHub Windows Release／Qt 回归 | passed | 0915c5c；工作流 34804714869；Qt 5.15.2／MSVC v142／x64；159 项通过 |
+| Windows Artifact | passed | GitHub digest、包内 SHA256、3 个文件、PE32+ x64、两项导出入口均通过 |
 | 真实 Windows notepad-- | not verified | 由用户验证加载、实际源码跳转、键鼠、主题／DPI 与设备性能 |
 
 当前六组计数：lifecycle 13、document identity 40、multi-window 8、diagnostics 6、font 62、outline 30。
@@ -119,3 +119,30 @@ bash tests/release_publish_test.sh
 修复在 `actionTriggered` 阶段记录用户期望的 sliderPosition，延迟交付时核对文档、版本
 和交互代次，并恢复该用户目标，避免把中途旧布局写入当作本次用户意图。新增模拟旧布局
 抢先写回的独立回归，保留 Windows 原失败断言。修复后的云端结果另行记录。
+
+## 修复后 Windows 与 Artifact 结果
+
+提交 `0915c5c99066e4210e77722e977fb68b15bcdb13` 对应工作流 `34804714869`，
+2026-09-14 04:06:41 UTC 完成为 `success`。环境为 Windows 2022、Qt 5.15.2、
+MSVC v142、x64。Release DLL、六组 Qt 回归、发布脚本隔离测试、打包及 Artifact 上传均成功。
+普通 main 构建按既有条件跳过标签版本检查和正式 Release job；本次没有发布 Release。
+
+下载诊断 Artifact 并核对摘要后确认 Windows 原始 QtTest 计数：lifecycle 13、
+document identity 40、multi-window 8、diagnostics 6、font 62、outline 30，共 159 项，
+0 失败、0 跳过。原失败用例和新增时序回归均通过。
+
+候选包：`markdownviewdd-v0.2.8-windows-x64-0915c5c`。
+
+- 外层 Artifact SHA256：`91d2a88371983222339898aa31407aa7ac06184466ad17db86bb60b913f26fa7`，与 GitHub digest 一致。
+- 包内 ZIP SHA256：`b932da8dcb7d48bffc6dd3cafc7f908c913455cfccbf8cd412a1df9dded4fe60`，与同包校验文件一致。
+- ZIP 仅包含 `plugin/markdownviewdd.dll`、`README.md`、`LICENSE`。
+- DLL 为 PE32+ x86-64，276992 字节，包含 `NDD_PROC_IDENTIFY` 和 `NDD_PROC_MAIN`。
+- DLL SHA256：`e806fe97f851068004044ef5ae4ba61378384ef24a10542695b408d7c4433b4c`。
+- DLL 未导入 QScintilla／qmyedit 运行库；Qt 依赖沿用宿主提供的运行库。
+- 诊断 Artifact SHA256：`7b4726c27a56119469793bfa997ca9d10099d53a0c43ac436f52c8d661519e7b`，与 GitHub digest 一致。
+
+本地包及检查结果位于 `build/req003/windows-0915c5c/`，诊断及截图位于
+`build/req003/windows-diagnostics-0915c5c/`。Artifact 保留期为既定 14 天。
+
+实现方代码、Linux、Windows 工作流及 Artifact 验证已完成。真实 Windows notepad-- 的
+加载和手工操作仍为 `not verified`，由用户按测试说明执行；没有以模拟测试代替真机验收。
