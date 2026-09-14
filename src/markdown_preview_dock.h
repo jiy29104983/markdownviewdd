@@ -1,6 +1,7 @@
 #pragma once
 
 #include "preview_status.h"
+#include "heading_index.h"
 
 #include <QByteArray>
 #include <QDockWidget>
@@ -14,6 +15,8 @@
 #include <functional>
 
 class QAbstractScrollArea;
+class HeadingOutline;
+class QSplitter;
 class QLabel;
 class QComboBox;
 class QLayout;
@@ -64,8 +67,19 @@ public:
                                   const QString &targetPath,
                                   QString *errorMessage = nullptr);
     void setUrlOpener(UrlOpener opener);
+    void setHeadingSnapshot(const QVector<HeadingRecord> &headings,
+                            QWidget *editor, quint64 version);
+    void setOutlineStatus(const PreviewStatus &status);
+    bool navigateHeading(const HeadingRecord &heading);
+    bool hasNavigationTarget() const { return m_hasNavigationTarget; }
+    void releaseNavigationTarget();
+    void setNavigationFeedback(const QString &message);
+    QVector<HeadingRecord> headings() const;
+
 
 signals:
+    void navigationTargetReleased();
+    void headingActivated(const HeadingRecord &heading);
     void nativeZoomChanged(qreal zoom);
     void refreshRequested();
     void refreshModeChanged(RefreshMode mode);
@@ -82,6 +96,10 @@ private slots:
 
 private:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void updateCurrentHeading();
+    void restoreNavigationTarget();
+    void preserveLayoutTarget();
+    void setOutlineOnRight(bool right);
     QAbstractScrollArea *activeScrollArea() const;
     void connectNativeScrollBar(QScrollBar *scrollBar);
     void trackNativePreview(QWidget *previewWindow);
@@ -100,6 +118,15 @@ private:
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
+    HeadingOutline *m_outline = nullptr;
+    QSplitter *m_splitter = nullptr;
+    QWidget *m_previewContainer = nullptr;
+    QTimer *m_headingTimer = nullptr;
+    QMetaObject::Connection m_headingScrollConnection;
+    HeadingRecord m_navigationTarget;
+    bool m_hasNavigationTarget = false;
+    bool m_outlineOnRight = false;
+    int m_outlineWidth = 180;
     QTextBrowser *m_browser = nullptr;
     QLayout *m_contentLayout = nullptr;
     QLabel *m_documentLabel = nullptr;

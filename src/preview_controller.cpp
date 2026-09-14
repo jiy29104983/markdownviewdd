@@ -12,6 +12,7 @@
 #include <QEvent>
 #include <QFileInfo>
 #include <QKeySequence>
+#include <QKeyEvent>
 #include <QMainWindow>
 #include <QMenu>
 #include <QMessageBox>
@@ -57,6 +58,18 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     m_renderTimer->setSingleShot(true);
     m_renderTimer->setInterval(kMinimumRenderDebounceMs);
 
+    m_sourceNavigationTimer = new QTimer(this);
+    m_sourceNavigationTimer->setSingleShot(true);
+    m_sourceNavigationTimer->setInterval(32);
+    connect(m_sourceNavigationTimer, &QTimer::timeout, this, [this]() {
+        if (m_dock && m_dock->hasNavigationTarget() && isPreviewCurrent() &&
+            m_sourceNavigationTarget.editor == m_editor &&
+            m_sourceNavigationTarget.version == m_contentVersion) {
+            const HeadingRecord target = m_sourceNavigationTarget;
+            navigateOutlineHeading(target);
+        }
+    });
+
     m_pollTimer = new QTimer(this);
     m_pollTimer->setInterval(kEditorFallbackPollIntervalMs);
 
@@ -69,6 +82,12 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
     connect(m_pollTimer, &QTimer::timeout, this, &PreviewController::pollEditor);
     connect(m_hostEventTimer, &QTimer::timeout,
             this, &PreviewController::synchronizeFromHostEvent);
+    connect(m_dock, &MarkdownPreviewDock::headingActivated,
+            this, &PreviewController::navigateOutlineHeading);
+    connect(m_dock, &MarkdownPreviewDock::navigationTargetReleased, this, [this]() {
+        m_sourceNavigationTimer->stop();
+        m_sourceNavigationTarget = HeadingRecord();
+    });
     connect(m_dock, &MarkdownPreviewDock::nativeZoomChanged, this, [this](qreal zoom) {
         m_previewZoom = zoom;
     });
@@ -213,6 +232,25 @@ bool PreviewController::installMenu(QMenu *rootMenu)
 
 bool PreviewController::eventFilter(QObject *watched, QEvent *event)
 {
+    QWidget *input = qobject_cast<QWidget *>(watched);
+    if (event && input && m_editor && m_dock && m_syncScrolling &&
+        (input == m_editor || m_editor->isAncestorOf(input)) &&
+        m_dock->hasNavigationTarget()) {
+        const bool scrollKey = event->type() == QEvent::KeyPress &&
+            (static_cast<QKeyEvent *>(event)->key() == Qt::Key_Up ||
+             static_cast<QKeyEvent *>(event)->key() == Qt::Key_Down ||
+             static_cast<QKeyEvent *>(event)->key() == Qt::Key_PageUp ||
+             static_cast<QKeyEvent *>(event)->key() == Qt::Key_PageDown ||
+             static_cast<QKeyEvent *>(event)->key() == Qt::Key_Home ||
+             static_cast<QKeyEvent *>(event)->key() == Qt::Key_End);
+        if (isPreviewCurrent() && (event->type() == QEvent::Wheel || scrollKey ||
+            (event->type() == QEvent::MouseButtonPress && qobject_cast<QScrollBar *>(input)))) {
+            ++m_navigationGeneration;
+            m_dock->releaseNavigationTarget();
+            m_hasLastEditorScrollState = false;
+            QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
+        }
+    }
     if (m_hostAdapter->isFilePathChangeEvent(event)) {
         if (watched == m_editor) {
             handleFilePathChanged();
@@ -467,6 +505,7 @@ void PreviewController::publishStatus()
         m_manualAction->setChecked(status.mode == RefreshMode::Manual);
     }
     if (m_dock) {
+        m_dock->setOutlineStatus(status);
         m_dock->setRefreshMode(status.mode);
         m_dock->setDocumentInfo(status.filePath, -1, !status.activeEditor.isNull());
         QString text;
@@ -565,9 +604,6 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         publishStatus();
         return false;
     }
-    const qint64 operationDurationMs = elapsed.elapsed();
-    Diagnostics::write(this, QStringLiteral("renderNow completed in %1 ms")
-                           .arg(operationDurationMs));
 
     synchronizeActiveEditor();
     if (m_editor != renderEditor || m_contentVersion != renderVersion) {
@@ -583,6 +619,44 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         return false;
     }
 
+    PreviewCacheEntry *indexed = previewCacheEntry(renderEditor.data());
+    if (indexed && (performedFullRender || indexed->headingVersion != renderVersion)) {
+        const QPointer<QTextEdit> textEdit = indexed->previewTextEdit;
+        QVector<HeadingRecord> headings = renderedHeadings(
+            textEdit ? textEdit->document() : nullptr, renderEditor, renderVersion);
+        QString mappingError;
+        if (!headings.isEmpty()) {
+            const SourceReadResult source = m_hostAdapter->readSource(renderEditor);
+            synchronizeActiveEditor();
+            if (!renderEditor || renderEditor != m_editor || renderVersion != m_contentVersion || !textEdit) {
+                if (performedFullRender) {
+                    if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor)) {
+                        entry->renderedVersion = 0;
+                        entry->headingVersion = 0;
+                        entry->headings.clear();
+                    }
+                }
+                showCachedPreviewOrMessage();
+                publishStatus();
+                QTimer::singleShot(0, this, &PreviewController::scheduleAutomaticRender);
+                return false;
+            }
+            if (!source.available) {
+                mappingError = source.error;
+            } else if (!mapHeadingSource(&headings, source.text)) {
+                mappingError = tr("标题与源码的对应关系尚不能可靠确认。仅定位预览。");
+            }
+        }
+        // Never hold a cache-entry pointer across a host callback.
+        if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor)) {
+            entry->headings = headings;
+            entry->mappingError = mappingError;
+            entry->headingVersion = renderVersion;
+        }
+    }
+    const qint64 operationDurationMs = elapsed.elapsed();
+    Diagnostics::write(this, QStringLiteral("renderNow completed in %1 ms")
+                           .arg(operationDurationMs));
     if (performedFullRender) {
         m_lastRenderDurationMs = operationDurationMs;
         if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor.data())) {
@@ -600,6 +674,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         entry->snapshotFilePath = filePath;
         entry->hasRendered = true;
         entry->error.clear();
+        m_dock->setHeadingSnapshot(entry->headings, renderEditor, renderVersion);
     }
     m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
     m_dock->setDocumentInfo(filePath, -1);
@@ -690,7 +765,8 @@ void PreviewController::setSyncScrolling(bool enabled)
 void PreviewController::scrollEditorToRatio(double ratio)
 {
     synchronizeActiveEditor();
-    if (!isPreviewCurrent() || !m_dock->isVisible() || !m_syncScrolling) {
+    if (!isPreviewCurrent() || !m_dock->isVisible() || !m_syncScrolling ||
+        m_dock->hasNavigationTarget()) {
         return;
     }
 
@@ -798,6 +874,7 @@ void PreviewController::attachEditor(QWidget *editor)
         m_editorScrollRangeConnection = QMetaObject::Connection();
     }
 
+    ++m_navigationGeneration;
     m_editor = editor;
     observeEditor(editor);
     m_editorFilePath = currentFilePath();
@@ -822,7 +899,13 @@ void PreviewController::attachEditor(QWidget *editor)
             m_hostAdapter->connectEditorScrollChanged(
             m_editor.data(), this, [this]() {
                 if (!m_syncingEditorScroll) {
-                    updateSynchronizedScroll();
+                    if (m_dock && m_dock->hasNavigationTarget() && isPreviewCurrent() &&
+                        m_sourceNavigationTarget.editor == m_editor &&
+                        m_sourceNavigationTarget.version == m_contentVersion) {
+                        m_sourceNavigationTimer->start();
+                    } else {
+                        updateSynchronizedScroll();
+                    }
                 }
             });
         m_editorScrollValueConnection = scrollConnections.valueChanged;
@@ -970,6 +1053,7 @@ void PreviewController::markPreviewPending()
     if (!m_editor) {
         return;
     }
+    ++m_navigationGeneration;
     m_contentVersion = ++m_nextContentVersion;
     if (PreviewCacheEntry *entry = previewCacheEntry(m_editor.data())) {
         entry->contentVersion = m_contentVersion;
@@ -1018,6 +1102,7 @@ void PreviewController::showCachedPreviewOrMessage()
             m_renderedVersion = entry.renderedVersion;
             m_previewState = !entry.error.isEmpty() ? PreviewState::Failed
                 : current ? PreviewState::Ready : PreviewState::Pending;
+            m_dock->setHeadingSnapshot(entry.headings, m_editor, entry.renderedVersion);
             touchPreviewCache(m_editor.data());
             return;
         }
@@ -1240,7 +1325,8 @@ void PreviewController::prunePreviewCache()
 void PreviewController::updateSynchronizedScroll()
 {
     synchronizeActiveEditor();
-    if (!isPreviewCurrent() || !m_dock->isVisible() || !m_syncScrolling) {
+    if (!isPreviewCurrent() || !m_dock->isVisible() || !m_syncScrolling ||
+        m_dock->hasNavigationTarget()) {
         return;
     }
 
@@ -1308,4 +1394,74 @@ bool PreviewController::isMarkdownDocument(const QString &filePath) const
         QStringLiteral("mkdn"), QStringLiteral("mdwn")
     };
     return extensions.contains(suffix);
+}
+
+void PreviewController::navigateOutlineHeading(const HeadingRecord &requestedHeading)
+{
+    const HeadingRecord heading = requestedHeading;
+    synchronizeActiveEditor();
+    if (!m_dock || !heading.editor || heading.editor != m_editor ||
+        heading.version != m_renderedVersion || m_renderInProgress) {
+        return;
+    }
+    const PreviewCacheEntry *entry = previewCacheEntry(m_editor);
+    if (!entry) {
+        return;
+    }
+    // Copy trusted records; never accept a source location supplied by the UI.
+    HeadingRecord target;
+    QString mappingError = entry->mappingError;
+    for (const HeadingRecord &record : entry->headings) {
+        if (record.blockPosition == heading.blockPosition && record.version == heading.version &&
+            record.editor == heading.editor && record.level == heading.level && record.text == heading.text) {
+            target = record;
+            break;
+        }
+    }
+    if (!target.editor || !m_dock->navigateHeading(target)) {
+        return;
+    }
+    const quint64 generation = ++m_navigationGeneration;
+    m_sourceNavigationTimer->stop();
+    m_sourceNavigationTarget = HeadingRecord();
+    if (!isPreviewCurrent()) {
+        m_dock->setNavigationFeedback(tr("已定位当前预览。请先刷新，再让源码与预览共同跳转。"));
+        return;
+    }
+    if (target.sourceLine < 0 || target.sourceOffset < 0) {
+        m_dock->setNavigationFeedback(mappingError.isEmpty()
+            ? tr("已定位预览；源码定位能力不可用。") : mappingError);
+        return;
+    }
+    const QPointer<PreviewController> self(this);
+    const QPointer<QWidget> editor = target.editor;
+    const quint64 version = target.version;
+    auto valid = [self, editor, version, generation]() {
+        return self && editor && self->m_navigationGeneration == generation &&
+            self->m_editor == editor && self->resolveCurrentEditor() == editor &&
+            self->m_contentVersion == version && self->m_renderedVersion == version &&
+            self->isPreviewCurrent();
+    };
+    m_syncingEditorScroll = true;
+    const SourceNavigationResult result = m_hostAdapter->navigateSource(
+        editor, target.sourceLine, target.sourceOffset, valid);
+    if (!self) {
+        return;
+    }
+    m_syncingEditorScroll = false;
+    if (!valid()) {
+        synchronizeActiveEditor();
+        if (m_dock && m_editor == editor) {
+            m_dock->setNavigationFeedback(tr("文档已变化，本次源码定位已停止。"));
+        }
+        return;
+    }
+    if (result.reached) {
+        m_sourceNavigationTarget = target;
+    }
+    m_dock->setNavigationFeedback(result.reached ? QString() : result.error);
+    // Its snapshot-bound target remains active through queued range changes,
+    // ratio restoration and fallback polling until a new user scroll.
+    Diagnostics::write(this, QStringLiteral("outline source navigation reached=%1, line=%2")
+        .arg(result.reached).arg(target.sourceLine));
 }

@@ -37,6 +37,17 @@ public:
     {
     }
 
+    SourceReadResult readSource(QWidget *editor) const override
+    {
+        return readAccessibleSource(editor);
+    }
+
+    SourceNavigationResult navigateSource(QWidget *editor, int line, int offset,
+        const std::function<bool()> &stillCurrent) override
+    {
+        return navigateAccessibleSource(editor, line, offset, stillCurrent);
+    }
+
     SavedMarkdownFont savedMarkdownFont() const override
     {
         return readSavedMarkdownFont(m_fontPaths);

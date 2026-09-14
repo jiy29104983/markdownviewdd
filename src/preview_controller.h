@@ -3,6 +3,7 @@
 #include "ndd_plugin_api.h"
 #include "preview_status.h"
 #include "saved_markdown_font.h"
+#include "heading_index.h"
 
 #include <QByteArray>
 #include <QList>
@@ -54,6 +55,7 @@ private slots:
     void scrollEditorToRatio(double ratio);
     void exportCurrentHtml();
     void showAbout();
+    void navigateOutlineHeading(const HeadingRecord &heading);
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
@@ -75,6 +77,9 @@ private:
         QString error;
         quint64 contentVersion = 0;
         quint64 renderedVersion = 0;
+        quint64 headingVersion = 0;
+        QVector<HeadingRecord> headings;
+        QString mappingError;
     };
 
     void beginPreviewOpen();
@@ -127,6 +132,8 @@ private:
     QTimer *m_pollTimer = nullptr;
     QTimer *m_hostEventTimer = nullptr;
     QTimer *m_renderTimer = nullptr;
+    QTimer *m_sourceNavigationTimer = nullptr;
+    HeadingRecord m_sourceNavigationTarget;
     SavedMarkdownFont m_readingFont;
     qreal m_previewZoom = 1.0;
     bool m_previewOpen = false;
@@ -137,6 +144,7 @@ private:
     int m_lastEditorScrollValue = 0;
     bool m_hasLastEditorScrollState = false;
     bool m_syncingEditorScroll = false;
+    quint64 m_navigationGeneration = 0;
     QMetaObject::Connection m_activeEditorConnection;
     QMetaObject::Connection m_editorScrollValueConnection;
     QMetaObject::Connection m_editorScrollRangeConnection;

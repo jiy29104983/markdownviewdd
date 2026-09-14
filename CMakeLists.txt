@@ -16,6 +16,9 @@ add_library(markdownview SHARED
     src/diagnostics.h
     src/saved_markdown_font.cpp
     src/saved_markdown_font.h
+    src/source_navigation.cpp
+    src/heading_index.cpp
+    src/heading_outline.cpp
     src/host_adapter.cpp
     src/host_adapter.h
     src/markdown_preview_dock.cpp
@@ -66,6 +69,9 @@ if(BUILD_TESTING)
         src/diagnostics.h
         src/saved_markdown_font.cpp
         src/saved_markdown_font.h
+        src/source_navigation.cpp
+        src/heading_index.cpp
+        src/heading_outline.cpp
         src/host_adapter.cpp
         src/host_adapter.h
         src/markdown_preview_dock.cpp
@@ -104,6 +110,9 @@ if(BUILD_TESTING)
         src/diagnostics.h
         src/saved_markdown_font.cpp
         src/saved_markdown_font.h
+        src/source_navigation.cpp
+        src/heading_index.cpp
+        src/heading_outline.cpp
         src/host_adapter.cpp
         src/host_adapter.h
         src/markdown_preview_dock.cpp
@@ -145,6 +154,9 @@ if(BUILD_TESTING)
         src/diagnostics.h
         src/saved_markdown_font.cpp
         src/saved_markdown_font.h
+        src/source_navigation.cpp
+        src/heading_index.cpp
+        src/heading_outline.cpp
         src/host_adapter.cpp
         src/host_adapter.h
         src/markdown_preview_dock.cpp
@@ -216,6 +228,9 @@ if(BUILD_TESTING)
         tests/saved_markdown_font_test.cpp
         src/diagnostics.cpp
         src/saved_markdown_font.cpp
+        src/source_navigation.cpp
+        src/heading_index.cpp
+        src/heading_outline.cpp
         src/host_adapter.cpp
         src/markdown_preview_dock.cpp
         src/preview_controller.cpp
@@ -237,6 +252,34 @@ if(BUILD_TESTING)
     set_tests_properties(markdownview_font_tests PROPERTIES
         LABELS "behavior;font" TIMEOUT 90)
 
+    add_executable(markdownview_outline_tests
+        tests/heading_outline_test.cpp
+        src/diagnostics.cpp
+        src/saved_markdown_font.cpp
+        src/source_navigation.cpp
+        src/heading_index.cpp
+        src/heading_outline.cpp
+        src/host_adapter.cpp
+        src/markdown_preview_dock.cpp
+        src/preview_controller.cpp
+        resources/markdownview.qrc)
+    target_include_directories(markdownview_outline_tests PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(markdownview_outline_tests PRIVATE
+        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
+    target_compile_definitions(markdownview_outline_tests PRIVATE
+        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+    if(MSVC)
+        target_compile_options(markdownview_outline_tests PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_outline_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME markdownview_outline_tests
+        COMMAND markdownview_outline_tests -platform offscreen -v1
+            -o markdownview_outline_tests.txt,txt)
+    set_tests_properties(markdownview_outline_tests PROPERTIES
+        LABELS "behavior;outline" TIMEOUT 90)
+
     if(WIN32)
         # Qt 5.15's offscreen backend uses the basic font database, which
         # otherwise searches Qt's empty lib/fonts directory on Windows.
@@ -250,6 +293,7 @@ if(BUILD_TESTING)
             markdownview_multi_window_tests
             markdownview_diagnostics_tests
             markdownview_font_tests
+            markdownview_outline_tests
             PROPERTIES ENVIRONMENT "QT_QPA_FONTDIR=${windows_font_directory}")
     endif()
 endif()

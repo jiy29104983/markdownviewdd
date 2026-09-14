@@ -19,6 +19,12 @@ if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/saved_markdown_font.cpp")
     target_sources(refresh_benchmark PRIVATE
         "${MARKDOWNVIEW_SOURCE_DIR}/src/saved_markdown_font.cpp")
 endif()
+if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_outline.cpp")
+    target_sources(refresh_benchmark PRIVATE
+        "${MARKDOWNVIEW_SOURCE_DIR}/src/source_navigation.cpp"
+        "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_index.cpp"
+        "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_outline.cpp")
+endif()
 target_include_directories(refresh_benchmark PRIVATE "${MARKDOWNVIEW_SOURCE_DIR}/src")
 target_link_libraries(refresh_benchmark PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets)
 target_compile_definitions(refresh_benchmark PRIVATE NDD_MARKDOWN_VIEW_VERSION="benchmark")

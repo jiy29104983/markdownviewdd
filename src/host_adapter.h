@@ -1,6 +1,7 @@
 #pragma once
 
 #include "saved_markdown_font.h"
+#include "source_navigation.h"
 
 #include <QString>
 #include <QMetaObject>
@@ -39,6 +40,15 @@ public:
 
     virtual ~HostAdapter() = default;
 
+    virtual SourceReadResult readSource(QWidget *) const
+    {
+        return {QString(), QStringLiteral("宿主未提供源码读取能力。"), false};
+    }
+    virtual SourceNavigationResult navigateSource(QWidget *, int, int,
+        const std::function<bool()> &)
+    {
+        return {false, QStringLiteral("宿主未提供标题源行定位能力。")};
+    }
     virtual SavedMarkdownFont savedMarkdownFont() const { return defaultMarkdownFont(); }
     virtual QWidget *currentEditor() const = 0;
     virtual QMetaObject::Connection connectActiveEditorChanged(

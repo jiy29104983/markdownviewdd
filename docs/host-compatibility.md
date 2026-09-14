@@ -76,3 +76,20 @@ notepad-- v3.8.3 会为每个 `CCNotePad` 窗口分别加载插件菜单并调�
 升级兼容性基线时，应重新核对官方 Gitee release、标签和提交，检查上述 ABI 与宿主调用
 点，并同步更新本文件、README 中的运行环境说明及受影响的构建或发布文档。不能把仅有
 静态检查或编译成功的版本记录为已经完成真实宿主兼容性验证。
+
+## REQ-003 源码读取与标题源行定位
+
+固定基线已包含 `QsciAccessibleScintillaBase`：其构造注册路径由 QScintilla 初始化，
+提供 Qt `QAccessibleTextInterface`。插件经公共 Qt 接口读取当前缓冲区，调用
+`ensureLineVisible(int)` 元对象槽，再用 `scrollToSubstring()` 和 `offsetAtPoint()` 定位。
+`text()`、`SendScintilla()`、`setFirstVisibleLine()` 本身不是可直接 invokeMethod 的槽，
+也不能假设宿主静态链接的 QScintilla C++ 符号可由插件导入。
+
+该基线 `SciAccessibility.cpp` 中 `characterRect()` 把位置传入错误的 Scintilla 参数，
+不能作为可靠坐标来源；当前适配器不使用该方法。接口缺失、字符计数不一致或反查失败时，
+源码导航明确返回失败，保留预览内导航。源码目标被折叠隐藏时会展开必要的源码祖先，
+这与大纲树不自动展开的交互约定分别处理。
+
+`tests/host_capability/` 提供可选的真实 QScintilla 控件探针：主程序链接固定宿主库，
+通过独立底层行号／坐标断言验证仅依赖 Qt 的动态模块。它不加入不具备宿主源码的云端
+标准 CTest，也不能替代真实 notepad-- DLL 加载、DPI、事件时序及键鼠操作验证。

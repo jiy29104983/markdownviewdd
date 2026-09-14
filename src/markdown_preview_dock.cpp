@@ -1,9 +1,14 @@
 #include "markdown_preview_dock.h"
 
 #include "diagnostics.h"
+#include "heading_outline.h"
 #include "saved_markdown_font.h"
 
 #include <QAbstractSlider>
+#include <QActionGroup>
+#include <QMenu>
+#include <QSplitter>
+#include <QSplitterHandle>
 #include <QApplication>
 #include <QDesktopServices>
 #include <QClipboard>
@@ -39,6 +44,8 @@
 #include <QVBoxLayout>
 
 #include <utility>
+#include <algorithm>
+#include <iterator>
 
 namespace {
 constexpr int kLayoutSyncDelayMs = 32;
@@ -295,8 +302,73 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_feedbackLabel->setMargin(8);
     m_feedbackLabel->hide();
     layout->addWidget(m_feedbackLabel);
-    layout->addWidget(m_browser, 1);
-    m_contentLayout = layout;
+    m_splitter = new QSplitter(Qt::Horizontal, container);
+    m_splitter->setObjectName(QStringLiteral("NddMarkdownOutlineSplitter"));
+    m_splitter->setChildrenCollapsible(false);
+    m_outline = new HeadingOutline(m_splitter);
+    m_previewContainer = new QWidget(m_splitter);
+    auto *previewLayout = new QVBoxLayout(m_previewContainer);
+    previewLayout->setContentsMargins(0, 0, 0, 0);
+    previewLayout->addWidget(m_browser);
+    m_contentLayout = previewLayout;
+    m_splitter->addWidget(m_outline);
+    m_splitter->addWidget(m_previewContainer);
+    m_splitter->setStretchFactor(0, 0);
+    m_splitter->setStretchFactor(1, 1);
+    m_splitter->setSizes({m_outlineWidth, 400});
+    m_splitter->handle(1)->installEventFilter(this);
+    layout->addWidget(m_splitter, 1);
+    m_headingTimer = new QTimer(this);
+    m_headingTimer->setSingleShot(true);
+    m_headingTimer->setInterval(kLayoutSyncDelayMs);
+    connect(m_headingTimer, &QTimer::timeout, this, &MarkdownPreviewDock::updateCurrentHeading);
+    connect(m_outline, &HeadingOutline::headingActivated, this,
+            &MarkdownPreviewDock::headingActivated);
+    connect(m_splitter, &QSplitter::splitterMoved, this, [this]() {
+        m_outlineWidth = m_outline->width();
+        m_layoutSyncTimer->start();
+        m_headingTimer->start();
+    });
+    auto *settings = new QToolButton(toolbar);
+    settings->setText(tr("设置"));
+    settings->setObjectName(QStringLiteral("NddMarkdownOutlineSettings"));
+    settings->setAccessibleName(tr("大纲设置"));
+    settings->setPopupMode(QToolButton::InstantPopup);
+    auto *settingsMenu = new QMenu(settings);
+    auto *visible = settingsMenu->addAction(tr("显示标题大纲"));
+    visible->setObjectName(QStringLiteral("NddMarkdownOutlineVisible"));
+    visible->setCheckable(true);
+    visible->setChecked(true);
+    connect(visible, &QAction::toggled, this, [this](bool show) {
+        preserveLayoutTarget();
+        m_outline->setVisible(show);
+        m_layoutSyncTimer->start();
+    });
+    auto *sideGroup = new QActionGroup(settingsMenu);
+    for (bool right : {false, true}) {
+        auto *side = settingsMenu->addAction(right ? tr("大纲在正文右侧") : tr("大纲在正文左侧"));
+        side->setObjectName(right ? QStringLiteral("NddMarkdownOutlineRight") : QStringLiteral("NddMarkdownOutlineLeft"));
+        side->setCheckable(true);
+        side->setChecked(!right);
+        sideGroup->addAction(side);
+        connect(side, &QAction::triggered, this, [this, right]() { setOutlineOnRight(right); });
+    }
+    settingsMenu->addSeparator();
+    for (int change : {-40, 40}) {
+        auto *width = settingsMenu->addAction(change < 0 ? tr("缩窄大纲") : tr("加宽大纲"));
+        width->setObjectName(change < 0 ? QStringLiteral("NddMarkdownOutlineNarrower")
+                                       : QStringLiteral("NddMarkdownOutlineWider"));
+        connect(width, &QAction::triggered, this, [this, change]() {
+            preserveLayoutTarget();
+            m_outlineWidth = qBound(100, m_outline->width() + change, qMax(100, m_splitter->width() - 100));
+            const int previewWidth = qMax(100, m_splitter->width() - m_outlineWidth);
+            m_splitter->setSizes(m_outlineOnRight ? QList<int>{previewWidth, m_outlineWidth}
+                                                 : QList<int>{m_outlineWidth, previewWidth});
+            m_layoutSyncTimer->start();
+        });
+    }
+    settings->setMenu(settingsMenu);
+    toolbarLayout->addWidget(settings);
     setWidget(container);
 
     connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
@@ -316,6 +388,10 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
             this, &MarkdownPreviewDock::openLink);
     connect(m_layoutSyncTimer, &QTimer::timeout, this, [this]() {
         if (!isVisible() || !m_syncButton) {
+            return;
+        }
+        if (m_hasNavigationTarget) {
+            restoreNavigationTarget();
             return;
         }
         if (m_hasPreservedScrollRatio) {
@@ -356,6 +432,8 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
 MarkdownPreviewDock::~MarkdownPreviewDock()
 {
     m_isDestroying = true;
+    m_headingTimer->stop();
+    disconnect(m_headingScrollConnection);
     if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();
     }
@@ -413,7 +491,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
             m_nativeTextEdit->removeEventFilter(this);
         }
         previewWindow->hide();
-        previewWindow->setParent(widget(), Qt::Widget);
+        previewWindow->setParent(m_previewContainer, Qt::Widget);
 
         m_contentLayout->addWidget(previewWindow);
         m_nativePreview = previewWindow;
@@ -430,6 +508,10 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_preservedScrollEditor = nullptr;
         m_preservedScrollVersion = 0;
         m_hasPreservedScrollRatio = false;
+    }
+    if (m_previewEditor != editor || m_previewContentVersion != contentVersion) {
+        releaseNavigationTarget();
+        m_outline->clearSnapshot();
     }
     m_nativePreviewEditor = editor;
     m_currentFilePath = filePath;
@@ -454,6 +536,8 @@ void MarkdownPreviewDock::invalidatePreview()
     m_pressedLink = QUrl();
     m_previewEditor = nullptr;
     m_previewContentVersion = 0;
+    releaseNavigationTarget();
+    m_outline->clearSnapshot();
 }
 
 void MarkdownPreviewDock::markPreviewStale()
@@ -524,6 +608,8 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     m_preservedScrollVersion = 0;
     m_hasPreservedScrollRatio = false;
     m_currentNativePreviewObject = nullptr;
+    releaseNavigationTarget();
+    m_outline->clearSnapshot();
     m_pressedLink = QUrl();
     if (m_layoutSyncTimer) {
         m_layoutSyncTimer->stop();
@@ -646,7 +732,7 @@ bool MarkdownPreviewDock::nativeScrollRatioFor(QWidget *editor,
 void MarkdownPreviewDock::preserveNativeScrollRatio(
     QWidget *editor, quint64 contentVersion, double ratio)
 {
-    if (!editor || m_nativePreviewEditor != editor || !m_nativeTextEdit ||
+    if (m_hasNavigationTarget || !editor || m_nativePreviewEditor != editor || !m_nativeTextEdit ||
         !m_syncButton || (m_syncButton->isChecked() && m_previewIsCurrent) ||
         !qIsFinite(ratio)) {
         return;
@@ -713,7 +799,9 @@ void MarkdownPreviewDock::restyleNativePreview(double ratio)
             interactionGeneration != m_scrollInteractionGeneration) {
             return;
         }
-        if (m_hasPreservedScrollRatio) {
+        if (m_hasNavigationTarget) {
+            restoreNavigationTarget();
+        } else if (m_hasPreservedScrollRatio) {
             restorePreservedScrollRatio();
         } else if (m_previewIsCurrent && m_syncButton->isChecked()) {
             emit previewScrollRangeChanged();
@@ -891,6 +979,9 @@ void MarkdownPreviewDock::changeEvent(QEvent *event)
 
 void MarkdownPreviewDock::scrollToRatio(double ratio)
 {
+    if (m_hasNavigationTarget) {
+        return;
+    }
     QAbstractScrollArea *area = activeScrollArea();
     QScrollBar *bar = area ? area->verticalScrollBar() : nullptr;
     if (!bar || bar->maximum() <= bar->minimum()) {
@@ -993,6 +1084,7 @@ QAbstractScrollArea *MarkdownPreviewDock::activeScrollArea() const
 
 void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
 {
+    disconnect(m_headingScrollConnection);
     m_layoutSyncTimer->stop();
     if (m_nativeScrollConnection) {
         disconnect(m_nativeScrollConnection);
@@ -1007,6 +1099,8 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
         return;
     }
 
+    m_headingScrollConnection = connect(scrollBar, &QAbstractSlider::valueChanged,
+        this, [this]() { m_headingTimer->start(); });
     m_nativeScrollConnection = connect(
         scrollBar, &QAbstractSlider::actionTriggered, this,
         [this, scrollBar](int) {
@@ -1026,7 +1120,7 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
         scrollBar, &QAbstractSlider::rangeChanged, this,
         [this](int, int) {
             if (isVisible() && m_syncButton &&
-                (m_syncButton->isChecked() || m_hasPreservedScrollRatio)) {
+                (m_syncButton->isChecked() || m_hasPreservedScrollRatio || m_hasNavigationTarget)) {
                 m_layoutSyncTimer->start();
             }
         });
@@ -1057,6 +1151,7 @@ void MarkdownPreviewDock::restorePreservedScrollRatio()
 
 void MarkdownPreviewDock::cancelPreservedScroll()
 {
+    releaseNavigationTarget();
     ++m_scrollInteractionGeneration;
     m_preservedScrollEditor = nullptr;
     m_preservedScrollVersion = 0;
@@ -1115,6 +1210,15 @@ void MarkdownPreviewDock::openLink(const QUrl &url)
 
 bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event && m_splitter && watched == m_splitter->handle(1) &&
+        event->type() == QEvent::MouseButtonPress) {
+        preserveLayoutTarget();
+    }
+    if (event && m_nativeTextEdit && watched == m_nativeTextEdit->viewport() &&
+        event->type() == QEvent::Resize) {
+        m_layoutSyncTimer->start();
+        m_headingTimer->start();
+    }
     if (m_handlingNativeWheel) {
         return QDockWidget::eventFilter(watched, event);
     }
@@ -1246,4 +1350,143 @@ QUrl MarkdownPreviewDock::baseUrlForFile(const QString &filePath) const
         directory += QDir::separator();
     }
     return QUrl::fromLocalFile(directory);
+}
+
+QVector<HeadingRecord> MarkdownPreviewDock::headings() const
+{
+    return m_outline->headings();
+}
+
+void MarkdownPreviewDock::setHeadingSnapshot(const QVector<HeadingRecord> &headings,
+                                             QWidget *editor, quint64 version)
+{
+    if (!hasDisplayedPreviewFor(editor, version)) {
+        return;
+    }
+    releaseNavigationTarget();
+    m_outline->setSnapshot(headings, editor, version);
+    m_headingTimer->start();
+}
+
+void MarkdownPreviewDock::setOutlineStatus(const PreviewStatus &status)
+{
+    m_outline->setFreshness(status.activeEditor &&
+        status.activeEditor == status.displayedEditor && status.displayedVersion != 0 &&
+        status.contentVersion != status.displayedVersion);
+}
+
+bool MarkdownPreviewDock::navigateHeading(const HeadingRecord &heading)
+{
+    if (!hasDisplayedPreviewFor(heading.editor, heading.version)) {
+        return false;
+    }
+    bool found = false;
+    for (const HeadingRecord &item : m_outline->headings()) {
+        if (item.blockPosition == heading.blockPosition && item.editor == heading.editor &&
+            item.version == heading.version && item.text == heading.text && item.level == heading.level) {
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        return false;
+    }
+    cancelPreservedScroll();
+    m_navigationTarget = heading;
+    m_hasNavigationTarget = true;
+    restoreNavigationTarget();
+    m_layoutSyncTimer->start();
+    return true;
+}
+
+void MarkdownPreviewDock::releaseNavigationTarget()
+{
+    const bool hadTarget = m_hasNavigationTarget;
+    m_hasNavigationTarget = false;
+    m_navigationTarget = HeadingRecord();
+    if (hadTarget) {
+        emit navigationTargetReleased();
+    }
+}
+
+void MarkdownPreviewDock::restoreNavigationTarget()
+{
+    if (!m_hasNavigationTarget ||
+        !hasDisplayedPreviewFor(m_navigationTarget.editor, m_navigationTarget.version)) {
+        return;
+    }
+    QTextDocument *document = m_nativeTextEdit->document();
+    if (m_navigationTarget.blockPosition < 0 ||
+        m_navigationTarget.blockPosition >= document->characterCount()) {
+        releaseNavigationTarget();
+        return;
+    }
+    QTextCursor cursor(document);
+    cursor.setPosition(m_navigationTarget.blockPosition);
+    QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
+    const int target = bar->value() + m_nativeTextEdit->cursorRect(cursor).top();
+    bar->setValue(qBound(bar->minimum(), target, bar->maximum()));
+    m_headingTimer->start();
+}
+
+void MarkdownPreviewDock::updateCurrentHeading()
+{
+    if (!m_nativeTextEdit || !hasDisplayedPreviewFor(m_previewEditor, m_previewContentVersion)) {
+        return;
+    }
+    QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
+    int position = m_nativeTextEdit->cursorForPosition(QPoint(0, 0)).position();
+    if (bar->maximum() > bar->minimum() && bar->value() == bar->maximum()) {
+        position = m_nativeTextEdit->document()->characterCount() - 1;
+    } else if (!m_outline->headings().isEmpty()) {
+        // cursorForPosition() chooses the nearest block in a top margin. Do not
+        // mark a heading which has not yet crossed the viewport top.
+        const auto &records = m_outline->headings();
+        auto next = std::upper_bound(records.cbegin(), records.cend(), position,
+            [](int value, const HeadingRecord &record) { return value < record.blockPosition; });
+        if (next != records.cbegin()) {
+            const HeadingRecord &heading = *std::prev(next);
+            QTextCursor cursor(m_nativeTextEdit->document());
+            cursor.setPosition(heading.blockPosition);
+            if (m_nativeTextEdit->cursorRect(cursor).top() > 0) {
+                position = heading.blockPosition - 1;
+            }
+        }
+    }
+    m_outline->setCurrentBlock(position);
+}
+
+void MarkdownPreviewDock::preserveLayoutTarget()
+{
+    if (m_hasNavigationTarget || !hasDisplayedPreviewFor(m_previewEditor, m_previewContentVersion)) {
+        return;
+    }
+    cancelPreservedScroll();
+    m_navigationTarget.editor = m_previewEditor;
+    m_navigationTarget.version = m_previewContentVersion;
+    m_navigationTarget.blockPosition = m_nativeTextEdit->cursorForPosition(QPoint(0, 0)).position();
+    m_hasNavigationTarget = true;
+}
+
+void MarkdownPreviewDock::setOutlineOnRight(bool right)
+{
+    if (m_outlineOnRight == right) {
+        return;
+    }
+    preserveLayoutTarget();
+    m_outlineOnRight = right;
+    m_splitter->insertWidget(right ? 1 : 0, m_outline);
+    m_splitter->setStretchFactor(right ? 0 : 1, 1);
+    m_splitter->setStretchFactor(right ? 1 : 0, 0);
+    const int previewWidth = qMax(100, m_splitter->width() - m_outlineWidth);
+    m_splitter->setSizes(right ? QList<int>{previewWidth, m_outlineWidth}
+                              : QList<int>{m_outlineWidth, previewWidth});
+    m_splitter->handle(1)->installEventFilter(this);
+    m_layoutSyncTimer->start();
+}
+
+void MarkdownPreviewDock::setNavigationFeedback(const QString &message)
+{
+    m_feedbackLabel->setText(message);
+    m_feedbackLabel->setVisible(!message.isEmpty());
 }

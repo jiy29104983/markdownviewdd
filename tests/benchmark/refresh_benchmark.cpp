@@ -9,6 +9,7 @@
 #include "saved_markdown_font.h"
 #endif
 #include <QApplication>
+#include <QAction>
 #include <QBuffer>
 #include <QImage>
 #include <QElapsedTimer>
@@ -166,6 +167,11 @@ int main(int argc, char **argv)
             edit->setReadOnly(true);
             layout->addWidget(edit);
             dock.resize(520, 720);
+            if (app.arguments().contains(QStringLiteral("--outline-hidden"))) {
+                if (auto *action = dock.findChild<QAction *>(QStringLiteral("NddMarkdownOutlineVisible"))) {
+                    action->setChecked(false);
+                }
+            }
             dock.show();
             QCoreApplication::processEvents();
             measure(QStringLiteral("parse-setMarkdown"), [&]() { edit->setMarkdown(text); });
@@ -250,6 +256,7 @@ int main(int argc, char **argv)
     QJsonObject result;
     result.insert(QStringLiteral("sample"), sample);
     result.insert(QStringLiteral("layers"), layerMetrics);
+    result.insert(QStringLiteral("outline_hidden"), app.arguments().contains(QStringLiteral("--outline-hidden")));
     if (!layerMetrics) {
         result.insert(QStringLiteral("html_snapshot_bytes"), htmlSnapshotBytes);
     }

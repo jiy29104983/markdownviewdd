@@ -176,3 +176,53 @@ build/refresh-benchmark/refresh_benchmark 100k --layers -platform offscreen
 主题计时包括本轮排队事件和可能发生的布局，不冒充纯样式耗时。
 每项预热一次再采样 20 次，原生滚轮基线缺少本次新增比例修正，比较时需说明行为增量。
 本单性能与分层证据见 [verification-req002-2026-09-12.md](verification-req002-2026-09-12.md)。
+
+## REQ-003 大纲、源码映射与主动导航回归
+
+标准 CTest 新增 `markdownview_outline_tests`，使用 `-L outline` 可单独运行；统一入口
+及 GitHub 工作流会自动发现此组，日志保存在 `build/markdownview_outline_tests.txt`。
+新增覆盖包括 H1～H6、中文／Emoji、重复标题、ATX／Setext、行内格式、围栏与缩进代码、
+引用／列表标题、LF／CRLF／CR、无标题／无快照、双侧定位、旧快照、左右布局与窗口隔离、
+折叠祖先标记、键盘选择、源码读取／导航重入失效、延迟布局和同步开关。标题源行使用
+固定样例的独立行号预期；模拟源码导航再按其文本块核对偏移，不复用产品映射函数计算预期。
+
+500 标题测试预热一次、记录 20 次索引构建／映射／树更新和 20 次双侧激活的中位数、P95；
+它使用 Qt 模拟宿主，不代表真实 Windows 设备性能。可复现样本生成方式：
+
+```bash
+python3 scripts/generate-heading-sample.py
+```
+
+样本默认保存为 `build/req003-headings-500.md`。设置 `MARKDOWNVIEW_SCREENSHOT_DIR`
+时，大纲测试输出 `req003-outline-left.png` 和 `req003-outline-right.png`；云端与其他
+模拟截图一同上传到诊断 Artifact。性能及分层验证结果见
+[REQ-003 验证记录](verification-req003-2026-09-14.md)。
+
+### 可选真实 QScintilla 控件探针
+
+此独立项目使用已构建的固定宿主库，编译阶段不下载依赖、不编译或修改宿主：
+
+```bash
+cmake -S tests/host_capability -B build/host-capability \
+  -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="$VERIFY_QT_PREFIX" \
+  -DHOST_QSCINTILLA_INCLUDE_DIR="$VERIFY_HOST_INCLUDE" \
+  -DHOST_QSCINTILLA_LIBRARY="$VERIFY_HOST_LIBRARY"
+cmake --build build/host-capability --parallel
+build/host-capability/host_probe build/host-capability/libqt_boundary.so -platform offscreen
+```
+
+运行时可通过 `QT_QPA_PLATFORM=offscreen` 设置平台；程序接受动态模块路径一个参数，
+Qt 会先消费 `-platform` 参数。主程序直接使用正确参数的 Scintilla 行号／坐标接口做独立
+断言；动态模块使用正式 `source_navigation.cpp`，只链接 Qt。结果为 JSON，失败返回非零。
+覆盖自动换行、缩放、嵌套折叠、文末、中文／Emoji、重复标题源行、不同换行、多选区及无效能力。
+
+### 真实 Windows 检查（用户执行）
+
+1. 加载候选 DLL，打开 `examples/preview-demo.md` 与 500 标题样本，核对六级标题和重复项。
+2. 设置中切换左右、显隐、拖动宽度并使用键盘宽度菜单；检查刷新次数、模式、缩放和阅读位置。
+3. 激活后确认源码与预览为同一标题并尽量靠顶；图片／表格密集、自动换行、源码折叠、文末和不同缩放都要检查。
+4. 关闭连续同步后激活仍执行本次双侧跳转；重新开启后在源码主动滚动，应恢复编辑器主导。
+5. 手动修改源码而不刷新：显示实际待刷新，激活只移动旧预览；刷新成功后提示消失并恢复双侧定位。
+6. 保持大纲键盘选择，同时滚动预览；当前标记更新但选中项、焦点和折叠状态不变。折叠祖先显示后代提示。
+7. A→B→A、关闭标签、主题／DPI切换、窗口缩放及两个宿主窗口分别操作，检查目标归属和延迟任务。
+8. 保存真机截图／录像、日志和 20 次交互的中位数／P95。尚未执行时记录 `not verified`。
