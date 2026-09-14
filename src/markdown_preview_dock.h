@@ -16,6 +16,7 @@
 
 class QAbstractScrollArea;
 class HeadingOutline;
+class PreviewSearch;
 class QSplitter;
 class QLabel;
 class QComboBox;
@@ -71,6 +72,8 @@ public:
                             QWidget *editor, quint64 version);
     void setOutlineStatus(const PreviewStatus &status);
     bool navigateHeading(const HeadingRecord &heading);
+    bool navigatePreviewPosition(QWidget *editor, quint64 version, int position);
+    void setSearchStatus(const PreviewStatus &status);
     bool hasNavigationTarget() const { return m_hasNavigationTarget; }
     void releaseNavigationTarget();
     void setNavigationFeedback(const QString &message);
@@ -118,6 +121,7 @@ private:
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
+    PreviewSearch *m_search = nullptr;
     HeadingOutline *m_outline = nullptr;
     QSplitter *m_splitter = nullptr;
     QWidget *m_previewContainer = nullptr;

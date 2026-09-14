@@ -506,6 +506,7 @@ void PreviewController::publishStatus()
     }
     if (m_dock) {
         m_dock->setOutlineStatus(status);
+        m_dock->setSearchStatus(status);
         m_dock->setRefreshMode(status.mode);
         m_dock->setDocumentInfo(status.filePath, -1, !status.activeEditor.isNull());
         QString text;

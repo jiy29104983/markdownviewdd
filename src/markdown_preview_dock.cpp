@@ -2,6 +2,7 @@
 
 #include "diagnostics.h"
 #include "heading_outline.h"
+#include "preview_search.h"
 #include "saved_markdown_font.h"
 
 #include <QAbstractSlider>
@@ -271,6 +272,21 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_browser->setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
 
     layout->addWidget(toolbar);
+    m_search = new PreviewSearch(container);
+    layout->addWidget(m_search);
+    auto *searchButton = new QToolButton(toolbar);
+    searchButton->setText(tr("查找"));
+    searchButton->setObjectName(QStringLiteral("NddMarkdownSearchOpen"));
+    searchButton->setToolTip(tr("在预览中查找（Ctrl+F）"));
+    toolbarLayout->addWidget(searchButton);
+    connect(searchButton, &QToolButton::clicked, m_search, &PreviewSearch::openSearch);
+    connect(m_search, &PreviewSearch::navigateRequested,
+            this, &MarkdownPreviewDock::navigatePreviewPosition);
+    connect(m_search, &PreviewSearch::closed, this, [this]() {
+        activeScrollArea()->setFocus(Qt::ShortcutFocusReason);
+    });
+    m_browser->installEventFilter(this);
+    m_browser->viewport()->installEventFilter(this);
     auto *statusRow = new QWidget(container);
     auto *statusLayout = new QVBoxLayout(statusRow);
     statusLayout->setContentsMargins(8, 4, 8, 4);
@@ -400,8 +416,10 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         if (m_browser) {
             applyDocumentStyle(m_browser);
         }
+        m_search->updateHighlights();
     });
     connect(this, &QDockWidget::visibilityChanged, this, [this](bool visible) {
+        m_search->setActive(visible);
         if (!visible) {
             m_layoutSyncTimer->stop();
         }
@@ -418,6 +436,8 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
 MarkdownPreviewDock::~MarkdownPreviewDock()
 {
     m_isDestroying = true;
+    delete m_search;
+    m_search = nullptr;
     m_headingTimer->stop();
     disconnect(m_headingScrollConnection);
     if (m_layoutSyncTimer) {
@@ -518,6 +538,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
 
 void MarkdownPreviewDock::invalidatePreview()
 {
+    m_search->setSnapshot(nullptr, nullptr, 0);
     markPreviewStale();
     m_pressedLink = QUrl();
     m_previewEditor = nullptr;
@@ -585,6 +606,7 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     }
     m_nativeScrollConnection = QMetaObject::Connection();
     m_nativeScrollRangeConnection = QMetaObject::Connection();
+    m_search->setSnapshot(nullptr, nullptr, 0);
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
     m_previewEditor = nullptr;
@@ -763,7 +785,10 @@ void MarkdownPreviewDock::restyleNativePreview(double ratio)
     if (!m_nativeTextEdit || !m_previewEditor || !m_previewContentVersion) {
         return;
     }
-    if (!applyDocumentStyle(m_nativeTextEdit)) {
+    m_search->setFormatting(true);
+    const bool changed = applyDocumentStyle(m_nativeTextEdit);
+    m_search->setFormatting(false);
+    if (!changed) {
         return;
     }
     const quint64 styleGeneration = ++m_styleUpdateGeneration;
@@ -1209,6 +1234,10 @@ void MarkdownPreviewDock::openLink(const QUrl &url)
 
 bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
 {
+    if (m_search && m_search->handleKey(
+            watched == m_browser || watched == m_browser->viewport() ? m_search : watched, event)) {
+        return true;
+    }
     if (event && m_splitter && watched == m_splitter->handle(1) &&
         event->type() == QEvent::MouseButtonPress) {
         preserveLayoutTarget();
@@ -1390,12 +1419,34 @@ bool MarkdownPreviewDock::navigateHeading(const HeadingRecord &heading)
     if (!found) {
         return false;
     }
+    return navigatePreviewPosition(heading.editor, heading.version, heading.blockPosition);
+}
+
+bool MarkdownPreviewDock::navigatePreviewPosition(QWidget *editor, quint64 version, int position)
+{
+    if (!hasDisplayedPreviewFor(editor, version) || position < 0 ||
+        position >= m_nativeTextEdit->document()->characterCount() - 1) {
+        return false;
+    }
     cancelPreservedScroll();
-    m_navigationTarget = heading;
+    m_navigationTarget.editor = editor;
+    m_navigationTarget.version = version;
+    m_navigationTarget.blockPosition = position;
     m_hasNavigationTarget = true;
     restoreNavigationTarget();
     m_layoutSyncTimer->start();
     return true;
+}
+
+void MarkdownPreviewDock::setSearchStatus(const PreviewStatus &status)
+{
+    if (status.activeEditor == status.displayedEditor &&
+        hasDisplayedPreviewFor(status.displayedEditor, status.displayedVersion)) {
+        m_search->setSnapshot(m_nativeTextEdit, status.displayedEditor, status.displayedVersion);
+    } else {
+        m_search->setSnapshot(nullptr, nullptr, 0);
+    }
+    m_search->setStatus(status);
 }
 
 void MarkdownPreviewDock::releaseNavigationTarget()

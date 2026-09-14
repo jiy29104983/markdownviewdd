@@ -11,6 +11,7 @@ SOURCES += \
     src/source_navigation.cpp \
     src/heading_index.cpp \
     src/heading_outline.cpp \
+    src/preview_search.cpp \
     src/host_adapter.cpp \
     src/saved_markdown_font.cpp \
     src/markdown_preview_dock.cpp \
@@ -22,6 +23,7 @@ HEADERS += \
     src/source_navigation.h \
     src/heading_index.h \
     src/heading_outline.h \
+    src/preview_search.h \
     src/host_adapter.h \
     src/saved_markdown_font.h \
     src/markdown_preview_dock.h \
