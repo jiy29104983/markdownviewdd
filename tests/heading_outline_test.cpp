@@ -352,9 +352,6 @@ void HeadingOutlineTest::layoutAndWindowIsolation()
     QVERIFY(!second.dock->findChild<HeadingOutline *>()->isHidden());
     visible->setChecked(true);
     splitter->setSizes({350, 220});
-    const int previousWidth = first.dock->findChild<HeadingOutline *>()->width();
-    first.dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineWider"))->trigger();
-    QVERIFY(first.dock->findChild<HeadingOutline *>()->width() > previousWidth);
     QTest::qWait(80);
     QTextCursor cursor(first.preview()->document()); cursor.setPosition(heading.blockPosition);
     QVERIFY(qAbs(first.preview()->cursorRect(cursor).top()) <= 2);

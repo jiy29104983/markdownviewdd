@@ -353,20 +353,6 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         sideGroup->addAction(side);
         connect(side, &QAction::triggered, this, [this, right]() { setOutlineOnRight(right); });
     }
-    settingsMenu->addSeparator();
-    for (int change : {-40, 40}) {
-        auto *width = settingsMenu->addAction(change < 0 ? tr("缩窄大纲") : tr("加宽大纲"));
-        width->setObjectName(change < 0 ? QStringLiteral("NddMarkdownOutlineNarrower")
-                                       : QStringLiteral("NddMarkdownOutlineWider"));
-        connect(width, &QAction::triggered, this, [this, change]() {
-            preserveLayoutTarget();
-            m_outlineWidth = qBound(100, m_outline->width() + change, qMax(100, m_splitter->width() - 100));
-            const int previewWidth = qMax(100, m_splitter->width() - m_outlineWidth);
-            m_splitter->setSizes(m_outlineOnRight ? QList<int>{previewWidth, m_outlineWidth}
-                                                 : QList<int>{m_outlineWidth, previewWidth});
-            m_layoutSyncTimer->start();
-        });
-    }
     settings->setMenu(settingsMenu);
     toolbarLayout->addWidget(settings);
     setWidget(container);
