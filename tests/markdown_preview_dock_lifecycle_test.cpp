@@ -1,6 +1,7 @@
 #include "markdown_preview_dock.h"
 #include "heading_outline.h"
 #include "preview_search.h"
+#include "preview_ui.h"
 #include <QMainWindow>
 #include <QToolButton>
 #include <QLineEdit>
@@ -62,6 +63,10 @@ private slots:
 
 void MarkdownPreviewDockLifecycleTest::redesignedChromeRetainsState()
 {
+    PreviewUi::IconEngine icon(PreviewUi::Symbol::Float);
+    const QPixmap scaled = icon.scaledPixmap(QSize(16, 16), QIcon::Normal, QIcon::Off, 2.0);
+    QCOMPARE(scaled.size(), QSize(32, 32));
+    QCOMPARE(scaled.devicePixelRatio(), 2.0);
     QMainWindow owner;
     owner.resize(900, 700);
     auto *dock = new MarkdownPreviewDock(&owner);

@@ -74,6 +74,16 @@ public:
         paint(&painter, QRect(QPoint(), size), mode, state);
         return result;
     }
+    void virtual_hook(int id, void *data) override
+    {
+        if (id == QIconEngine::ScaledPixmapHook) {
+            auto *request = static_cast<QIconEngine::ScaledPixmapArgument *>(data);
+            request->pixmap = pixmap(request->size * request->scale, request->mode, request->state);
+            request->pixmap.setDevicePixelRatio(request->scale);
+            return;
+        }
+        QIconEngine::virtual_hook(id, data);
+    }
 private:
     Symbol m_symbol;
     QPointer<QWidget> m_widget;

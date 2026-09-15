@@ -333,3 +333,7 @@ LF／CRLF／CR。另覆盖键盘、上下文菜单、剪贴板失败与重入、
 真实宿主应按[界面方案](requirments/preview-ui-redesign.md)验收标题拖动、按钮附近拖动、
 明暗主题／宿主字体、100%／125%／150%／200% DPI 及跨屏移动。模拟窗口与 Windows 编译
 不代替这些验收。分层结果见[本轮验证记录](verification-ui-redesign-2026-09-15.md)。
+
+界面生命周期用例也检查图标 2 倍像素请求；本地可通过 `QT_SCALE_FACTOR=1.25`、`1.5`、`2`
+分别运行 `markdownview_lifecycle_tests redesignedChromeRetainsState -platform offscreen`，
+核对逻辑宽度和窗口往返。此方式不模拟真实跨 DPI 屏幕迁移。

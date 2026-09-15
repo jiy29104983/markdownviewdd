@@ -17,8 +17,8 @@
 | --- | --- | --- |
 | 静态检查 | passed | `git diff --check`、本轮文档本地链接检查；未改 ABI 或宿主源码 |
 | 本地自动化测试 | passed | Linux Qt 5.15.13／GCC 13.3 Release 编译无新增警告；八组 CTest 全通过（28 秒）；发布脚本隔离测试通过 |
-| Windows Release 编译 | not run | 待本轮 GitHub Actions 完成后记录 |
-| Artifact 校验 | not run | 待下载本轮 ZIP、SHA256 并核对 DLL 架构 |
+| Windows Release 编译 | passed | 修复候选 `957f143` 的运行 `34935690785` 全部通过；Qt 5.15.2、VS 2022／MSVC v142、Windows x64 |
+| Artifact 校验 | passed | 已下载 `957f143` 候选，SHA256、ZIP 三项内容与 DLL PE x64 均通过，详见下方 |
 | 真实宿主测试 | not verified | 当前为 Linux 环境，未执行 notepad-- v3.8.3 Windows x64 加载、拖动与跨屏 DPI 验收 |
 
 新增生命周期回归覆盖左右返回、外部浮动状态变化、搜索内容／刷新模式／HTML 保留、无额外
@@ -46,3 +46,25 @@ Windows 工作流通过既有截图环境变量自动生成并上传同名证据
 另在 Linux 暗色截图复查发现工具区 palette 缓存，修复为只重设工具控件样式，增加明暗
 切换的按钮文字颜色断言；正文主题与阅读位置回归保持通过。主题修复后八组本地测试
 再次全部通过（27.65 秒），详情对话框修改后重新执行文档和生命周期组。
+
+## 成功候选与高 DPI 补充
+
+修复候选 `957f143` 的[流水线](https://github.com/jiy29104983/markdownviewdd/actions/runs/34935690785)
+完成 Windows Release 编译、八组 Qt 行为测试、发布隔离测试与打包。普通分支构建的
+`Publish GitHub Release` 为预期的 skipped，本次没有创建版本标签或正式 Release。
+
+下载 Artifact `10382533971`，外层包含候选 ZIP 与 `.sha256`。ZIP 仅含
+`plugin/markdownviewdd.dll`、`README.md`、`LICENSE`；DLL 为 PE x64（machine `0x8664`），
+401920 字节。候选 ZIP SHA256：
+
+```text
+f4758d84754594b5f6bc1f49c99820820c68a83c2116157fba2297680d6e7e47
+```
+
+Windows 诊断 Artifact `10382359635` 中已检查暗色及窄面板截图，工具区文字、图标和入口可见。
+这些仍是 offscreen 模拟截图，不代表真实宿主测试通过。
+
+其后补充 Qt 5 `ScaledPixmapHook`，在 DPI 图标请求中按目标尺寸重新矢量绘制，避免仅缩放
+已有位图；测试独立断言 16×16 在 2 倍请求时得到 32×32、DPR=2。最终本地 Release 编译
+和八组测试全通过（26.68 秒），125%／150%／200% 各自重跑界面状态用例也通过。
+高 DPI 补充提交推送后还需按最新 SHA 等待 Windows 流水线，最终运行链接与产物结果在任务交付中列出。
