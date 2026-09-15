@@ -1,4 +1,10 @@
 #include "markdown_preview_dock.h"
+#include "heading_outline.h"
+#include "preview_search.h"
+#include <QMainWindow>
+#include <QToolButton>
+#include <QLineEdit>
+#include <QAction>
 
 #include <QCoreApplication>
 #include <QColor>
@@ -40,6 +46,7 @@ class MarkdownPreviewDockLifecycleTest final : public QObject
     Q_OBJECT
 
 private slots:
+    void redesignedChromeRetainsState();
     void currentPreviewDestructionRestoresFallback();
     void hiddenPreviewDestructionKeepsCurrentPreview();
     void dockDestructionDisconnectsAllPreviewCallbacks();
@@ -52,6 +59,109 @@ private slots:
     void documentStyleRefreshesForThemeWithoutChangingPosition();
     void userScrollCancelsOldReadingPosition();
 };
+
+void MarkdownPreviewDockLifecycleTest::redesignedChromeRetainsState()
+{
+    QMainWindow owner;
+    owner.resize(900, 700);
+    auto *dock = new MarkdownPreviewDock(&owner);
+    owner.addDockWidget(Qt::LeftDockWidgetArea, dock);
+    owner.show();
+    QWidget editor;
+    auto *native = createNativePreview();
+    auto *text = native->findChild<QTextEdit *>();
+    text->setMarkdown(QStringLiteral("# Preview\n\nneedle\n\n") + QStringLiteral("paragraph\n\n").repeated(150));
+    QVERIFY(dock->adoptNativePreview(native, text, QStringLiteral("/docs/demo.md"), &editor, 1));
+    dock->setDocumentInfo(QStringLiteral("/docs/demo.md"), 1800);
+    dock->setRefreshStatus(QStringLiteral("已更新"), QString());
+    dock->setSyncScrolling(false);
+    dock->setRefreshMode(RefreshMode::Manual);
+    auto *search = dock->findChild<PreviewSearch *>();
+    search->setSnapshot(text, &editor, 1);
+    search->openSearch();
+    auto *query = search->findChild<QLineEdit *>();
+    query->setText(QStringLiteral("needle"));
+    QTRY_COMPARE(search->matchCount(), 1);
+    dock->scrollToRatio(0.45);
+    const double readingRatio = dock->scrollRatio();
+    const QByteArray html = dock->htmlSnapshotFor(&editor, 1);
+    QSignalSpy refresh(dock, &MarkdownPreviewDock::refreshRequested);
+    auto *toggle = dock->findChild<QToolButton *>(QStringLiteral("NddMarkdownFloatButton"));
+    auto *close = dock->findChild<QToolButton *>(QStringLiteral("NddMarkdownCloseButton"));
+    QVERIFY(toggle && close && dock->titleBarWidget());
+    const QString screenshotDir = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
+    auto capture = [dock, screenshotDir](const QString &name) {
+        QCoreApplication::processEvents();
+        if (!screenshotDir.isEmpty()) {
+            QDir().mkpath(screenshotDir);
+            return dock->grab().save(QDir(screenshotDir).filePath(name + QStringLiteral(".png")));
+        }
+        return true;
+    };
+    QVERIFY(capture(QStringLiteral("ui-docked-search")));
+    for (auto area : {Qt::LeftDockWidgetArea, Qt::RightDockWidgetArea}) {
+        owner.addDockWidget(area, dock);
+        toggle->click();
+        QVERIFY(dock->isFloating());
+        QVERIFY(toggle->isVisible());
+        QCOMPARE(toggle->toolTip(), QStringLiteral("停靠回主窗口"));
+        QVERIFY(capture(QStringLiteral("ui-floating")));
+        toggle->click();
+        QVERIFY(!dock->isFloating());
+        QCOMPARE(owner.dockWidgetArea(dock), area);
+        QTest::qWait(80);
+        QVERIFY(qAbs(dock->scrollRatio() - readingRatio) < 0.03);
+        QCOMPARE(query->text(), QStringLiteral("needle"));
+        QVERIFY(dock->findChild<QAction *>(QStringLiteral("NddMarkdownManualMode"))->isChecked());
+        QCOMPARE(dock->htmlSnapshotFor(&editor, 1), html);
+        QCOMPARE(refresh.count(), 0);
+    }
+    QVERIFY(capture(QStringLiteral("ui-returned")));
+    dock->setFloating(true); // Simulate a change outside the explicit button.
+    QCOMPARE(toggle->toolTip(), QStringLiteral("停靠回主窗口"));
+    dock->resize(300, 550);
+    QCoreApplication::processEvents();
+    QVERIFY(dock->findChild<HeadingOutline *>()->isHidden());
+    for (auto *button : dock->findChildren<QToolButton *>()) {
+        if (button->isVisible()) QVERIFY(button->width() >= 24);
+    }
+    QVERIFY(capture(QStringLiteral("ui-narrow")));
+    dock->resize(650, 550);
+    QTRY_VERIFY(!dock->findChild<HeadingOutline *>()->isHidden());
+    auto *visible = dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineVisible"));
+    visible->setChecked(false);
+    dock->resize(300, 550);
+    dock->resize(650, 550);
+    QVERIFY(dock->findChild<HeadingOutline *>()->isHidden());
+    dock->setRefreshStatus(QStringLiteral("刷新失败 · 正在显示旧快照：测试原因"), QStringLiteral("测试详情"), true);
+    QVERIFY(capture(QStringLiteral("ui-error")));
+    QPalette dark = QApplication::palette();
+    dark.setColor(QPalette::Window, QColor(35, 38, 42));
+    dark.setColor(QPalette::Base, QColor(25, 28, 32));
+    dark.setColor(QPalette::WindowText, QColor(225, 228, 232));
+    dark.setColor(QPalette::Text, QColor(225, 228, 232));
+    const QPalette original = QApplication::palette();
+    QApplication::setPalette(dark);
+    QVERIFY(capture(QStringLiteral("ui-dark")));
+    QApplication::setPalette(original);
+    close->click();
+    QVERIFY(dock->isHidden());
+    dock->show();
+    toggle->click();
+    QVERIFY(!dock->isFloating());
+    QWidget fallback;
+    auto *fallbackDock = new MarkdownPreviewDock(&fallback);
+    fallbackDock->setFloating(true);
+    QVERIFY(!fallbackDock->findChild<QToolButton *>(QStringLiteral("NddMarkdownFloatButton"))->isEnabled());
+    QPointer<MarkdownPreviewDock> guarded;
+    {
+        QMainWindow temporaryOwner;
+        guarded = new MarkdownPreviewDock(&temporaryOwner);
+        temporaryOwner.addDockWidget(Qt::RightDockWidgetArea, guarded);
+        guarded->setFloating(true);
+    }
+    QVERIFY(guarded.isNull());
+}
 
 void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback()
 {

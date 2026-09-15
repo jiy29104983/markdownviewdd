@@ -321,3 +321,15 @@ LF／CRLF／CR。另覆盖键盘、上下文菜单、剪贴板失败与重入、
 原间距，顶部选择栏不存在。手工补充检查纵向和水平滚动、窄侧栏、明暗主题及 DPI 下的
 图标位置、提示和键盘焦点。该轮证据见
 [附着图标验证](verification-req007-icons-2026-09-15.md)。
+
+## 预览界面重设计回归（2026-09-15）
+
+生命周期组新增 `redesignedChromeRetainsState`：左右停靠→浮动→显式返回、外部改变浮动状态、
+查询／模式／HTML 保留、关闭再打开、窄面板大纲临时收起与用户隐藏选择、无主窗口降级、所属
+主窗口销毁，以及主题截图。原有文档组改为操作模式菜单和详情弹窗内的复制按钮。
+`MARKDOWNVIEW_SCREENSHOT_DIR` 增加 `ui-docked-search`、`ui-floating`、`ui-returned`、
+`ui-narrow`、`ui-error`、`ui-dark` 截图；均为 Qt 模拟界面。
+
+真实宿主应按[界面方案](requirments/preview-ui-redesign.md)验收标题拖动、按钮附近拖动、
+明暗主题／宿主字体、100%／125%／150%／200% DPI 及跨屏移动。模拟窗口与 Windows 编译
+不代替这些验收。分层结果见[本轮验证记录](verification-ui-redesign-2026-09-15.md)。

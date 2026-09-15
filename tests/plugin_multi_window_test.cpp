@@ -4,7 +4,6 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
-#include <QComboBox>
 #include <QByteArray>
 #include <QCoreApplication>
 #include <QEvent>
@@ -384,8 +383,8 @@ void PluginMultiWindowTest::refreshModesAndContextMenusAreWindowLocal()
     first.action(QStringLiteral("手动刷新"))->trigger();
     QCOMPARE(first.controller()->previewStatus().mode, RefreshMode::Manual);
     QCOMPARE(second.controller()->previewStatus().mode, RefreshMode::Automatic);
-    QCOMPARE(first.dock()->findChild<QComboBox *>()->currentIndex(), 1);
-    QCOMPARE(second.dock()->findChild<QComboBox *>()->currentIndex(), 0);
+    QVERIFY(first.dock()->findChild<QAction *>(QStringLiteral("NddMarkdownManualMode"))->isChecked());
+    QVERIFY(second.dock()->findChild<QAction *>(QStringLiteral("NddMarkdownAutomaticMode"))->isChecked());
     QMenu context(first.editor);
     QAction *native = context.addAction(QStringLiteral("Markdown Preview"));
     connect(native, &QAction::triggered, first.editor, &QsciScintilla::on_viewMarkdown);

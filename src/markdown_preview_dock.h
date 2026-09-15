@@ -21,7 +21,8 @@ class PreviewSearch;
 class CodeBlockTools;
 class QSplitter;
 class QLabel;
-class QComboBox;
+class QAction;
+class QMainWindow;
 class QLayout;
 class QScrollBar;
 class QTextBrowser;
@@ -97,6 +98,7 @@ signals:
 
 protected:
     void changeEvent(QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private slots:
     void openLink(const QUrl &url);
@@ -143,7 +145,20 @@ private:
     QLabel *m_documentLabel = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_feedbackLabel = nullptr;
-    QComboBox *m_modeCombo = nullptr;
+    QToolButton *m_modeButton = nullptr;
+    QAction *m_autoMode = nullptr;
+    QAction *m_manualMode = nullptr;
+    QPointer<QMainWindow> m_dockOwner;
+    QToolButton *m_floatButton = nullptr;
+    Qt::DockWidgetArea m_lastDockArea = Qt::RightDockWidgetArea;
+    bool m_outlineWanted = true;
+    bool m_compactOutline = false;
+    QString m_documentName;
+    QString m_documentDetails;
+    QWidget *m_errorRow = nullptr;
+    QLabel *m_errorLabel = nullptr;
+    void updateChrome();
+    void updateResponsiveLayout();
     QToolButton *m_retryButton = nullptr;
     QToolButton *m_detailsButton = nullptr;
     QString m_statusDetails;

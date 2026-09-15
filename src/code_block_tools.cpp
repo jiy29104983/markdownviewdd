@@ -1,4 +1,5 @@
 #include "code_block_tools.h"
+#include "preview_ui.h"
 
 #include <QApplication>
 #include <QClipboard>
@@ -46,25 +47,10 @@ protected:
             painter.setBrush(hover);
             painter.drawRoundedRect(QRectF(0.5, 0.5, 23, 23), 4, 4);
         }
-        QColor color = palette().color(isEnabled() ? QPalette::Active : QPalette::Disabled, QPalette::Text);
-        color.setAlpha(isEnabled() ? 190 : 80);
-        painter.setPen(QPen(color, 1.4, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(Qt::NoBrush);
-        if (feedback == 1) {
-            QPainterPath tick;
-            tick.moveTo(5, 12); tick.lineTo(10, 17); tick.lineTo(19, 7);
-            painter.drawPath(tick);
-        } else if (feedback == -1) {
-            painter.drawEllipse(QRectF(4, 4, 16, 16));
-            painter.drawLine(QPointF(12, 7), QPointF(12, 13));
-            painter.drawPoint(QPointF(12, 17));
-        } else {
-            painter.drawRoundedRect(QRectF(9, 8, 10, 12), 1.5, 1.5);
-            QPainterPath back;
-            back.moveTo(6, 16); back.lineTo(4, 16); back.lineTo(4, 4);
-            back.lineTo(14, 4); back.lineTo(14, 5);
-            painter.drawPath(back);
-        }
+        PreviewUi::icon(feedback == 1 ? PreviewUi::Symbol::Success : feedback == -1
+            ? PreviewUi::Symbol::Error : PreviewUi::Symbol::Copy, this).paint(
+                &painter, QRect(4, 4, 16, 16), Qt::AlignCenter,
+                isEnabled() ? QIcon::Normal : QIcon::Disabled);
         if (hasFocus()) {
             painter.setPen(QPen(palette().color(QPalette::Highlight), 1, Qt::DotLine));
             painter.drawRoundedRect(QRectF(1, 1, 22, 22), 3, 3);

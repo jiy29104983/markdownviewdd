@@ -7,6 +7,7 @@
 #include "saved_markdown_font.h"
 
 #include <QAbstractSlider>
+#include <QPushButton>
 #include <QActionGroup>
 #include <QMenu>
 #include <QSplitter>
@@ -14,7 +15,9 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QClipboard>
-#include <QComboBox>
+#include "preview_ui.h"
+#include <QMainWindow>
+#include <QResizeEvent>
 #include <QDir>
 #include <QFile>
 #include <QFileDialog>
@@ -204,7 +207,7 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
 }
 
 MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
-    : QDockWidget(tr("Markdown 预览"), parent),
+    : QDockWidget(tr("预览"), parent),
       m_urlOpener([](const QUrl &url) {
           return QDesktopServices::openUrl(url);
       })
@@ -228,35 +231,90 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *toolbarLayout = new QHBoxLayout(toolbar);
     toolbarLayout->setContentsMargins(8, 4, 5, 4);
 
-    m_documentLabel = new QLabel(tr("没有活动文档"), container);
-    m_documentLabel->setMargin(8);
+    m_dockOwner = qobject_cast<QMainWindow *>(parent);
+    auto *title = new QWidget(this);
+    title->setObjectName(QStringLiteral("NddMarkdownTitleBar"));
+    auto *titleLayout = new QHBoxLayout(title);
+    titleLayout->setContentsMargins(10, 2, 4, 2);
+    titleLayout->setSpacing(4);
+    auto *caption = new QLabel(tr("预览"), title);
+    caption->setAttribute(Qt::WA_TransparentForMouseEvents);
+    titleLayout->addWidget(caption);
+    m_documentLabel = new QLabel(title);
     m_documentLabel->setTextFormat(Qt::PlainText);
-    m_documentLabel->setObjectName(
-        QStringLiteral("NddMarkdownPreviewDocumentLabel"));
-    m_documentLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
+    m_documentLabel->setObjectName(QStringLiteral("NddMarkdownPreviewDocumentLabel"));
     m_documentLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
-    layout->addWidget(m_documentLabel);
+    titleLayout->addWidget(m_documentLabel, 1);
+    m_floatButton = new QToolButton(title);
+    m_floatButton->setObjectName(QStringLiteral("NddMarkdownFloatButton"));
+    titleLayout->addWidget(m_floatButton);
+    auto *closeButton = new QToolButton(title);
+    closeButton->setObjectName(QStringLiteral("NddMarkdownCloseButton"));
+    PreviewUi::setup(closeButton, PreviewUi::Symbol::Close, tr("关闭预览"));
+    titleLayout->addWidget(closeButton);
+    setTitleBarWidget(title);
+    connect(closeButton, &QToolButton::clicked, this, &QWidget::close);
+    connect(m_floatButton, &QToolButton::clicked, this, [this]() {
+        if (!m_dockOwner) return;
+        preserveLayoutTarget();
+        if (isFloating()) {
+            m_dockOwner->addDockWidget(m_lastDockArea, this);
+            setFloating(false);
+        } else {
+            setFloating(true);
+        }
+    });
+    connect(this, &QDockWidget::dockLocationChanged, this, [this](Qt::DockWidgetArea area) {
+        if (area == Qt::LeftDockWidgetArea || area == Qt::RightDockWidgetArea)
+            m_lastDockArea = area;
+    });
+    connect(this, &QDockWidget::topLevelChanged, this, [this]() { updateChrome(); });
 
-    m_modeCombo = new QComboBox(toolbar);
-    m_modeCombo->setObjectName(QStringLiteral("NddMarkdownRefreshMode"));
-    m_modeCombo->setAccessibleName(tr("刷新模式"));
-    m_modeCombo->addItem(tr("自动刷新"));
-    m_modeCombo->addItem(tr("手动刷新"));
-    m_modeCombo->setToolTip(tr("选择当前窗口的刷新模式；手动模式下点击刷新更新预览。"));
-    toolbarLayout->addWidget(m_modeCombo);
-    toolbarLayout->addStretch();
-
-    auto *refreshButton = new QToolButton(toolbar);
-    refreshButton->setText(tr("刷新"));
+    auto *refreshGroup = new QWidget(toolbar);
+    refreshGroup->setObjectName(QStringLiteral("NddMarkdownRefreshGroup"));
+    auto *refreshLayout = new QHBoxLayout(refreshGroup);
+    refreshLayout->setContentsMargins(1, 1, 1, 1);
+    refreshLayout->setSpacing(0);
+    auto *refreshButton = new QToolButton(refreshGroup);
     refreshButton->setObjectName(QStringLiteral("NddMarkdownRefreshButton"));
-    refreshButton->setToolTip(tr("立即重新渲染当前文档"));
-    toolbarLayout->addWidget(refreshButton);
+    PreviewUi::setup(refreshButton, PreviewUi::Symbol::Refresh, tr("立即刷新当前文档"));
+    refreshLayout->addWidget(refreshButton);
+    m_modeButton = new QToolButton(refreshGroup);
+    m_modeButton->setObjectName(QStringLiteral("NddMarkdownRefreshMode"));
+    m_modeButton->setAccessibleName(tr("刷新模式"));
+    m_modeButton->setToolTip(tr("选择当前窗口的刷新模式"));
+    m_modeButton->setFocusPolicy(Qt::StrongFocus);
+    m_modeButton->setMinimumHeight(28);
+    m_modeButton->setPopupMode(QToolButton::InstantPopup);
+    auto *modeMenu = new QMenu(m_modeButton);
+    auto *modeGroup = new QActionGroup(modeMenu);
+    m_autoMode = modeMenu->addAction(tr("自动刷新"));
+    m_manualMode = modeMenu->addAction(tr("手动刷新"));
+    m_autoMode->setObjectName(QStringLiteral("NddMarkdownAutomaticMode"));
+    m_manualMode->setObjectName(QStringLiteral("NddMarkdownManualMode"));
+    for (auto *action : {m_autoMode, m_manualMode}) {
+        action->setCheckable(true);
+        modeGroup->addAction(action);
+    }
+    connect(m_autoMode, &QAction::triggered, this, [this]() { emit refreshModeChanged(RefreshMode::Automatic); });
+    connect(m_manualMode, &QAction::triggered, this, [this]() { emit refreshModeChanged(RefreshMode::Manual); });
+    m_modeButton->setMenu(modeMenu);
+    setRefreshMode(RefreshMode::Automatic);
+    refreshLayout->addWidget(m_modeButton);
+    toolbarLayout->addWidget(refreshGroup);
+    toolbarLayout->setContentsMargins(10, 4, 10, 4);
+    toolbarLayout->setSpacing(4);
+    toolbarLayout->addSpacing(8);
 
     m_syncButton = new QToolButton(toolbar);
     m_syncButton->setText(tr("同步滚动"));
+    m_syncButton->setObjectName(QStringLiteral("NddMarkdownSyncButton"));
+    PreviewUi::setup(m_syncButton, PreviewUi::Symbol::Sync, tr("同步滚动"));
+    m_syncButton->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
     m_syncButton->setCheckable(true);
     m_syncButton->setChecked(true);
     toolbarLayout->addWidget(m_syncButton);
+    toolbarLayout->addStretch();
 
     m_layoutSyncTimer = new QTimer(this);
     m_layoutSyncTimer->setSingleShot(true);
@@ -278,7 +336,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     layout->addWidget(m_search);
     m_codeTools = new CodeBlockTools(container);
     auto *searchButton = new QToolButton(toolbar);
-    searchButton->setText(tr("查找"));
+    PreviewUi::setup(searchButton, PreviewUi::Symbol::Search, tr("在预览中查找（Ctrl+F）"));
     searchButton->setObjectName(QStringLiteral("NddMarkdownSearchOpen"));
     searchButton->setToolTip(tr("在预览中查找（Ctrl+F）"));
     toolbarLayout->addWidget(searchButton);
@@ -291,36 +349,45 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_browser->installEventFilter(this);
     m_browser->viewport()->installEventFilter(this);
     auto *statusRow = new QWidget(container);
-    auto *statusLayout = new QVBoxLayout(statusRow);
+    auto *statusLayout = new QHBoxLayout(statusRow);
+    statusRow->setFixedHeight(30);
     statusLayout->setContentsMargins(8, 4, 8, 4);
     m_statusLabel = new QLabel(tr("没有活动文档"), statusRow);
     m_statusLabel->setObjectName(QStringLiteral("NddMarkdownPreviewStatusLabel"));
     m_statusLabel->setTextFormat(Qt::PlainText);
-    m_statusLabel->setWordWrap(true);
+    m_statusLabel->setWordWrap(false);
+    m_statusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_statusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse |
                                          Qt::TextSelectableByKeyboard);
     statusLayout->addWidget(m_statusLabel);
-    auto *statusActions = new QHBoxLayout;
-    statusActions->addStretch();
-    statusLayout->addLayout(statusActions);
-    m_retryButton = new QToolButton(statusRow);
+    m_errorRow = new QWidget(container);
+    m_errorRow->setObjectName(QStringLiteral("NddMarkdownErrorRow"));
+    auto *errorLayout = new QHBoxLayout(m_errorRow);
+    errorLayout->setContentsMargins(10, 2, 10, 2);
+    m_errorLabel = new QLabel(m_errorRow);
+    m_errorLabel->setWordWrap(true);
+    m_errorLabel->setTextFormat(Qt::PlainText);
+    errorLayout->addWidget(m_errorLabel, 1);
+    m_retryButton = new QToolButton(m_errorRow);
     m_retryButton->setObjectName(QStringLiteral("NddMarkdownRetryButton"));
     m_retryButton->setText(tr("重试"));
-    m_retryButton->hide();
-    statusActions->addWidget(m_retryButton);
-    m_detailsButton = new QToolButton(statusRow);
-    m_detailsButton->setText(tr("复制详情"));
+    m_retryButton->setFocusPolicy(Qt::StrongFocus);
+    errorLayout->addWidget(m_retryButton);
+    m_detailsButton = new QToolButton(m_errorRow);
+    m_detailsButton->setText(tr("详情"));
+    m_detailsButton->setFocusPolicy(Qt::StrongFocus);
     m_detailsButton->setObjectName(QStringLiteral("NddMarkdownStatusDetails"));
-    m_detailsButton->hide();
-    statusActions->addWidget(m_detailsButton);
-    layout->addWidget(statusRow);
+    errorLayout->addWidget(m_detailsButton);
+    m_errorRow->hide();
+    layout->addWidget(m_errorRow);
     m_feedbackLabel = new QLabel(container);
     m_feedbackLabel->setObjectName(QStringLiteral("NddMarkdownLinkFeedback"));
     m_feedbackLabel->setTextFormat(Qt::PlainText);
-    m_feedbackLabel->setWordWrap(true);
-    m_feedbackLabel->setMargin(8);
+    m_feedbackLabel->setWordWrap(false);
+    m_feedbackLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    m_feedbackLabel->setMargin(0);
     m_feedbackLabel->hide();
-    layout->addWidget(m_feedbackLabel);
+
     m_splitter = new QSplitter(Qt::Horizontal, container);
     m_splitter->setObjectName(QStringLiteral("NddMarkdownOutlineSplitter"));
     m_splitter->setChildrenCollapsible(false);
@@ -337,6 +404,8 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_splitter->setSizes({m_outlineWidth, 400});
     m_splitter->handle(1)->installEventFilter(this);
     layout->addWidget(m_splitter, 1);
+    layout->addWidget(statusRow);
+    statusLayout->addWidget(m_feedbackLabel);
     m_headingTimer = new QTimer(this);
     m_headingTimer->setSingleShot(true);
     m_headingTimer->setInterval(kLayoutSyncDelayMs);
@@ -349,23 +418,26 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         m_headingTimer->start();
     });
     auto *settings = new QToolButton(toolbar);
-    settings->setText(tr("设置"));
+    PreviewUi::setup(settings, PreviewUi::Symbol::Settings, tr("预览设置"));
     settings->setObjectName(QStringLiteral("NddMarkdownOutlineSettings"));
     settings->setAccessibleName(tr("预览设置"));
     settings->setPopupMode(QToolButton::InstantPopup);
     auto *settingsMenu = new QMenu(settings);
-    auto *visible = settingsMenu->addAction(tr("显示标题大纲"));
+    settingsMenu->addSection(tr("大纲"));
+    auto *visible = settingsMenu->addAction(tr("显示大纲"));
     visible->setObjectName(QStringLiteral("NddMarkdownOutlineVisible"));
     visible->setCheckable(true);
     visible->setChecked(true);
     connect(visible, &QAction::toggled, this, [this](bool show) {
         preserveLayoutTarget();
-        m_outline->setVisible(show);
+        m_outlineWanted = show;
+        updateResponsiveLayout();
         m_layoutSyncTimer->start();
     });
-    auto *sideGroup = new QActionGroup(settingsMenu);
+    auto *positionMenu = settingsMenu->addMenu(tr("位置"));
+    auto *sideGroup = new QActionGroup(positionMenu);
     for (bool right : {false, true}) {
-        auto *side = settingsMenu->addAction(right ? tr("大纲在正文右侧") : tr("大纲在正文左侧"));
+        auto *side = positionMenu->addAction(right ? tr("右侧") : tr("左侧"));
         side->setObjectName(right ? QStringLiteral("NddMarkdownOutlineRight") : QStringLiteral("NddMarkdownOutlineLeft"));
         side->setCheckable(true);
         side->setChecked(!right);
@@ -373,10 +445,11 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         connect(side, &QAction::triggered, this, [this, right]() { setOutlineOnRight(right); });
     }
     settingsMenu->addSeparator();
+    settingsMenu->addSection(tr("阅读"));
     QSettings codeSettings(QSettings::IniFormat, QSettings::UserScope,
                            QStringLiteral("markdownviewdd"), QStringLiteral("reading"));
     m_wrapCode = codeSettings.value(QStringLiteral("codeBlocks/visualWrap"), true).toBool();
-    auto *wrap = settingsMenu->addAction(tr("代码块视觉自动换行"));
+    auto *wrap = settingsMenu->addAction(tr("代码块自动换行"));
     wrap->setObjectName(QStringLiteral("NddMarkdownCodeWrap"));
     wrap->setCheckable(true);
     wrap->setChecked(m_wrapCode);
@@ -396,16 +469,24 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     });
     settings->setMenu(settingsMenu);
     toolbarLayout->addWidget(settings);
+    auto *documentDetails = settingsMenu->addAction(tr("文档与状态详情"));
+    connect(documentDetails, &QAction::triggered, m_detailsButton, &QToolButton::click);
     setWidget(container);
+    updateChrome();
 
-    connect(m_modeCombo, QOverload<int>::of(&QComboBox::currentIndexChanged),
-            this, [this](int index) {
-        emit refreshModeChanged(index == 0 ? RefreshMode::Automatic : RefreshMode::Manual);
-    });
     connect(m_retryButton, &QToolButton::clicked,
             this, &MarkdownPreviewDock::refreshRequested);
     connect(m_detailsButton, &QToolButton::clicked, this, [this]() {
-        QApplication::clipboard()->setText(m_statusDetails);
+        const QString details = m_documentDetails + QStringLiteral("\n") + m_statusDetails;
+        auto *dialog = new QMessageBox(QMessageBox::Information, tr("预览详情"),
+            details, QMessageBox::Close, this);
+        dialog->setTextFormat(Qt::PlainText);
+        dialog->setAttribute(Qt::WA_DeleteOnClose);
+        auto *copy = dialog->addButton(tr("复制详情"), QMessageBox::ActionRole);
+        connect(copy, &QAbstractButton::clicked, dialog, [details]() {
+            QApplication::clipboard()->setText(details);
+        });
+        dialog->open();
     });
     connect(refreshButton, &QToolButton::clicked,
             this, &MarkdownPreviewDock::refreshRequested);
@@ -716,12 +797,13 @@ void MarkdownPreviewDock::setDocumentInfo(const QString &filePath,
                                           int characterCount,
                                           bool hasDocument)
 {
-    const QString displayName = !hasDocument ? tr("没有活动文档")
+    m_documentName = !hasDocument ? QString()
         : filePath.isEmpty() ? tr("未命名文档") : QFileInfo(filePath).fileName();
-    m_documentLabel->setText(characterCount >= 0
-        ? tr("%1 · 长度 %2").arg(displayName).arg(characterCount)
-        : displayName);
-    m_documentLabel->setToolTip(filePath);
+    m_documentDetails = filePath.isEmpty() ? m_documentName : filePath;
+    if (characterCount >= 0) m_documentDetails += tr(" · 长度 %1").arg(characterCount);
+    m_documentLabel->setToolTip(m_documentDetails);
+    setWindowTitle(m_documentName.isEmpty() ? tr("预览") : tr("预览 · %1").arg(m_documentName));
+    updateResponsiveLayout();
     m_feedbackLabel->hide();
 }
 
@@ -729,17 +811,53 @@ void MarkdownPreviewDock::setRefreshStatus(const QString &status,
                                            const QString &details,
                                            bool failed)
 {
-    m_statusLabel->setText(status);
+    m_statusLabel->setText(failed ? tr("待刷新 · 请处理上方错误") : status);
     m_statusLabel->setToolTip(details);
     m_statusDetails = details;
+    m_errorLabel->setText(status.section(QChar(0xff1a), 0, 0));
+    m_errorRow->setVisible(failed);
     m_retryButton->setVisible(failed);
-    m_detailsButton->setVisible(!details.isEmpty());
 }
 
 void MarkdownPreviewDock::setRefreshMode(RefreshMode mode)
 {
-    const QSignalBlocker blocker(m_modeCombo);
-    m_modeCombo->setCurrentIndex(mode == RefreshMode::Automatic ? 0 : 1);
+    m_autoMode->setChecked(mode == RefreshMode::Automatic);
+    m_manualMode->setChecked(mode == RefreshMode::Manual);
+    m_modeButton->setText(mode == RefreshMode::Automatic ? tr("自动") : tr("手动"));
+}
+
+void MarkdownPreviewDock::updateChrome()
+{
+    if (!m_floatButton) return;
+    PreviewUi::setup(m_floatButton, isFloating() ? PreviewUi::Symbol::Dock : PreviewUi::Symbol::Float,
+        isFloating() ? tr("停靠回主窗口") : tr("浮动窗口"));
+    m_floatButton->setEnabled(!m_dockOwner.isNull());
+    if (!m_dockOwner) m_floatButton->setToolTip(tr("当前宿主没有可用的主窗口停靠区域"));
+    setStyleSheet(QStringLiteral(
+        "QDockWidget#NddMarkdownPreviewDock QToolButton { border: 1px solid transparent; border-radius: 4px; padding: 3px; }"
+        "QDockWidget#NddMarkdownPreviewDock QToolButton:hover, QDockWidget#NddMarkdownPreviewDock QToolButton:pressed { background: palette(midlight); }"
+        "QDockWidget#NddMarkdownPreviewDock QToolButton:checked { background: palette(alternate-base); border-color: palette(highlight); }"
+        "QDockWidget#NddMarkdownPreviewDock QToolButton:focus { border-color: palette(highlight); }"
+        "QWidget#NddMarkdownRefreshGroup { border: 1px solid palette(mid); border-radius: 4px; }"
+        "QWidget#NddMarkdownTitleBar { border-bottom: 1px solid palette(midlight); }"
+        "QLabel#NddMarkdownPreviewDocumentLabel, QLabel#NddMarkdownPreviewStatusLabel { color: palette(window-text); }"));
+}
+
+void MarkdownPreviewDock::resizeEvent(QResizeEvent *event)
+{
+    QDockWidget::resizeEvent(event);
+    updateResponsiveLayout();
+}
+
+void MarkdownPreviewDock::updateResponsiveLayout()
+{
+    if (!m_outline) return;
+    if (width() < 440) m_compactOutline = true;
+    else if (width() >= 500) m_compactOutline = false;
+    m_outline->setVisible(m_outlineWanted && !m_compactOutline);
+    m_syncButton->setToolButtonStyle(width() < 380 ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
+    m_documentLabel->setText(m_documentLabel->fontMetrics().elidedText(
+        m_documentName, Qt::ElideRight, qMax(0, m_documentLabel->width())));
 }
 
 void MarkdownPreviewDock::setSyncScrolling(bool enabled)
@@ -1642,5 +1760,6 @@ void MarkdownPreviewDock::setOutlineOnRight(bool right)
 void MarkdownPreviewDock::setNavigationFeedback(const QString &message)
 {
     m_feedbackLabel->setText(message);
+    m_feedbackLabel->setToolTip(message);
     m_feedbackLabel->setVisible(!message.isEmpty());
 }

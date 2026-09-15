@@ -1,4 +1,5 @@
 #include "preview_search.h"
+#include "preview_ui.h"
 
 #include <QApplication>
 #include <QCheckBox>
@@ -148,6 +149,9 @@ PreviewSearch::PreviewSearch(QWidget *parent) : QWidget(parent)
     m_previous = button(tr("上一处"), QStringLiteral("NddMarkdownSearchPrevious"));
     m_next = button(tr("下一处"), QStringLiteral("NddMarkdownSearchNext"));
     auto *close = button(tr("关闭"), QStringLiteral("NddMarkdownSearchClose"));
+    PreviewUi::setup(m_previous, PreviewUi::Symbol::Previous, tr("上一处（Shift+Enter）"));
+    PreviewUi::setup(m_next, PreviewUi::Symbol::Next, tr("下一处（Enter）"));
+    PreviewUi::setup(close, PreviewUi::Symbol::Close, tr("关闭搜索（Esc）"));
     m_previous->setToolTip(tr("上一处（Shift+Enter）"));
     m_next->setToolTip(tr("下一处（Enter）"));
     close->setToolTip(tr("关闭搜索（Esc）"));

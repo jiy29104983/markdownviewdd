@@ -339,6 +339,9 @@ void HeadingOutlineTest::layoutAndWindowIsolation()
 {
     Fixture first;
     Fixture second;
+    first.window.resizeDocks({first.dock}, {600}, Qt::Horizontal);
+    second.window.resizeDocks({second.dock}, {600}, Qt::Horizontal);
+    QCoreApplication::processEvents();
     const int renders = first.adapter.renders;
     first.activate(6);
     const auto heading = first.dock->headings().at(6);

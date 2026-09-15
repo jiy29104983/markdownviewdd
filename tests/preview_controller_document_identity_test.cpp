@@ -4,7 +4,8 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
-#include <QComboBox>
+#include <QMessageBox>
+#include <QPushButton>
 #include <QClipboard>
 #include <QTextBrowser>
 #include <QDir>
@@ -1054,7 +1055,7 @@ void PreviewControllerDocumentIdentityTest::manualModeDoesNotRenderOnShowEditOrR
     QVERIFY(changed.count() >= 20);
     QCOMPARE(fixture.dock()->findChild<QLabel *>(
         QStringLiteral("NddMarkdownPreviewDocumentLabel"))->text(), QStringLiteral("manual.md"));
-    QCOMPARE(fixture.dock()->findChild<QComboBox *>()->currentIndex(), 1);
+    QVERIFY(fixture.dock()->findChild<QAction *>(QStringLiteral("NddMarkdownManualMode"))->isChecked());
     QVERIFY(fixture.action(QStringLiteral("手动刷新"))->isChecked());
     QVERIFY(!fixture.action(QStringLiteral("自动刷新"))->isChecked());
 }
@@ -1109,8 +1110,7 @@ void PreviewControllerDocumentIdentityTest::modeChangesCancelQueuedWorkAndResume
     fixture.tabs.setCurrentWidget(b);
     QVERIFY(QMetaObject::invokeMethod(&fixture.controller, "renderScheduled", Qt::DirectConnection));
     QCOMPARE(b->renderCount(), 0);
-    auto *combo = fixture.dock()->findChild<QComboBox *>();
-    combo->setCurrentIndex(0);
+    fixture.dock()->findChild<QAction *>(QStringLiteral("NddMarkdownAutomaticMode"))->trigger();
     QVERIFY(fixture.action(QStringLiteral("自动刷新"))->isChecked());
     for (int i = 0; i < 4; ++i) {
         b->edit(QStringLiteral("# Final B %1").arg(i));
@@ -1269,6 +1269,12 @@ void PreviewControllerDocumentIdentityTest::failedRefreshRetainsOnlyUntouchedSna
             : QStringLiteral("09-failure-old-snapshot.png"))));
     }
     dock->findChild<QToolButton *>(QStringLiteral("NddMarkdownStatusDetails"))->click();
+    auto *detailsDialog = dock->findChild<QMessageBox *>();
+    QVERIFY(detailsDialog);
+    for (auto *button : detailsDialog->buttons()) {
+        if (detailsDialog->buttonRole(button) == QMessageBox::ActionRole) button->click();
+    }
+    detailsDialog->close();
     QVERIFY(QApplication::clipboard()->text().contains(QStringLiteral("模拟宿主更新失败")));
     QByteArray html;
     QString path;

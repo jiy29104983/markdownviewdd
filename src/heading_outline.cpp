@@ -12,7 +12,7 @@ HeadingOutline::HeadingOutline(QWidget *parent) : QWidget(parent)
     setMinimumWidth(100);
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(4, 4, 4, 4);
-    auto *title = new QLabel(tr("标题大纲"), this);
+    auto *title = new QLabel(tr("大纲"), this);
     layout->addWidget(title);
     m_state = new QLabel(tr("尚无可用预览"), this);
     m_state->setObjectName(QStringLiteral("NddMarkdownOutlineStatus"));
@@ -22,6 +22,8 @@ HeadingOutline::HeadingOutline(QWidget *parent) : QWidget(parent)
     m_tree = new QTreeWidget(this);
     m_tree->setObjectName(QStringLiteral("NddMarkdownOutlineTree"));
     m_tree->setAccessibleName(tr("标题大纲"));
+    m_tree->setFrameShape(QFrame::NoFrame);
+    m_tree->setIndentation(14);
     m_tree->setColumnCount(2);
     m_tree->setHeaderHidden(true);
     m_tree->setUniformRowHeights(true);

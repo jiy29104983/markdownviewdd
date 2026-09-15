@@ -528,14 +528,14 @@ void PreviewController::publishStatus()
             text = tr("不支持当前文件类型");
             break;
         case PreviewState::Ready:
-            text = tr("已同步");
+            text = tr("已更新");
             if (status.performanceProtected) {
                 text += tr(" · 后续自动刷新受性能保护限制");
             }
             details = status.protectionReason;
             break;
         case PreviewState::Paused:
-            text = tr("性能保护暂停 · 待手工刷新");
+            text = tr("自动刷新已暂停 · 待手工刷新");
             details = status.protectionReason;
             break;
         case PreviewState::Pending:
