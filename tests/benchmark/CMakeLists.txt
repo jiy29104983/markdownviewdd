@@ -36,3 +36,7 @@ if(MSVC)
 else()
     target_compile_options(refresh_benchmark PRIVATE -Wall -Wextra -Wpedantic)
 endif()
+
+if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_tools.cpp")
+    target_sources(refresh_benchmark PRIVATE "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_index.cpp" "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_tools.cpp")
+endif()

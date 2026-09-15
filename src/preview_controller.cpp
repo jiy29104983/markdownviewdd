@@ -50,6 +50,14 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         m_dock->setFloating(true);
         m_dock->resize(520, 720);
     }
+    const QPointer<PreviewController> copyGuard(this);
+    m_dock->setCodeCopyValidator([copyGuard](QWidget *editor, quint64 version) {
+        if (!copyGuard || copyGuard->m_renderInProgress)
+            return false;
+        const QPointer<QWidget> active = copyGuard->resolveCurrentEditor();
+        return copyGuard && active == editor && editor == copyGuard->m_editor &&
+            editor == copyGuard->m_previewEditor && version == copyGuard->m_renderedVersion;
+    });
     m_dock->hide();
     m_readingFont = defaultMarkdownFont();
     applyReadingFont();
@@ -98,6 +106,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         m_renderedVersion = 0;
         if (PreviewCacheEntry *entry = previewCacheEntry(m_editor.data())) {
             entry->renderedVersion = 0;
+            entry->codeBlocks.clear();
             entry->hasNativePreview = false;
         }
         m_hostAdapter->setPreviewCurrent(m_editor.data(), false);
@@ -612,6 +621,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor.data())) {
             // The native QTextDocument was mutated but has no accepted version.
             entry->renderedVersion = 0;
+            entry->codeBlocks.clear();
             m_hostAdapter->setPreviewCurrent(renderEditor.data(), false);
         }
         showCachedPreviewOrMessage();
@@ -626,13 +636,15 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         QVector<HeadingRecord> headings = renderedHeadings(
             textEdit ? textEdit->document() : nullptr, renderEditor, renderVersion);
         QString mappingError;
-        if (!headings.isEmpty()) {
+        QVector<CodeBlockRecord> codeBlocks;
+        {
             const SourceReadResult source = m_hostAdapter->readSource(renderEditor);
             synchronizeActiveEditor();
             if (!renderEditor || renderEditor != m_editor || renderVersion != m_contentVersion || !textEdit) {
                 if (performedFullRender) {
                     if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor)) {
                         entry->renderedVersion = 0;
+                        entry->codeBlocks.clear();
                         entry->headingVersion = 0;
                         entry->headings.clear();
                     }
@@ -647,10 +659,13 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
             } else if (!mapHeadingSource(&headings, source.text)) {
                 mappingError = tr("标题与源码的对应关系尚不能可靠确认。仅定位预览。");
             }
+            codeBlocks = indexCodeBlocks(textEdit->document(), renderEditor, renderVersion,
+                                         source.available ? &source.text : nullptr);
         }
         // Never hold a cache-entry pointer across a host callback.
         if (PreviewCacheEntry *entry = previewCacheEntry(renderEditor)) {
             entry->headings = headings;
+            entry->codeBlocks = codeBlocks;
             entry->mappingError = mappingError;
             entry->headingVersion = renderVersion;
         }
@@ -676,6 +691,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         entry->hasRendered = true;
         entry->error.clear();
         m_dock->setHeadingSnapshot(entry->headings, renderEditor, renderVersion);
+        m_dock->setCodeSnapshot(entry->codeBlocks, renderEditor, renderVersion);
     }
     m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
     m_dock->setDocumentInfo(filePath, -1);
@@ -1104,6 +1120,7 @@ void PreviewController::showCachedPreviewOrMessage()
             m_previewState = !entry.error.isEmpty() ? PreviewState::Failed
                 : current ? PreviewState::Ready : PreviewState::Pending;
             m_dock->setHeadingSnapshot(entry.headings, m_editor, entry.renderedVersion);
+            m_dock->setCodeSnapshot(entry.codeBlocks, m_editor, entry.renderedVersion);
             touchPreviewCache(m_editor.data());
             return;
         }
@@ -1205,6 +1222,7 @@ bool PreviewController::activateNativePreview(bool forceHostUpdate,
             documentChanged) {
             if (PreviewCacheEntry *entry = previewCacheEntry(editor.data())) {
                 entry->renderedVersion = 0;
+                entry->codeBlocks.clear();
             }
         }
         m_lastHostError = hostError;
@@ -1291,6 +1309,7 @@ void PreviewController::enforcePreviewCacheLimit()
             entry.previewWindow = nullptr;
             entry.previewTextEdit = nullptr;
             entry.renderedVersion = 0;
+            entry.codeBlocks.clear();
             --cachedPreviewCount;
         }
         Diagnostics::write(this,

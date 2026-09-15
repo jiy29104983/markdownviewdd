@@ -9,6 +9,8 @@ INCLUDEPATH += \
 SOURCES += \
     src/diagnostics.cpp \
     src/source_navigation.cpp \
+    src/code_block_index.cpp \
+    src/code_block_tools.cpp \
     src/heading_index.cpp \
     src/heading_outline.cpp \
     src/preview_search.cpp \
@@ -21,6 +23,8 @@ SOURCES += \
 HEADERS += \
     src/diagnostics.h \
     src/source_navigation.h \
+    src/code_block_index.h \
+    src/code_block_tools.h \
     src/heading_index.h \
     src/heading_outline.h \
     src/preview_search.h \

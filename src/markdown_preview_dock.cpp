@@ -3,6 +3,7 @@
 #include "diagnostics.h"
 #include "heading_outline.h"
 #include "preview_search.h"
+#include "code_block_tools.h"
 #include "saved_markdown_font.h"
 
 #include <QAbstractSlider>
@@ -28,6 +29,7 @@
 #include <QPalette>
 #include <QRegularExpression>
 #include <QSaveFile>
+#include <QSettings>
 #include <QScrollBar>
 #include <QSignalBlocker>
 #include <QScopedValueRollback>
@@ -274,6 +276,10 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     layout->addWidget(toolbar);
     m_search = new PreviewSearch(container);
     layout->addWidget(m_search);
+    m_codeTools = new CodeBlockTools(container);
+    layout->addWidget(m_codeTools);
+    connect(m_codeTools, &CodeBlockTools::navigateRequested,
+            this, &MarkdownPreviewDock::navigatePreviewPosition);
     auto *searchButton = new QToolButton(toolbar);
     searchButton->setText(tr("查找"));
     searchButton->setObjectName(QStringLiteral("NddMarkdownSearchOpen"));
@@ -348,7 +354,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *settings = new QToolButton(toolbar);
     settings->setText(tr("设置"));
     settings->setObjectName(QStringLiteral("NddMarkdownOutlineSettings"));
-    settings->setAccessibleName(tr("大纲设置"));
+    settings->setAccessibleName(tr("预览设置"));
     settings->setPopupMode(QToolButton::InstantPopup);
     auto *settingsMenu = new QMenu(settings);
     auto *visible = settingsMenu->addAction(tr("显示标题大纲"));
@@ -369,6 +375,28 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         sideGroup->addAction(side);
         connect(side, &QAction::triggered, this, [this, right]() { setOutlineOnRight(right); });
     }
+    settingsMenu->addSeparator();
+    QSettings codeSettings(QSettings::IniFormat, QSettings::UserScope,
+                           QStringLiteral("markdownviewdd"), QStringLiteral("reading"));
+    m_wrapCode = codeSettings.value(QStringLiteral("codeBlocks/visualWrap"), true).toBool();
+    auto *wrap = settingsMenu->addAction(tr("代码块视觉自动换行"));
+    wrap->setObjectName(QStringLiteral("NddMarkdownCodeWrap"));
+    wrap->setCheckable(true);
+    wrap->setChecked(m_wrapCode);
+    wrap->setToolTip(tr("关闭后保持长行，按需使用预览水平滚动条"));
+    connect(wrap, &QAction::toggled, this, [this](bool enabled) {
+        preserveLayoutTarget();
+        m_wrapCode = enabled;
+        QSettings saved(QSettings::IniFormat, QSettings::UserScope,
+                        QStringLiteral("markdownviewdd"), QStringLiteral("reading"));
+        saved.setValue(QStringLiteral("codeBlocks/visualWrap"), enabled);
+        saved.sync();
+        ++m_styleRevision;
+        refreshDocumentStyle(m_previewEditor, m_previewContentVersion);
+        m_layoutSyncTimer->start();
+        if (saved.status() != QSettings::NoError)
+            setNavigationFeedback(tr("长行显示已应用，但无法保存偏好；重开后可能恢复默认。"));
+    });
     settings->setMenu(settingsMenu);
     toolbarLayout->addWidget(settings);
     setWidget(container);
@@ -437,6 +465,8 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
 MarkdownPreviewDock::~MarkdownPreviewDock()
 {
     m_isDestroying = true;
+    delete m_codeTools;
+    m_codeTools = nullptr;
     delete m_search;
     m_search = nullptr;
     m_headingTimer->stop();
@@ -543,6 +573,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
 
 void MarkdownPreviewDock::invalidatePreview()
 {
+    m_codeTools->clearSnapshot();
     m_search->setSnapshot(nullptr, nullptr, 0);
     markPreviewStale();
     m_pressedLink = QUrl();
@@ -613,6 +644,7 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     m_nativeHorizontalActionConnection = QMetaObject::Connection();
     m_nativeScrollConnection = QMetaObject::Connection();
     m_nativeScrollRangeConnection = QMetaObject::Connection();
+    m_codeTools->clearSnapshot();
     m_search->setSnapshot(nullptr, nullptr, 0);
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
@@ -792,9 +824,11 @@ void MarkdownPreviewDock::restyleNativePreview(double ratio)
     if (!m_nativeTextEdit || !m_previewEditor || !m_previewContentVersion) {
         return;
     }
+    m_codeTools->setFormatting(true);
     m_search->setFormatting(true);
     const bool changed = applyDocumentStyle(m_nativeTextEdit);
     m_search->setFormatting(false);
+    m_codeTools->setFormatting(false);
     if (!changed) {
         return;
     }
@@ -834,6 +868,7 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
     }
     QFont bodyFont = m_bodyFont;
     bodyFont.setPointSizeF(m_bodyFont.pointSizeF() * m_zoom);
+    textEdit->setHorizontalScrollBarPolicy(Qt::ScrollBarAsNeeded);
     const QPalette colors = palette();
     const QString nativeCodeFamily = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
     QTextDocument *document = textEdit->document();
@@ -875,6 +910,7 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
                 12.0 * (headingLevel - 1) * m_zoom);
         }
         if (codeBlock) {
+            blockFormat.setNonBreakableLines(!m_wrapCode);
             blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
             blockFormat.setLeftMargin(10.0);
             blockFormat.setRightMargin(10.0);
@@ -1462,12 +1498,28 @@ bool MarkdownPreviewDock::navigatePreviewPosition(QWidget *editor, quint64 versi
     return true;
 }
 
+void MarkdownPreviewDock::setCodeCopyValidator(std::function<bool(QWidget *, quint64)> validator)
+{
+    m_codeTools->setSnapshotValidator(std::move(validator));
+}
+
+void MarkdownPreviewDock::setCodeSnapshot(const QVector<CodeBlockRecord> &records,
+                                          QWidget *editor, quint64 version)
+{
+    if (hasDisplayedPreviewFor(editor, version))
+        m_codeTools->setSnapshot(m_nativeTextEdit, records, editor, version);
+    else
+        m_codeTools->clearSnapshot();
+}
+
 void MarkdownPreviewDock::setSearchStatus(const PreviewStatus &status)
 {
+    m_codeTools->setStatus(status);
     if (status.activeEditor == status.displayedEditor &&
         hasDisplayedPreviewFor(status.displayedEditor, status.displayedVersion)) {
         m_search->setSnapshot(m_nativeTextEdit, status.displayedEditor, status.displayedVersion);
     } else {
+        m_codeTools->clearSnapshot();
         m_search->setSnapshot(nullptr, nullptr, 0);
     }
     m_search->setStatus(status);

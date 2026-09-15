@@ -165,3 +165,57 @@ dle
 粘贴两行查询只保留第一行并提示。手动模式修改源码后，搜索继续使用旧快照并显示待刷新；
 点击刷新后重新计数。关闭搜索清空查询与高亮，隐藏整个预览后重开则保留查询。
 搜索期间导出 HTML，检查正文中没有临时高亮。完整步骤见测试文档的 REQ-004 章节。
+
+## 代码块阅读与复制（REQ-007）
+
+在代码块选择栏选择块与语言，按 Tab 到“复制代码块”并按空格复制；也可在代码内右键
+选择“复制完整代码块”。没有语言时显示“文本”，未知语言保留声明。以下样例含真实 Tab：
+
+```cpp
+    int count = 1;
+	if (count > 0) {
+	    // 空行、空格、Tab、Markdown 字符都应保留
+
+	    const char *literal = "*bold* [link](path) <tag> `inline`";
+	}
+```
+
+```unknown-language extra-attribute
+  未知语言不应报错；标签显示 unknown-language。
+```
+
+```
+```
+
+````markdown
+```cpp
+    内嵌围栏不是这个代码块的结束位置。
+```
+````
+
+> ```text
+>   引用里的代码缩进保留，引用前缀不复制。
+> ```
+
+- 列表内代码：
+
+  ```text
+    保留两格代码缩进，去掉列表结构缩进。
+  ```
+
+    缩进代码：这里作为列表延续正文；下面另有独立缩进代码。
+
+独立缩进代码：
+
+    first line
+    second	line with a tab
+
+    third line after an internal blank
+
+```text
+    LONG_LINE_0123456789_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789_abcdefghijklmnopqrstuvwxyz_ABCDEFGHIJKLMNOPQRSTUVWXYZ_END
+```
+
+验证步骤：切换设置中的“代码块视觉自动换行”，核对长行阅读、表格和普通段落；两种模式
+复制结果相同。切到手动模式并修改源码但不刷新，复制应仍是旧预览，提示“当前预览内容”。
+检查主题、Ctrl＋滚轮、搜索高亮、拖选、标签切换和空代码块；导出不应出现操作控件和提示。

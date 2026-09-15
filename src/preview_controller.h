@@ -4,6 +4,7 @@
 #include "preview_status.h"
 #include "saved_markdown_font.h"
 #include "heading_index.h"
+#include "code_block_index.h"
 
 #include <QByteArray>
 #include <QList>
@@ -79,6 +80,7 @@ private:
         quint64 renderedVersion = 0;
         quint64 headingVersion = 0;
         QVector<HeadingRecord> headings;
+        QVector<CodeBlockRecord> codeBlocks;
         QString mappingError;
     };
 

@@ -2,6 +2,7 @@
 
 #include "preview_status.h"
 #include "heading_index.h"
+#include "code_block_index.h"
 
 #include <QByteArray>
 #include <QDockWidget>
@@ -17,6 +18,7 @@
 class QAbstractScrollArea;
 class HeadingOutline;
 class PreviewSearch;
+class CodeBlockTools;
 class QSplitter;
 class QLabel;
 class QComboBox;
@@ -73,6 +75,8 @@ public:
     void setOutlineStatus(const PreviewStatus &status);
     bool navigateHeading(const HeadingRecord &heading);
     bool navigatePreviewPosition(QWidget *editor, quint64 version, int position, int length = 0);
+    void setCodeCopyValidator(std::function<bool(QWidget *, quint64)> validator);
+    void setCodeSnapshot(const QVector<CodeBlockRecord> &records, QWidget *editor, quint64 version);
     void setSearchStatus(const PreviewStatus &status);
     bool hasNavigationTarget() const { return m_hasNavigationTarget; }
     void releaseNavigationTarget();
@@ -121,6 +125,8 @@ private:
     QString loadStyleSheet() const;
     QUrl baseUrlForFile(const QString &filePath) const;
 
+    CodeBlockTools *m_codeTools = nullptr;
+    bool m_wrapCode = true;
     PreviewSearch *m_search = nullptr;
     HeadingOutline *m_outline = nullptr;
     QSplitter *m_splitter = nullptr;

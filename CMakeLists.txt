@@ -17,6 +17,8 @@ add_library(markdownview SHARED
     src/saved_markdown_font.cpp
     src/saved_markdown_font.h
     src/source_navigation.cpp
+    src/code_block_index.cpp
+    src/code_block_tools.cpp
     src/heading_index.cpp
     src/preview_search.cpp
     src/heading_outline.cpp
@@ -71,6 +73,8 @@ if(BUILD_TESTING)
         src/saved_markdown_font.cpp
         src/saved_markdown_font.h
         src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
         src/heading_index.cpp
         src/preview_search.cpp
         src/heading_outline.cpp
@@ -113,6 +117,8 @@ if(BUILD_TESTING)
         src/saved_markdown_font.cpp
         src/saved_markdown_font.h
         src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
         src/heading_index.cpp
         src/preview_search.cpp
         src/heading_outline.cpp
@@ -158,6 +164,8 @@ if(BUILD_TESTING)
         src/saved_markdown_font.cpp
         src/saved_markdown_font.h
         src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
         src/heading_index.cpp
         src/preview_search.cpp
         src/heading_outline.cpp
@@ -233,6 +241,8 @@ if(BUILD_TESTING)
         src/diagnostics.cpp
         src/saved_markdown_font.cpp
         src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
         src/heading_index.cpp
         src/preview_search.cpp
         src/heading_outline.cpp
@@ -262,6 +272,8 @@ if(BUILD_TESTING)
         src/diagnostics.cpp
         src/saved_markdown_font.cpp
         src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
         src/heading_index.cpp
         src/preview_search.cpp
         src/heading_outline.cpp
@@ -291,6 +303,8 @@ if(BUILD_TESTING)
         src/diagnostics.cpp
         src/saved_markdown_font.cpp
         src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
         src/heading_index.cpp
         src/heading_outline.cpp
         src/preview_search.cpp
@@ -310,6 +324,32 @@ if(BUILD_TESTING)
         COMMAND markdownview_search_tests -platform offscreen -v1 -o markdownview_search_tests.txt,txt)
     set_tests_properties(markdownview_search_tests PROPERTIES LABELS "behavior;search" TIMEOUT 120)
 
+    add_executable(markdownview_code_tests
+        tests/code_block_test.cpp
+        src/diagnostics.cpp
+        src/saved_markdown_font.cpp
+        src/source_navigation.cpp
+        src/code_block_index.cpp
+        src/code_block_tools.cpp
+        src/heading_index.cpp
+        src/heading_outline.cpp
+        src/preview_search.cpp
+        src/host_adapter.cpp
+        src/markdown_preview_dock.cpp
+        src/preview_controller.cpp
+        resources/markdownview.qrc)
+    target_include_directories(markdownview_code_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(markdownview_code_tests PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
+    target_compile_definitions(markdownview_code_tests PRIVATE NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+    if(MSVC)
+        target_compile_options(markdownview_code_tests PRIVATE /utf-8 /W4)
+    else()
+        target_compile_options(markdownview_code_tests PRIVATE -Wall -Wextra -Wpedantic)
+    endif()
+    add_test(NAME markdownview_code_tests
+        COMMAND markdownview_code_tests -platform offscreen -v1 -o markdownview_code_tests.txt,txt)
+    set_tests_properties(markdownview_code_tests PROPERTIES LABELS "behavior;code" TIMEOUT 120)
+
     if(WIN32)
         # Qt 5.15's offscreen backend uses the basic font database, which
         # otherwise searches Qt's empty lib/fonts directory on Windows.
@@ -325,6 +365,7 @@ if(BUILD_TESTING)
             markdownview_font_tests
             markdownview_outline_tests
             markdownview_search_tests
+            markdownview_code_tests
             PROPERTIES ENVIRONMENT "QT_QPA_FONTDIR=${windows_font_directory}")
     endif()
 endif()
