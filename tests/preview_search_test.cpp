@@ -643,6 +643,11 @@ void PreviewSearchTest::wideTableNavigation()
     QCOMPARE(view->document()->toHtml(), html);
     QCOMPARE(f.adapter.renders, renders);
     QCOMPARE(f.adapter.navigations, 0);
+    view->horizontalScrollBar()->triggerAction(QAbstractSlider::SliderToMinimum);
+    QVERIFY(!f.dock->hasNavigationTarget());
+    f.window.resize(1050, 640);
+    QTest::qWait(100);
+    QCOMPARE(view->horizontalScrollBar()->value(), 0);
 }
 
 void PreviewSearchTest::resizeUpdatesHighlights()

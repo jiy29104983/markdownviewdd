@@ -453,6 +453,8 @@ MarkdownPreviewDock::~MarkdownPreviewDock()
     if (m_nativeScrollRangeConnection) {
         disconnect(m_nativeScrollRangeConnection);
     }
+    disconnect(m_nativeHorizontalActionConnection);
+    m_nativeHorizontalActionConnection = QMetaObject::Connection();
     m_nativeScrollConnection = QMetaObject::Connection();
     m_nativeScrollRangeConnection = QMetaObject::Connection();
     disconnectNativePreviews();
@@ -495,6 +497,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         if (m_nativeTextEdit) {
             m_nativeTextEdit->viewport()->removeEventFilter(this);
             m_nativeTextEdit->verticalScrollBar()->removeEventFilter(this);
+            m_nativeTextEdit->horizontalScrollBar()->removeEventFilter(this);
             m_nativeTextEdit->removeEventFilter(this);
         }
         previewWindow->hide();
@@ -505,6 +508,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_nativeTextEdit = textEdit;
         m_nativeTextEdit->viewport()->installEventFilter(this);
         m_nativeTextEdit->verticalScrollBar()->installEventFilter(this);
+        m_nativeTextEdit->horizontalScrollBar()->installEventFilter(this);
         m_nativeTextEdit->installEventFilter(this);
         m_currentNativePreviewObject = previewWindow;
         connectNativeScrollBar(textEdit->verticalScrollBar());
@@ -605,6 +609,8 @@ void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
     if (m_nativeScrollRangeConnection) {
         disconnect(m_nativeScrollRangeConnection);
     }
+    disconnect(m_nativeHorizontalActionConnection);
+    m_nativeHorizontalActionConnection = QMetaObject::Connection();
     m_nativeScrollConnection = QMetaObject::Connection();
     m_nativeScrollRangeConnection = QMetaObject::Connection();
     m_search->setSnapshot(nullptr, nullptr, 0);
@@ -1104,11 +1110,19 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
     if (m_nativeScrollRangeConnection) {
         disconnect(m_nativeScrollRangeConnection);
     }
+    disconnect(m_nativeHorizontalActionConnection);
+    m_nativeHorizontalActionConnection = QMetaObject::Connection();
     m_nativeScrollConnection = QMetaObject::Connection();
     m_nativeScrollRangeConnection = QMetaObject::Connection();
 
     if (!scrollBar) {
         return;
+    }
+
+    if (m_nativeTextEdit) {
+        m_nativeHorizontalActionConnection = connect(
+            m_nativeTextEdit->horizontalScrollBar(), &QAbstractSlider::actionTriggered,
+            this, [this](int) { cancelPreservedScroll(); });
     }
 
     m_headingScrollConnection = connect(scrollBar, &QAbstractSlider::valueChanged,
@@ -1258,7 +1272,8 @@ bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
     }
     if (event && m_nativeTextEdit &&
         (watched == m_nativeTextEdit || watched == m_nativeTextEdit->viewport() ||
-         watched == m_nativeTextEdit->verticalScrollBar()) &&
+         watched == m_nativeTextEdit->verticalScrollBar() ||
+         watched == m_nativeTextEdit->horizontalScrollBar()) &&
         (event->type() == QEvent::MouseButtonPress ||
          event->type() == QEvent::Wheel || event->type() == QEvent::KeyPress)) {
         cancelPreservedScroll();

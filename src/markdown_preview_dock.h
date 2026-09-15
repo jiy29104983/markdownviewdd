@@ -150,6 +150,7 @@ private:
     QPointer<QWidget> m_preservedScrollEditor;
     QObject *m_currentNativePreviewObject = nullptr;
     QMetaObject::Connection m_nativeScrollConnection;
+    QMetaObject::Connection m_nativeHorizontalActionConnection;
     QMetaObject::Connection m_nativeScrollRangeConnection;
     QHash<QObject *, QMetaObject::Connection> m_nativePreviewDestroyConnections;
     QTimer *m_layoutSyncTimer = nullptr;
