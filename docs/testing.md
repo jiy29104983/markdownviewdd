@@ -337,3 +337,27 @@ LF／CRLF／CR。另覆盖键盘、上下文菜单、剪贴板失败与重入、
 界面生命周期用例也检查图标 2 倍像素请求；本地可通过 `QT_SCALE_FACTOR=1.25`、`1.5`、`2`
 分别运行 `markdownview_lifecycle_tests redesignedChromeRetainsState -platform offscreen`，
 核对逻辑宽度和窗口往返。此方式不模拟真实跨 DPI 屏幕迁移。
+
+## 首次滚轮缩放字号修复（2026-09-15）
+
+字体组新增 `wheelStartsAtDisplayedSize`：模拟宿主控件继承 8 pt 或 13 px 字体、
+预览正文设置为 20 pt，分别验证首次向上／向下与连续 Ctrl＋滚轮均从当前显示字号开始，
+并覆盖恢复字号、刷新后再次缩放，以及标题比例和选区保留。独立原生 QTextEdit 对照
+通过 `setFont()` 设置起点，避免只改文档字体而复制产品缺陷。
+
+真实 Windows 补充检查：首次打开后分别放大／缩小，恢复字号后再次缩放；
+换标签、重开及主题切换后检查起点，确认标题、正文和代码一起缩放。
+
+本轮本地验证（Linux ARM64、Qt 5.15.13、GCC 13.2.0）：
+
+| 验证层 | 状态 | 结果与边界 |
+| --- | --- | --- |
+| 静态检查 | passed | `git diff --check`、修改文档的本地链接检查，编译无新增警告 |
+| 自动化测试 | passed | 修复前新增四个数据行均失败；修复后八组 CTest 全通过，发布脚本隔离测试通过 |
+| Linux Release 编译 | passed | 插件及全部测试目标编译成功 |
+| Windows Release 编译 | blocked | 当前环境无 Visual Studio／Windows Qt 工具链 |
+| Artifact 校验 | not run | 本轮未生成 Windows DLL／发布包 |
+| 真实宿主测试 | not verified | 尚未在 Windows notepad-- 中加载本轮产物 |
+
+本地原始日志位于已忽略的 `build/ui-redesign/wheel-before.txt`、`wheel-build.log`
+和 `wheel-ctest.log`；发布脚本隔离测试日志为 `build/ui-redesign/wheel-release-test.log`。

@@ -239,6 +239,8 @@ private slots:
     void fontAvailabilityAndGlobalSavedValues();
     void openingReadsOnceAndOtherEventsReuse();
     void hiddenExportDoesNotReadConfiguration();
+    void wheelStartsAtDisplayedSize_data();
+    void wheelStartsAtDisplayedSize();
     void nativeWheelAndSemanticFormats_data();
     void nativeWheelAndSemanticFormats();
     void reopenKeepsZoomAndRefreshPreservesRatios();
@@ -647,6 +649,62 @@ void SavedMarkdownFontTest::hiddenExportDoesNotReadConfiguration()
     QCOMPARE(fixture.controller.previewStatus().mode, RefreshMode::Manual);
 }
 
+void SavedMarkdownFontTest::wheelStartsAtDisplayedSize_data()
+{
+    QTest::addColumn<int>("delta");
+    QTest::addColumn<bool>("pixelFont");
+    QTest::newRow("point-up") << 120 << false;
+    QTest::newRow("point-down") << -120 << false;
+    QTest::newRow("pixel-up") << 120 << true;
+    QTest::newRow("pixel-down") << -120 << true;
+}
+
+void SavedMarkdownFontTest::wheelStartsAtDisplayedSize()
+{
+    QFETCH(int, delta);
+    QFETCH(bool, pixelFont);
+    Config config;
+    config.font(20);
+    Fixture fixture(config);
+    QFont hostFont = fixture.window.font();
+    if (pixelFont)
+        hostFont.setPixelSize(13);
+    else
+        hostFont.setPointSizeF(8.0);
+    fixture.window.setFont(hostFont);
+    fixture.open();
+    fixture.refresh();
+    QTextEdit *edit = fixture.editor->textEdit;
+    QCOMPARE(edit->document()->defaultFont().pointSizeF(), 20.0);
+    const QTextCursor selection = edit->document()->find(QStringLiteral("H1"));
+    edit->setTextCursor(selection);
+    QTextEdit native;
+    native.setReadOnly(true);
+    QFont expectedFont = edit->document()->defaultFont();
+    native.setFont(expectedFont);
+    native.show();
+    for (int i = 0; i < 2; ++i) {
+        wheel(&native, delta);
+        wheel(edit, delta);
+        const qreal expected = native.font().pointSizeF();
+        QVERIFY(delta > 0 ? expected > 20.0 : expected < 20.0);
+        QCOMPARE(edit->document()->defaultFont().pointSizeF(), expected);
+        QCOMPARE(formatOf(edit, QStringLiteral("Body")).fontPointSize(), expected);
+        QCOMPARE(formatOf(edit, QStringLiteral("H1")).fontPointSize(), expected * 2.0);
+        QCOMPARE(edit->textCursor().selectionStart(), selection.selectionStart());
+        QCOMPARE(edit->textCursor().selectionEnd(), selection.selectionEnd());
+    }
+    fixture.controller.restoreHostFontSize();
+    native.setFont(expectedFont);
+    wheel(&native, delta);
+    wheel(edit, delta);
+    QCOMPARE(edit->document()->defaultFont().pointSizeF(), native.font().pointSizeF());
+    fixture.refresh();
+    wheel(&native, delta);
+    wheel(edit, delta);
+    QCOMPARE(edit->document()->defaultFont().pointSizeF(), native.font().pointSizeF());
+}
+
 void SavedMarkdownFontTest::nativeWheelAndSemanticFormats_data()
 {
     QTest::addColumn<QString>("markdown");
@@ -668,7 +726,7 @@ void SavedMarkdownFontTest::nativeWheelAndSemanticFormats()
     QTextEdit native;
     native.setReadOnly(true);
     native.setMarkdown(markdown);
-    native.document()->setDefaultFont(edit->document()->defaultFont());
+    native.setFont(edit->document()->defaultFont());
     native.show();
     QTextCursor selection = edit->document()->find(QStringLiteral("H1"));
     if (!selection.isNull()) {

@@ -1028,7 +1028,9 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
         rootFormat.clearProperty(CodeBlockTools::RootOriginalMargin);
         document->rootFrame()->setFrameFormat(rootFormat);
     }
-    if (textEdit->palette() == colors && document->defaultFont() == bodyFont &&
+    if (textEdit->palette() == colors &&
+        textEdit->font().pointSizeF() == bodyFont.pointSizeF() &&
+        document->defaultFont() == bodyFont &&
         document->property(kStyleRevision).toULongLong() == m_styleRevision &&
         document->property(kDocumentRevision).toInt() == document->revision()) {
         return false;
@@ -1042,6 +1044,11 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
     // properties; use absolute sizes, never multiply previously styled values.
     QTextCursor edit(document);
     edit.beginEditBlock();
+    // QTextEdit's native zoom starts from QWidget::font(), not the document
+    // default. Keep both at the displayed size, including after a zoom reset.
+    if (textEdit->font().pointSizeF() != bodyFont.pointSizeF()) {
+        textEdit->setFont(bodyFont);
+    }
     document->setDefaultFont(bodyFont);
     document->setDefaultStyleSheet(loadStyleSheet());
     for (QTextBlock block = document->begin(); block.isValid(); block = block.next()) {
