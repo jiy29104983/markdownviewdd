@@ -19,3 +19,5 @@
 *.vcxproj
 *.vcxproj.filters
 *.vcxproj.user
+
+review-*.md
