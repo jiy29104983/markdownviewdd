@@ -252,7 +252,62 @@ private slots:
     void savedEditorZoomAndUnrelatedStylesAreIgnored();
     void manualContextOpenAndPendingReopenDoNotParse();
     void invalidStyleInputDoesNotMutateDocument();
+    void headingIndentationSurvivesRestyling();
 };
+
+void SavedMarkdownFontTest::headingIndentationSurvivesRestyling()
+{
+    Config config;
+    config.font(12);
+    Fixture fixture(config, sample() + QStringLiteral("> ## Quoted heading\n\nSetext heading\n---\n\n"));
+    fixture.open();
+    fixture.refresh();
+    fixture.sync(false);
+    QTextEdit *edit = fixture.editor->textEdit;
+    const QString plainText = edit->toPlainText();
+    auto left = [&](const QString &text) {
+        QTextCursor cursor = edit->document()->find(text);
+        cursor.setPosition(cursor.selectionStart());
+        return edit->cursorRect(cursor).left();
+    };
+    auto check = [&]() {
+        const int bodyLeft = left(QStringLiteral("Body"));
+        QCOMPARE(left(QStringLiteral("H1")), bodyLeft);
+        int previous = bodyLeft;
+        for (int level = 2; level <= 6; ++level) {
+            const int current = left(QStringLiteral("H%1").arg(level));
+            QVERIFY(current > previous);
+            previous = current;
+        }
+        QCOMPARE(left(QStringLiteral("Setext heading")), left(QStringLiteral("H2")));
+        QVERIFY(left(QStringLiteral("Quoted heading")) >= left(QStringLiteral("H2")));
+        QCOMPARE(edit->toPlainText(), plainText);
+    };
+    check();
+    const int initialLeft = left(QStringLiteral("H6"));
+    for (int i = 0; i < 3; ++i) {
+        QPalette colors = fixture.dock()->palette();
+        colors.setColor(QPalette::Text, i % 2 ? Qt::black : Qt::darkBlue);
+        fixture.dock()->setPalette(colors);
+        QCoreApplication::processEvents();
+        check();
+        QCOMPARE(left(QStringLiteral("H6")), initialLeft);
+    }
+    wheel(edit, 360);
+    check();
+    QVERIFY(left(QStringLiteral("H6")) > initialLeft);
+    fixture.refresh();
+    check();
+    fixture.controller.restoreHostFontSize();
+    check();
+    QCOMPARE(left(QStringLiteral("H6")), initialLeft);
+    QByteArray html;
+    QVERIFY(fixture.exportHtml(&html));
+    QTextEdit exported;
+    exported.setHtml(QString::fromUtf8(html));
+    QVERIFY(exported.document()->find(QStringLiteral("H6")).blockFormat().leftMargin() >
+        exported.document()->find(QStringLiteral("H2")).blockFormat().leftMargin());
+}
 
 void SavedMarkdownFontTest::hostGeneratedFixtures()
 {

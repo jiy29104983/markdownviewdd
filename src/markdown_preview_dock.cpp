@@ -868,6 +868,12 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
             blockFormat.setLeftMargin(12.0 * quoteLevel);
             blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
         }
+        if (headingLevel > 0) {
+            // Recompute from semantic levels, so refresh/theme/zoom never
+            // accumulate indentation. Keep the surrounding quote's margin.
+            blockFormat.setLeftMargin(12.0 * qMax(0, quoteLevel) +
+                12.0 * (headingLevel - 1) * m_zoom);
+        }
         if (codeBlock) {
             blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
             blockFormat.setLeftMargin(10.0);
