@@ -131,7 +131,7 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
         return QByteArray();
     }
 
-    QString html = document->toHtml("UTF-8");
+    QString html = CodeBlockTools::htmlForExport(document);
     const QRegularExpression imageSourcePattern(
         QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])([^\\\"']+)\\2"),
         QRegularExpression::CaseInsensitiveOption);
@@ -277,9 +277,6 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_search = new PreviewSearch(container);
     layout->addWidget(m_search);
     m_codeTools = new CodeBlockTools(container);
-    layout->addWidget(m_codeTools);
-    connect(m_codeTools, &CodeBlockTools::navigateRequested,
-            this, &MarkdownPreviewDock::navigatePreviewPosition);
     auto *searchButton = new QToolButton(toolbar);
     searchButton->setText(tr("查找"));
     searchButton->setObjectName(QStringLiteral("NddMarkdownSearchOpen"));
@@ -872,6 +869,15 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
     const QPalette colors = palette();
     const QString nativeCodeFamily = QFontDatabase::systemFont(QFontDatabase::FixedFont).family();
     QTextDocument *document = textEdit->document();
+    // QTextDocument::clear can retain the root frame's display-only margin.
+    // Remove it when a newly imported first block has no attached header.
+    auto rootFormat = document->rootFrame()->frameFormat();
+    if (rootFormat.hasProperty(CodeBlockTools::RootOriginalMargin) &&
+        !document->begin().blockFormat().hasProperty(CodeBlockTools::HeaderOriginalMargin)) {
+        rootFormat.setTopMargin(rootFormat.property(CodeBlockTools::RootOriginalMargin).toDouble());
+        rootFormat.clearProperty(CodeBlockTools::RootOriginalMargin);
+        document->rootFrame()->setFrameFormat(rootFormat);
+    }
     if (textEdit->palette() == colors && document->defaultFont() == bodyFont &&
         document->property(kStyleRevision).toULongLong() == m_styleRevision &&
         document->property(kDocumentRevision).toInt() == document->revision()) {
@@ -914,7 +920,8 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
             blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
             blockFormat.setLeftMargin(10.0);
             blockFormat.setRightMargin(10.0);
-            blockFormat.setTopMargin(6.0);
+            blockFormat.setTopMargin(6.0 + (blockFormat.hasProperty(CodeBlockTools::HeaderOriginalMargin)
+                ? CodeBlockTools::HeaderHeight : 0));
             blockFormat.setBottomMargin(6.0);
         }
         QTextCursor blockCursor(block);
@@ -1506,8 +1513,13 @@ void MarkdownPreviewDock::setCodeCopyValidator(std::function<bool(QWidget *, qui
 void MarkdownPreviewDock::setCodeSnapshot(const QVector<CodeBlockRecord> &records,
                                           QWidget *editor, quint64 version)
 {
-    if (hasDisplayedPreviewFor(editor, version))
+    if (hasDisplayedPreviewFor(editor, version)) {
+        m_search->setFormatting(true);
         m_codeTools->setSnapshot(m_nativeTextEdit, records, editor, version);
+        // Header spacing is a known formatting-only change, not new Markdown.
+        m_nativeTextEdit->document()->setProperty(kDocumentRevision, m_nativeTextEdit->document()->revision());
+        m_search->setFormatting(false);
+    }
     else
         m_codeTools->clearSnapshot();
 }

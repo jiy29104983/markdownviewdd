@@ -1,0 +1,110 @@
+{
+  "baseline_commit": "4571ad1",
+  "sample": "100 separated fenced code blocks, Qt 5.15.13, Linux aarch64, 1000x700, 20 samples after warmup",
+  "baseline": {
+    "cached-tab-activation-sync": {
+      "median_ms": 3.458218,
+      "n": 20,
+      "p95_ms": 3.503838
+    },
+    "explicit-refresh-sync": {
+      "median_ms": 37.072984,
+      "n": 20,
+      "p95_ms": 37.491728
+    },
+    "first-render-sync": {
+      "median_ms": 7.510842,
+      "n": 20,
+      "p95_ms": 7.564762
+    },
+    "html_snapshot_bytes": 67373,
+    "latest-html-export": {
+      "median_ms": 2.4334465,
+      "n": 20,
+      "p95_ms": 2.452466
+    },
+    "layers": false,
+    "outline_hidden": false,
+    "process_peak_rss": "31644 kB",
+    "qt": "5.15.13",
+    "sample": "code-blocks",
+    "source_bytes": 4680,
+    "source_lines": 601,
+    "typing-burst-20": {
+      "median_ms": 0.193002,
+      "n": 20,
+      "p95_ms": 0.216963
+    }
+  },
+  "all_headers_eager": {
+    "cached-tab-activation-sync": {
+      "median_ms": 7.615843,
+      "n": 20,
+      "p95_ms": 7.685644
+    },
+    "explicit-refresh-sync": {
+      "median_ms": 42.785926,
+      "n": 20,
+      "p95_ms": 43.207031
+    },
+    "first-render-sync": {
+      "median_ms": 11.4323045,
+      "n": 20,
+      "p95_ms": 11.524606
+    },
+    "html_snapshot_bytes": 67373,
+    "latest-html-export": {
+      "median_ms": 3.493018,
+      "n": 20,
+      "p95_ms": 3.532358
+    },
+    "layers": false,
+    "outline_hidden": false,
+    "process_peak_rss": "33576 kB",
+    "qt": "5.15.13",
+    "sample": "code-blocks",
+    "source_bytes": 4680,
+    "source_lines": 601,
+    "typing-burst-20": {
+      "median_ms": 0.2451025,
+      "n": 20,
+      "p95_ms": 0.269283
+    }
+  },
+  "visible_headers_only": {
+    "cached-tab-activation-sync": {
+      "median_ms": 3.966023,
+      "n": 20,
+      "p95_ms": 3.992683
+    },
+    "explicit-refresh-sync": {
+      "median_ms": 38.765001999999996,
+      "n": 20,
+      "p95_ms": 39.512191
+    },
+    "first-render-sync": {
+      "median_ms": 7.767605,
+      "n": 20,
+      "p95_ms": 7.876606
+    },
+    "html_snapshot_bytes": 67373,
+    "latest-html-export": {
+      "median_ms": 3.4907779999999997,
+      "n": 20,
+      "p95_ms": 3.560679
+    },
+    "layers": false,
+    "outline_hidden": false,
+    "process_peak_rss": "31788 kB",
+    "qt": "5.15.13",
+    "sample": "code-blocks",
+    "source_bytes": 4680,
+    "source_lines": 601,
+    "typing-burst-20": {
+      "median_ms": 0.2231225,
+      "n": 20,
+      "p95_ms": 0.243083
+    }
+  },
+  "scope": "Synchronous paths only; deferred overlay creation/positioning is not fully included. Mock host has no reliable source accessor. Clipboard fidelity is tested separately."
+}

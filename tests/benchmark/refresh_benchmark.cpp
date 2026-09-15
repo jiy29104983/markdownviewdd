@@ -103,7 +103,10 @@ int main(int argc, char **argv)
     }
     const QString sample = app.arguments().at(1);
     QString text;
-    if (sample == QStringLiteral("headings")) {
+    if (sample == QStringLiteral("code-blocks")) {
+        for (int i = 0; i < 100; ++i)
+            text += QStringLiteral("Paragraph %1\n\n```cpp\n    item_%1 = value;\n```\n\n").arg(i);
+    } else if (sample == QStringLiteral("headings")) {
         for (int i = 0; i < 500; ++i) {
             text += QStringLiteral("## Heading %1\n\nParagraph.\n\n").arg(i);
         }

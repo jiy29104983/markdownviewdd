@@ -25,6 +25,7 @@
 #include <QTextBlock>
 #include <QTextEdit>
 #include <QTextLayout>
+#include <QTextFrame>
 #include <QToolButton>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -149,7 +150,19 @@ struct Fixture
     QTextEdit *preview() { return adapter.cache.value(tabs->currentWidget()).preview; }
 };
 CodeBlockTools *tools(Fixture &f) { return f.dock->findChild<CodeBlockTools *>(); }
-QString feedback(Fixture &f) { return tools(f)->findChild<QLabel *>()->text(); }
+QToolButton *copyButton(Fixture &f, int ordinal = 0)
+{
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto buttons = f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode"));
+        for (auto i = buttons.crbegin(); i != buttons.crend(); ++i) {
+            if ((*i)->property("codeBlockOrdinal").toInt() == ordinal && (*i)->parentWidget()->isEnabled())
+                return *i;
+        }
+        QTest::qWait(25);
+    }
+    return nullptr;
+}
+QString feedback(Fixture &f) { return copyButton(f)->accessibleDescription(); }
 }
 
 class CodeBlockTest final : public QObject
@@ -167,6 +180,8 @@ private slots:
     void preferenceAndWindows();
     void contextMenuAndReentrantClipboard();
     void screenshotsAndMeasurements();
+    void attachedButtonsFollowLayout();
+    void attachedButtonsVirtualized();
 };
 
 void CodeBlockTest::extraction_data()
@@ -260,16 +275,21 @@ void CodeBlockTest::clipboardAndKeyboard()
     QCOMPARE(code->records().size(), 2);
     QString copied;
     code->setClipboardWriter([&](const QString &text) { copied = text; return true; });
-    auto *button = code->findChild<QToolButton *>();
+    auto *button = copyButton(f);
+    QVERIFY(button);
+    QTRY_VERIFY(button->isVisible());
     button->setFocus();
     QTest::keyClick(button, Qt::Key_Space);
     QCOMPARE(copied, QStringLiteral("  a\tb\n\n[]*\n"));
-    auto *combo = code->findChild<QComboBox *>();
-    combo->setFocus();
-    QTest::keyClick(combo, Qt::Key_Down);
-    QTest::keyClick(button, Qt::Key_Space);
+    QVERIFY(!f.dock->findChild<QComboBox *>(QStringLiteral("NddMarkdownCodeBlocks")));
+    QContextMenuEvent context(QContextMenuEvent::Keyboard, QPoint(), QPoint());
+    QCoreApplication::sendEvent(f.preview(), &context);
+    auto *menu = code->findChild<QMenu *>();
+    QVERIFY(menu);
+    QVERIFY(menu->actions().last()->text().contains(QStringLiteral("空代码块")));
+    menu->actions().last()->trigger();
+    menu->close();
     QCOMPARE(copied, QString());
-    QVERIFY(combo->itemText(1).contains(QStringLiteral("文本")));
     code->setClipboardWriter({});
     QVERIFY(code->copyBlock(0));
     QString actual = QApplication::clipboard()->text();
@@ -346,7 +366,7 @@ void CodeBlockTest::failureAndInvalidation()
     f.adapter.readable = false;
     f.refresh();
     QVERIFY(!code->records().first().reliable);
-    QVERIFY(!code->findChild<QToolButton *>()->isEnabled());
+    QVERIFY(!copyButton(f)->isEnabled());
     QVERIFY(!code->copyBlock(0));
     f.adapter.readable = true;
     f.refresh();
@@ -479,6 +499,72 @@ void CodeBlockTest::contextMenuAndReentrantClipboard()
     QVERIFY(code->records().isEmpty());
 }
 
+void CodeBlockTest::attachedButtonsFollowLayout()
+{
+    Fixture f(QStringLiteral("```cpp\nfirst\n```\n\nparagraph\n\n```python\nsecond\n```"));
+    auto *code = tools(f);
+    auto *first = copyButton(f, 0);
+    auto *second = copyButton(f, 1);
+    QVERIFY(first && second);
+    QTRY_VERIFY(first->isVisible() && second->isVisible());
+    QString copied;
+    code->setClipboardWriter([&](const QString &text) { copied = text; return true; });
+    QTest::mouseClick(second, Qt::LeftButton);
+    QCOMPARE(copied, QStringLiteral("second\n"));
+    QTest::mouseClick(first, Qt::LeftButton);
+    QCOMPARE(copied, QStringLiteral("first\n"));
+    QVERIFY(first->parentWidget()->parentWidget() == f.preview()->viewport());
+    const auto record = code->records().first();
+    QTextCursor cursor(f.preview()->document());
+    cursor.setPosition(record.position);
+    const QRect textRect = f.preview()->cursorRect(cursor);
+    QVERIFY(first->parentWidget()->geometry().bottom() < textRect.top());
+    const QString exported = CodeBlockTools::htmlForExport(f.preview()->document());
+    QVERIFY(!exported.contains(QStringLiteral("margin-top:34px")));
+    QVERIFY(!exported.contains(QStringLiteral("margin-top:28px")));
+    const int oldRight = first->parentWidget()->geometry().right();
+    f.window.resize(1400, 650);
+    f.window.resizeDocks({f.dock}, {720}, Qt::Horizontal);
+    QTRY_VERIFY(first->parentWidget()->geometry().right() > oldRight);
+    const qreal margin = cursor.blockFormat().topMargin();
+    f.dock->setReadingFont(QFont(QStringLiteral("monospace"), 14), 1.25);
+    QTest::qWait(50);
+    QCOMPARE(cursor.blockFormat().topMargin(), margin);
+    QCOMPARE(CodeBlockTools::htmlForExport(f.preview()->document()).count(QStringLiteral("first")), 1);
+    QPointer<QToolButton> old = first;
+    f.refresh();
+    if (old)
+        QVERIFY(!old->isVisible() && !old->isEnabled());
+    QTRY_VERIFY(copyButton(f)->isVisible());
+    f.editor->setPlainText(QStringLiteral("ordinary paragraph\n\nanother paragraph"));
+    f.refresh();
+    QVERIFY(tools(f)->records().isEmpty());
+    QCOMPARE(f.preview()->document()->rootFrame()->frameFormat().topMargin(),
+             f.preview()->document()->documentMargin());
+}
+
+void CodeBlockTest::attachedButtonsVirtualized()
+{
+    QString source;
+    for (int i = 0; i < 100; ++i)
+        source += QStringLiteral("```cpp\nline %1\n```\n\n").arg(i);
+    Fixture f(source);
+    QTest::qWait(80);
+    QVERIFY(copyButton(f, 0));
+    QVERIFY(f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode")).size() < 12);
+    QPointer<QToolButton> initial = copyButton(f, 0);
+    f.preview()->verticalScrollBar()->setValue(f.preview()->verticalScrollBar()->maximum());
+    QVERIFY(!initial || !initial->isVisible());
+    QTRY_VERIFY(copyButton(f, 99));
+    QVERIFY(!copyButton(f, 0));
+    QString copied;
+    tools(f)->setClipboardWriter([&](const QString &text) { copied = text; return true; });
+    QTest::mouseClick(copyButton(f, 99), Qt::LeftButton);
+    QCOMPARE(copied, QStringLiteral("line 99\n"));
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+    QVERIFY(f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode")).size() < 12);
+}
+
 void CodeBlockTest::screenshotsAndMeasurements()
 {
     QString source;
@@ -499,13 +585,30 @@ void CodeBlockTest::screenshotsAndMeasurements()
     qInfo("100 code blocks, n=20, median_ms=%.3f p95_ms=%.3f", samples[10] / 1e6, samples[18] / 1e6);
     const QString directory = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
     if (!directory.isEmpty()) {
+        Fixture visual(QStringLiteral("```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n\nprint(greet(\"Markdown\"))\n```\n\n"
+                                      "```json\n{\n  \"theme\": \"dark\",\n  \"copy\": true\n}\n```\n\n"
+                                      "```bash\ngit status --short\n````\n"));
+        visual.dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineVisible"))->setChecked(false);
+        visual.window.resizeDocks({visual.dock}, {540}, Qt::Horizontal);
+        QTest::qWait(80);
         QVERIFY(QDir().mkpath(directory));
-        QVERIFY(f.window.grab().save(directory + QStringLiteral("/req007-code.png")));
-        f.controller->setRefreshMode(RefreshMode::Manual);
-        f.editor->setPlainText(QStringLiteral("changed"));
-        QVERIFY(tools(f)->copyBlock(0));
+        QVERIFY(visual.window.grab().save(directory + QStringLiteral("/req007-code.png")));
+        QVERIFY(visual.dock->grab().save(directory + QStringLiteral("/req007-code-inline.png")));
+        QVERIFY(tools(visual)->copyBlock(0));
+        QTest::qWait(20);
+        QVERIFY(visual.window.grab().save(directory + QStringLiteral("/req007-code-copied.png")));
+        visual.controller->setRefreshMode(RefreshMode::Manual);
+        visual.editor->setPlainText(QStringLiteral("changed"));
+        QVERIFY(tools(visual)->copyBlock(0));
         QCoreApplication::processEvents();
-        QVERIFY(f.window.grab().save(directory + QStringLiteral("/req007-code-stale.png")));
+        QVERIFY(visual.window.grab().save(directory + QStringLiteral("/req007-code-stale.png")));
+        QPalette dark = visual.dock->palette();
+        dark.setColor(QPalette::Base, QColor(QStringLiteral("#171a21")));
+        dark.setColor(QPalette::AlternateBase, QColor(QStringLiteral("#232832")));
+        dark.setColor(QPalette::Text, QColor(QStringLiteral("#e2e6ef")));
+        visual.dock->setPalette(dark);
+        QTest::qWait(80);
+        QVERIFY(visual.window.grab().save(directory + QStringLiteral("/req007-code-dark.png")));
     }
 }
 
