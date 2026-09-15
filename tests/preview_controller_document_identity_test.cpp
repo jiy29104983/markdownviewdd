@@ -4,8 +4,7 @@
 
 #include <QAbstractScrollArea>
 #include <QAction>
-#include <QMessageBox>
-#include <QPushButton>
+#include <QDialog>
 #include <QClipboard>
 #include <QTextBrowser>
 #include <QDir>
@@ -1269,11 +1268,9 @@ void PreviewControllerDocumentIdentityTest::failedRefreshRetainsOnlyUntouchedSna
             : QStringLiteral("09-failure-old-snapshot.png"))));
     }
     dock->findChild<QToolButton *>(QStringLiteral("NddMarkdownStatusDetails"))->click();
-    auto *detailsDialog = dock->findChild<QMessageBox *>();
+    auto *detailsDialog = dock->findChild<QDialog *>(QStringLiteral("NddMarkdownDetailsDialog"));
     QVERIFY(detailsDialog);
-    for (auto *button : detailsDialog->buttons()) {
-        if (detailsDialog->buttonRole(button) == QMessageBox::ActionRole) button->click();
-    }
+    detailsDialog->findChild<QToolButton *>(QStringLiteral("NddMarkdownCopyDetails"))->click();
     detailsDialog->close();
     QVERIFY(QApplication::clipboard()->text().contains(QStringLiteral("模拟宿主更新失败")));
     QByteArray html;

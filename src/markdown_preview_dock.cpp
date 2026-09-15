@@ -7,7 +7,8 @@
 #include "saved_markdown_font.h"
 
 #include <QAbstractSlider>
-#include <QPushButton>
+#include <QDialog>
+#include <QPlainTextEdit>
 #include <QActionGroup>
 #include <QMenu>
 #include <QSplitter>
@@ -472,19 +473,42 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *documentDetails = settingsMenu->addAction(tr("文档与状态详情"));
     connect(documentDetails, &QAction::triggered, m_detailsButton, &QToolButton::click);
     setWidget(container);
+    m_chromeWidgets = {title, toolbar, m_search, m_errorRow, statusRow};
     updateChrome();
 
     connect(m_retryButton, &QToolButton::clicked,
             this, &MarkdownPreviewDock::refreshRequested);
     connect(m_detailsButton, &QToolButton::clicked, this, [this]() {
         const QString details = m_documentDetails + QStringLiteral("\n") + m_statusDetails;
-        auto *dialog = new QMessageBox(QMessageBox::Information, tr("预览详情"),
-            details, QMessageBox::Close, this);
-        dialog->setTextFormat(Qt::PlainText);
+        auto *dialog = new QDialog(this);
+        dialog->setObjectName(QStringLiteral("NddMarkdownDetailsDialog"));
+        dialog->setWindowTitle(tr("预览详情"));
         dialog->setAttribute(Qt::WA_DeleteOnClose);
-        auto *copy = dialog->addButton(tr("复制详情"), QMessageBox::ActionRole);
-        connect(copy, &QAbstractButton::clicked, dialog, [details]() {
+        auto *detailsLayout = new QVBoxLayout(dialog);
+        auto *text = new QPlainTextEdit(dialog);
+        text->setReadOnly(true);
+        text->setPlainText(details);
+        text->setAccessibleName(tr("文档与状态详情"));
+        detailsLayout->addWidget(text);
+        auto *actions = new QHBoxLayout;
+        auto *copy = new QToolButton(dialog);
+        copy->setObjectName(QStringLiteral("NddMarkdownCopyDetails"));
+        copy->setText(tr("复制详情"));
+        PreviewUi::setup(copy, PreviewUi::Symbol::Copy, tr("复制详情"));
+        copy->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+        actions->addWidget(copy);
+        actions->addStretch();
+        auto *close = new QToolButton(dialog);
+        close->setText(tr("关闭"));
+        PreviewUi::setup(close, PreviewUi::Symbol::Close, tr("关闭详情"));
+        actions->addWidget(close);
+        detailsLayout->addLayout(actions);
+        dialog->resize(460, 260);
+        connect(close, &QToolButton::clicked, dialog, &QDialog::accept);
+        connect(copy, &QToolButton::clicked, dialog, [details, copy]() {
             QApplication::clipboard()->setText(details);
+            copy->setToolTip(tr("已复制详情"));
+            copy->setIcon(PreviewUi::icon(PreviewUi::Symbol::Success, copy));
         });
         dialog->open();
     });
@@ -516,6 +540,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         emit previewScrollRangeChanged();
     });
     connect(m_themeStyleTimer, &QTimer::timeout, this, [this]() {
+        updateChrome();
         ++m_styleRevision;
         if (m_nativeTextEdit && m_previewEditor && m_previewContentVersion != 0) {
             refreshDocumentStyle(m_previewEditor.data(), m_previewContentVersion);
@@ -828,19 +853,26 @@ void MarkdownPreviewDock::setRefreshMode(RefreshMode mode)
 
 void MarkdownPreviewDock::updateChrome()
 {
-    if (!m_floatButton) return;
+    if (!m_floatButton || m_updatingChrome) return;
+    const QScopedValueRollback<bool> updating(m_updatingChrome, true);
     PreviewUi::setup(m_floatButton, isFloating() ? PreviewUi::Symbol::Dock : PreviewUi::Symbol::Float,
         isFloating() ? tr("停靠回主窗口") : tr("浮动窗口"));
     m_floatButton->setEnabled(!m_dockOwner.isNull());
     if (!m_dockOwner) m_floatButton->setToolTip(tr("当前宿主没有可用的主窗口停靠区域"));
-    setStyleSheet(QStringLiteral(
-        "QDockWidget#NddMarkdownPreviewDock QToolButton { border: 1px solid transparent; border-radius: 4px; padding: 3px; }"
-        "QDockWidget#NddMarkdownPreviewDock QToolButton:hover, QDockWidget#NddMarkdownPreviewDock QToolButton:pressed { background: palette(midlight); }"
-        "QDockWidget#NddMarkdownPreviewDock QToolButton:checked { background: palette(alternate-base); border-color: palette(highlight); }"
-        "QDockWidget#NddMarkdownPreviewDock QToolButton:focus { border-color: palette(highlight); }"
+    const QString chromeStyle = QStringLiteral(
+        "QToolButton { border: 1px solid transparent; border-radius: 4px; padding: 3px; }"
+        "QToolButton:hover, QToolButton:pressed { background: palette(midlight); }"
+        "QToolButton:checked { background: palette(alternate-base); border-color: palette(highlight); }"
+        "QToolButton:focus { border-color: palette(highlight); }"
         "QWidget#NddMarkdownRefreshGroup { border: 1px solid palette(mid); border-radius: 4px; }"
-        "QWidget#NddMarkdownTitleBar { border-bottom: 1px solid palette(midlight); }"
-        "QLabel#NddMarkdownPreviewDocumentLabel, QLabel#NddMarkdownPreviewStatusLabel { color: palette(window-text); }"));
+        "QWidget#NddMarkdownTitleBar { border-bottom: 1px solid palette(midlight); }");
+    // Re-polish only chrome: touching the Dock stylesheet also re-polishes the
+    // native QTextEdit and can reset its palette and reading position.
+    for (auto *chrome : m_chromeWidgets) {
+        chrome->setStyleSheet(QString());
+        chrome->setPalette(palette());
+        chrome->setStyleSheet(chromeStyle);
+    }
 }
 
 void MarkdownPreviewDock::resizeEvent(QResizeEvent *event)
@@ -1155,7 +1187,7 @@ void MarkdownPreviewDock::scheduleThemeStyleRefresh()
 void MarkdownPreviewDock::changeEvent(QEvent *event)
 {
     QDockWidget::changeEvent(event);
-    if (event && (event->type() == QEvent::PaletteChange ||
+    if (!m_updatingChrome && event && (event->type() == QEvent::PaletteChange ||
                   event->type() == QEvent::ApplicationPaletteChange ||
                   event->type() == QEvent::StyleChange)) {
         scheduleThemeStyleRefresh();
@@ -1432,7 +1464,7 @@ bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
     if (m_handlingNativeWheel) {
         return QDockWidget::eventFilter(watched, event);
     }
-    if (event && (event->type() == QEvent::PaletteChange ||
+    if (!m_updatingChrome && event && (event->type() == QEvent::PaletteChange ||
                   event->type() == QEvent::ApplicationPaletteChange ||
                   event->type() == QEvent::StyleChange)) {
         scheduleThemeStyleRefresh();

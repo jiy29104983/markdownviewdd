@@ -153,6 +153,8 @@ private:
     Qt::DockWidgetArea m_lastDockArea = Qt::RightDockWidgetArea;
     bool m_outlineWanted = true;
     bool m_compactOutline = false;
+    bool m_updatingChrome = false;
+    QList<QWidget *> m_chromeWidgets;
     QString m_documentName;
     QString m_documentDetails;
     QWidget *m_errorRow = nullptr;

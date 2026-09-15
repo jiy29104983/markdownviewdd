@@ -139,9 +139,13 @@ void MarkdownPreviewDockLifecycleTest::redesignedChromeRetainsState()
     dark.setColor(QPalette::Window, QColor(35, 38, 42));
     dark.setColor(QPalette::Base, QColor(25, 28, 32));
     dark.setColor(QPalette::WindowText, QColor(225, 228, 232));
+    dark.setColor(QPalette::ButtonText, QColor(225, 228, 232));
+    dark.setColor(QPalette::Button, QColor(35, 38, 42));
     dark.setColor(QPalette::Text, QColor(225, 228, 232));
     const QPalette original = QApplication::palette();
     QApplication::setPalette(dark);
+    QTest::qWait(80);
+    QCOMPARE(toggle->palette().color(QPalette::WindowText), dark.color(QPalette::WindowText));
     QVERIFY(capture(QStringLiteral("ui-dark")));
     QApplication::setPalette(original);
     close->click();
