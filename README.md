@@ -4,6 +4,12 @@ markdownview-- 是面向 [notepad--](https://gitee.com/cxasm/notepad--) v3.8.3 �
 
 当前版本：**v0.2.9**。本次新增功能与验证边界见[版本说明](docs/releases/v0.2.9.md)。
 
+## 界面预览
+
+notepad-- 中的真实使用截图：左侧编辑 Markdown，右侧显示预览及标题大纲，正文中可见图片、代码块语言标识和复制按钮。点击图片可查看原图。
+
+[![notepad-- 中的 Markdown 编辑区、侧边栏预览与右侧标题大纲](docs/images/markdown-preview.png)](docs/images/markdown-preview.png)
+
 ## 功能
 
 - 在 notepad-- 左侧或右侧停靠 Markdown 预览窗口
@@ -137,6 +143,10 @@ copy /y build\plugin\markdownviewdd.dll ^
 - “插件 → Markdown 预览 → 显示预览”
 - 快捷键 `Ctrl+Shift+M`
 - 编辑器右键菜单中的“在侧边栏预览 Markdown”
+
+下图展示“插件 → Markdown 预览”菜单中的预览开关、刷新、大纲、查找、同步滚动、缩放重置和 HTML 导出入口。
+
+[![Markdown 预览插件菜单及显示预览快捷键 Ctrl+Shift+M](docs/images/markdown-preview-menu.png)](docs/images/markdown-preview-menu.png)
 
 插件菜单和工具栏均可选择自动／手动刷新，两处选择保持一致。新窗口默认自动，选择在当前
 窗口内保留；切换标签或关闭／重开侧栏不重置，当前阶段不跨重启保存。手动模式下首次显示
