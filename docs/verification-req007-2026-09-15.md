@@ -23,8 +23,8 @@
 | 静态检查 | passed | `git diff --check`、改动 Markdown 相对链接、接口与依赖审查；无 ABI／宿主改动 |
 | Linux Release 编译 | passed | Linux aarch64，GCC 13.3.0，Qt 5.15.13，C++14；警告选项 `-Wall -Wextra -Wpedantic`，无新增编译警告 |
 | 自动化测试 | passed | 八组 CTest 全部通过，QtTest 合计 239 passed／0 failed，代码组 35 passed；隔离发布脚本通过，日志见下文 |
-| Windows Release 编译 | not run | 本地阶段无 Windows 工具链；推送后补记 GitHub Qt 5.15.2／MSVC v142／x64 结果 |
-| Artifact 校验 | not run | 等待上述工作流生成本次候选产物 |
+| Windows Release 编译 | passed | 提交 `6a3f2a2`，GitHub Windows 2022／VS 2022 + MSVC v142／Qt 5.15.2／x64，Release 编译通过 |
+| Artifact 校验 | passed | 下述代码提交产物 SHA256、ZIP 文件清单、PE32+ x64 和导入依赖已验证 |
 | 真实宿主测试 | not verified | 由用户在 notepad-- v3.8.3 x64 完成，不以 Linux／模拟测试替代 |
 
 代码组以固定预期字符串验证：普通／未知语言、空块、尾部换行、空白行中的空格、Tab、
@@ -82,3 +82,34 @@ Windows 工作流同样生成截图，真实宿主视觉仍需用户验证。
 重复状态更新已移除；该路径仍有新增身份／模式检查，微秒级绝对差值与事件调度噪声
 无法由 20 次模拟样本分离。保留超过复核线的数据，不宣称所有路径无退化；自动化计数
 确认复制和显示设置不增加源码读取或渲染，真实设备性能仍待用户验证。
+
+## GitHub Windows 与 Artifact 证据
+
+代码提交 `6a3f2a2566072fb577c94143d63d3efbd96a05f7` 对应
+[Windows build and release #34928056118](https://github.com/jiy29104983/markdownviewdd/actions/runs/34928056118)
+已完成且结论为 `success`。Release DLL、Qt 回归、隔离发布脚本、诊断上传和打包全部成功。
+Windows QtTest 与 Linux 一致：八组共 239 passed／0 failed，代码组 35 passed。
+Release 发布 job 在普通 main 推送中按工作流条件跳过。
+
+下载的 Artifact 外层 ZIP 先与 GitHub API 的 SHA256 digest 核对；包内校验文件再验证
+`markdownviewdd-v0.2.8-windows-x64-6a3f2a2.zip`，SHA256 为：
+
+```text
+e5cacbbc4939a0d6d7519d7206c3c59fc1f09276ceb9e02e1724a47f98d0234c
+```
+
+ZIP 文件清单仅 `plugin/markdownviewdd.dll`、`README.md`、`LICENSE`。
+DLL 独立解析 PE 头确认为 PE32+／machine `0x8664`，其 SHA256 为：
+
+```text
+41b3bbe520e113b7151056a520d081fde96bda48f7a2c3634d2450a8387567f9
+```
+
+导入依赖：Qt5Widgets、Qt5Gui、Qt5Core、MSVCP140、VCRUNTIME140、VCRUNTIME140_1、
+Windows CRT runtime／heap API 和 KERNEL32，未引入 QScintilla 或其他新增运行库。
+下载与校验文件位于 `build/req007/artifacts-34928056118/`。其中 `req007-code.png`、
+`req007-code-stale.png` 为 Windows offscreen 截图，中文正确显示；它们证明模拟控件
+呈现，不代表 notepad-- 真机加载、DPI 和键鼠验收。
+
+此记录引用实际已验证的代码提交。后续仅补充使用说明和本记录的提交仍须完成其对应
+工作流；最终任务回复提供该提交及最新运行链接。
