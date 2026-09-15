@@ -188,21 +188,24 @@ bool PreviewController::installMenu(QMenu *rootMenu)
         return m_rootMenu == rootMenu;
     }
 
-    m_toggleAction = rootMenu->addAction(tr("显示/隐藏预览"));
+    m_toggleAction = rootMenu->addAction(tr("显示预览(&V)"));
     m_toggleAction->setCheckable(true);
     m_toggleAction->setShortcut(QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
     m_toggleAction->setShortcutContext(Qt::WindowShortcut);
     connect(m_toggleAction, &QAction::toggled,
             this, &PreviewController::togglePreview);
 
-    auto *refreshAction = rootMenu->addAction(tr("立即刷新"));
+    rootMenu->addSeparator();
+    auto *refreshAction = rootMenu->addAction(tr("立即刷新(&U)"));
+    m_refreshAction = refreshAction;
     connect(refreshAction, &QAction::triggered,
             this, &PreviewController::renderNow);
 
+    m_refreshModeMenu = rootMenu->addMenu(tr("刷新模式：自动(&M)"));
     auto *modeGroup = new QActionGroup(this);
     modeGroup->setExclusive(true);
-    m_automaticAction = rootMenu->addAction(tr("自动刷新"));
-    m_manualAction = rootMenu->addAction(tr("手动刷新"));
+    m_automaticAction = m_refreshModeMenu->addAction(tr("自动刷新(&A)"));
+    m_manualAction = m_refreshModeMenu->addAction(tr("手动刷新(&M)"));
     for (QAction *action : {m_automaticAction.data(), m_manualAction.data()}) {
         action->setCheckable(true);
         modeGroup->addAction(action);
@@ -215,24 +218,44 @@ bool PreviewController::installMenu(QMenu *rootMenu)
     });
     publishStatus();
 
-    m_syncAction = rootMenu->addAction(tr("同步编辑器滚动"));
+    rootMenu->addSeparator();
+    rootMenu->addAction(m_dock->outlineVisibleAction());
+    rootMenu->addAction(m_dock->outlinePositionMenu()->menuAction());
+    connect(m_dock->outlineVisibleAction(), &QAction::triggered, this, [this](bool visible) {
+        if (visible && m_dock) {
+            togglePreview(true);
+            m_dock->explainCompactOutline();
+        }
+    });
+    auto *searchAction = rootMenu->addAction(tr("在预览中查找(&F)…"));
+    searchAction->setObjectName(QStringLiteral("NddMarkdownFindInPreview"));
+    connect(searchAction, &QAction::triggered, this, [this]() {
+        if (m_dock) {
+            togglePreview(true);
+            m_dock->openSearch();
+        }
+    });
+
+    rootMenu->addSeparator();
+    m_syncAction = rootMenu->addAction(tr("同步滚动(&S)"));
     m_syncAction->setCheckable(true);
     m_syncAction->setChecked(m_syncScrolling);
     connect(m_syncAction, &QAction::toggled,
             this, &PreviewController::setSyncScrolling);
 
-    auto *restoreFontAction = rootMenu->addAction(tr("恢复宿主字号(&R)"));
+    auto *restoreFontAction = rootMenu->addAction(tr("重置预览缩放(&R)"));
     restoreFontAction->setObjectName(QStringLiteral("NddMarkdownRestoreHostFontSize"));
     connect(restoreFontAction, &QAction::triggered,
             this, &PreviewController::restoreHostFontSize);
 
-    m_exportAction = rootMenu->addAction(tr("导出 HTML…"));
+    rootMenu->addSeparator();
+    m_exportAction = rootMenu->addAction(tr("导出 HTML(&E)…"));
     connect(m_exportAction, &QAction::triggered,
             this, &PreviewController::exportCurrentHtml);
     updateExportActionState();
 
     rootMenu->addSeparator();
-    auto *aboutAction = rootMenu->addAction(tr("关于 Markdown 预览"));
+    auto *aboutAction = rootMenu->addAction(tr("关于 Markdown 预览(&A)"));
     connect(aboutAction, &QAction::triggered,
             this, &PreviewController::showAbout);
     m_rootMenu = rootMenu;
@@ -507,6 +530,10 @@ QString PreviewController::protectionReason() const
 void PreviewController::publishStatus()
 {
     const PreviewStatus status = previewStatus();
+    if (m_refreshModeMenu) {
+        m_refreshModeMenu->setTitle(status.mode == RefreshMode::Automatic
+                                    ? tr("刷新模式：自动(&M)") : tr("刷新模式：手动(&M)"));
+    }
     if (m_automaticAction && m_manualAction) {
         const QSignalBlocker automaticBlocker(m_automaticAction);
         const QSignalBlocker manualBlocker(m_manualAction);
@@ -1140,6 +1167,9 @@ bool PreviewController::isPreviewCurrent() const
 
 void PreviewController::updateExportActionState()
 {
+    if (m_refreshAction) {
+        m_refreshAction->setEnabled(m_editor && isMarkdownDocument(currentFilePath()));
+    }
     if (!m_exportAction) {
         return;
     }

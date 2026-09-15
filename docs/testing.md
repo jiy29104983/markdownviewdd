@@ -361,3 +361,29 @@ LF／CRLF／CR。另覆盖键盘、上下文菜单、剪贴板失败与重入、
 
 本地原始日志位于已忽略的 `build/ui-redesign/wheel-before.txt`、`wheel-build.log`
 和 `wheel-ctest.log`；发布脚本隔离测试日志为 `build/ui-redesign/wheel-release-test.log`。
+
+## 宿主下拉菜单回归（2026-09-15）
+
+文档组新增 `reorganizedMenuSharesReadingActions`，覆盖共享大纲动作、左右位置与窗口隔离、
+隐藏时切换位置、勾选大纲打开预览、手动模式打开查找不渲染、旧快照搜索、再次打开选中查询，
+以及无文档／不支持文档时刷新和导出禁用。已有多窗口及字体回归同步适配子菜单与新文案。
+设置 `MARKDOWNVIEW_SCREENSHOT_DIR` 时生成 `menu-reading.png`，仅为 Qt 模拟界面证据。
+
+真实 Windows 需补充检查：根菜单和两个子菜单的键盘助记键、Ctrl+Shift+M 和预览内 Ctrl+F；
+从主菜单与面板设置分别切换大纲左右位置；窄面板显式显示大纲时的加宽提示；
+深浅主题及 100%／125%／150% DPI 下的文字、勾选、快捷键、箭头和分隔线。
+真实宿主结果独立记录，不由模拟截图或 Windows 编译替代。
+
+本轮本地环境为 Linux ARM64、Qt 5.15.13、GCC 13.3.0，Release 构建。
+验证日志保存在已忽略的 `build/ui-redesign/` 目录下：`menu-build-final.log`、
+`menu-ctest-final.log` 和 `menu-release-test.log`。Windows 编译及 Artifact 结果以
+本次提交对应的 GitHub Actions 为准；真实宿主测试仍为 `not verified`。
+
+| 验证层 | 本地状态 | 结果与边界 |
+| --- | --- | --- |
+| 静态检查 | passed | diff 空白检查、文档本地链接检查、编译无警告 |
+| 自动化测试 | passed | 最终八组 CTest 全通过（54.82 秒），发布脚本隔离测试通过 |
+| Linux Release 编译 | passed | 插件及全部测试目标通过 |
+| Windows Release 编译 | blocked | 本地无 Windows 工具链，另查对应提交的云端结果 |
+| Artifact 校验 | not run | 本地未生成 Windows 产物，另查云端产物 |
+| 真实宿主测试 | not verified | 未在真实 notepad-- 中加载本轮产物 |

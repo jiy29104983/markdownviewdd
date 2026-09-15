@@ -813,7 +813,7 @@ void SavedMarkdownFontTest::reopenKeepsZoomAndRefreshPreservesRatios()
         }
     }
     QVERIFY(restore && restore->isEnabled());
-    QVERIFY(restore->text().contains(QLatin1Char('&')));
+    QCOMPARE(restore->text(), QStringLiteral("重置预览缩放(&R)"));
     restore->trigger();
     QCOMPARE(fixture.controller.previewZoom(), 1.0);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 14.0);

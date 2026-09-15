@@ -1,5 +1,9 @@
 #include "markdown_preview_dock.h"
 #include "host_adapter.h"
+#include "preview_search.h"
+#include "heading_outline.h"
+#include <QLineEdit>
+#include <QSplitter>
 #include "preview_controller.h"
 
 #include <QAbstractScrollArea>
@@ -13,6 +17,7 @@
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
+#include <QRegularExpression>
 #include <QScrollBar>
 #include <QTabWidget>
 #include <QTemporaryDir>
@@ -129,6 +134,7 @@ class PreviewControllerDocumentIdentityTest final : public QObject
     Q_OBJECT
 
 private slots:
+    void reorganizedMenuSharesReadingActions();
     void previewScrollCannotMoveNewActiveEditor();
     void manualRefreshUsesCurrentTab();
     void rapidSwitchAndTypingKeepLatestDocument();
@@ -315,14 +321,79 @@ struct Fixture
 
     QAction *action(const QString &text)
     {
-        for (QAction *candidate : menu.actions()) {
-            if (candidate && candidate->text() == text) {
+        for (QAction *candidate : menu.findChildren<QAction *>()) {
+            if (candidate && candidate->text().remove(QRegularExpression(QStringLiteral("\\(&.\\)"))) == text) {
                 return candidate;
             }
         }
         return nullptr;
     }
 };
+}
+
+void PreviewControllerDocumentIdentityTest::reorganizedMenuSharesReadingActions()
+{
+    Fixture fixture;
+    Fixture other;
+    auto *dock = fixture.dock();
+    auto *visible = dock->outlineVisibleAction();
+    auto *positions = dock->outlinePositionMenu();
+    QVERIFY(fixture.menu.actions().contains(visible));
+    QVERIFY(fixture.menu.actions().contains(positions->menuAction()));
+    QCOMPARE(fixture.menu.actions().size(), 15); // Ten entries and five separators.
+    QVERIFY(!fixture.action(QStringLiteral("立即刷新"))->isEnabled());
+    QVERIFY(!fixture.action(QStringLiteral("导出 HTML…"))->isEnabled());
+    fixture.action(QStringLiteral("手动刷新"))->trigger();
+    QVERIFY(fixture.action(QStringLiteral("刷新模式：手动")));
+    auto *editor = new QsciScintilla(QStringLiteral("menu.md"), QStringLiteral("# Heading\n\nneedle"));
+    fixture.tabs.addTab(editor, QStringLiteral("Menu"));
+    fixture.pollEditor();
+    QVERIFY(fixture.action(QStringLiteral("立即刷新"))->isEnabled());
+    dock->hide();
+    positions->actions().at(1)->trigger();
+    QCOMPARE(positions->title(), QStringLiteral("大纲位置：右侧(&P)"));
+    QVERIFY(positions->actions().at(1)->isChecked());
+    QVERIFY(!positions->actions().at(0)->isChecked());
+    QVERIFY(dock->isHidden());
+    QCOMPARE(other.dock()->outlinePositionMenu()->title(), QStringLiteral("大纲位置：左侧(&P)"));
+    visible->trigger(); // Hide preference, then explicitly show from the shared action.
+    QVERIFY(!visible->isChecked());
+    visible->trigger();
+    QVERIFY(dock->isVisible());
+    QCOMPARE(editor->renderCount(), 0);
+    fixture.action(QStringLiteral("立即刷新"))->trigger();
+    QCOMPARE(editor->renderCount(), 1);
+    auto *splitter = dock->findChild<QSplitter *>();
+    auto *outline = dock->findChild<HeadingOutline *>();
+    QCOMPARE(splitter->indexOf(outline), 1);
+    positions->actions().at(0)->trigger();
+    QCOMPARE(splitter->indexOf(outline), 0);
+    QCOMPARE(editor->renderCount(), 1);
+    editor->edit(QStringLiteral("# Changed")); // Search must retain the displayed old snapshot.
+    dock->hide();
+    fixture.action(QStringLiteral("在预览中查找…"))->trigger();
+    auto *search = dock->findChild<PreviewSearch *>();
+    QVERIFY(dock->isVisible());
+    QVERIFY(search->isOpen());
+    auto *query = search->findChild<QLineEdit *>();
+    query->setText(QStringLiteral("needle"));
+    QTRY_COMPARE(search->matchCount(), 1);
+    fixture.action(QStringLiteral("在预览中查找…"))->trigger();
+    QCOMPARE(query->selectedText(), QStringLiteral("needle"));
+    QCOMPARE(editor->renderCount(), 1);
+    QVERIFY(!other.dock()->findChild<PreviewSearch *>()->isOpen());
+    const QString screenshots = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
+    if (!screenshots.isEmpty()) {
+        QDir().mkpath(screenshots);
+        fixture.menu.popup(fixture.window.mapToGlobal(QPoint(20, 20)));
+        QTest::qWait(30);
+        QVERIFY(fixture.menu.grab().save(QDir(screenshots).filePath(QStringLiteral("menu-reading.png"))));
+        fixture.menu.hide();
+    }
+    editor->renameTo(QStringLiteral("menu.txt"));
+    fixture.pollEditor();
+    QVERIFY(!fixture.action(QStringLiteral("立即刷新"))->isEnabled());
+    QVERIFY(!fixture.action(QStringLiteral("导出 HTML…"))->isEnabled());
 }
 
 void PreviewControllerDocumentIdentityTest::previewScrollCannotMoveNewActiveEditor()
@@ -372,7 +443,7 @@ void PreviewControllerDocumentIdentityTest::manualRefreshUsesCurrentTab()
     fixture.tabs.setCurrentWidget(editorB);
     QAction *refreshAction = nullptr;
     for (QAction *action : fixture.menu.actions()) {
-        if (action->text() == QStringLiteral("立即刷新")) {
+        if (action->text().remove(QRegularExpression(QStringLiteral("\\(&.\\)"))) == QStringLiteral("立即刷新")) {
             refreshAction = action;
             break;
         }

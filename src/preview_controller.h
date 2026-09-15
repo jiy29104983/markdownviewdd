@@ -127,6 +127,8 @@ private:
     QPointer<MarkdownPreviewDock> m_dock;
     QPointer<QMenu> m_rootMenu;
     QPointer<QAction> m_toggleAction;
+    QPointer<QAction> m_refreshAction;
+    QPointer<QMenu> m_refreshModeMenu;
     QPointer<QAction> m_syncAction;
     QPointer<QAction> m_exportAction;
     QPointer<QAction> m_automaticAction;

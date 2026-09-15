@@ -9,6 +9,7 @@
 #include <QEvent>
 #include <QMainWindow>
 #include <QMenu>
+#include <QRegularExpression>
 #include <QMenuBar>
 #include <QPointer>
 #include <QTabWidget>
@@ -123,8 +124,8 @@ struct HostFixture
 
     QAction *action(const QString &text) const
     {
-        for (QAction *candidate : rootMenu->actions()) {
-            if (candidate && candidate->text() == text) {
+        for (QAction *candidate : rootMenu->findChildren<QAction *>()) {
+            if (candidate && candidate->text().remove(QRegularExpression(QStringLiteral("\\(&.\\)"))) == text) {
                 return candidate;
             }
         }
@@ -133,7 +134,7 @@ struct HostFixture
 
     void render()
     {
-        QAction *toggleAction = action(QStringLiteral("显示/隐藏预览"));
+        QAction *toggleAction = action(QStringLiteral("显示预览"));
         QAction *refreshAction = action(QStringLiteral("立即刷新"));
         QVERIFY(toggleAction);
         QVERIFY(refreshAction);
@@ -150,7 +151,7 @@ QAction *findAction(QMenu *menu, const QString &text)
         return nullptr;
     }
     for (QAction *action : menu->actions()) {
-        if (action && action->text() == text) {
+        if (action && action->text().remove(QRegularExpression(QStringLiteral("\\(&.\\)"))) == text) {
             return action;
         }
     }
@@ -198,8 +199,8 @@ void PluginMultiWindowTest::initializesAndOperatesEachHostWindowIndependently()
     QCOMPARE(second.window.findChildren<PreviewController *>(
                  QString(), Qt::FindDirectChildrenOnly).size(), 1);
 
-    QAction *firstToggle = first.action(QStringLiteral("显示/隐藏预览"));
-    QAction *secondToggle = second.action(QStringLiteral("显示/隐藏预览"));
+    QAction *firstToggle = first.action(QStringLiteral("显示预览"));
+    QAction *secondToggle = second.action(QStringLiteral("显示预览"));
     QVERIFY(firstToggle);
     QVERIFY(secondToggle);
     QCOMPARE(firstToggle->shortcut(), QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_M));
@@ -290,7 +291,7 @@ void PluginMultiWindowTest::closingOneWindowKeepsTheOtherControllerAlive()
     QVERIFY(firstController.isNull());
     QVERIFY(secondController);
 
-    QAction *secondToggle = findAction(secondMenu, QStringLiteral("显示/隐藏预览"));
+    QAction *secondToggle = findAction(secondMenu, QStringLiteral("显示预览"));
     QAction *secondRefresh = findAction(secondMenu, QStringLiteral("立即刷新"));
     QVERIFY(secondToggle);
     QVERIFY(secondRefresh);
@@ -391,7 +392,7 @@ void PluginMultiWindowTest::refreshModesAndContextMenusAreWindowLocal()
     QEvent show(QEvent::Show);
     QCoreApplication::sendEvent(&context, &show);
     native->trigger();
-    second.action(QStringLiteral("显示/隐藏预览"))->setChecked(true);
+    second.action(QStringLiteral("显示预览"))->setChecked(true);
     QTRY_COMPARE_WITH_TIMEOUT(second.editor->renderCount(), 1, 1200);
     QCOMPARE(first.editor->renderCount(), 0);
     QVERIFY(first.dock()->isVisible());

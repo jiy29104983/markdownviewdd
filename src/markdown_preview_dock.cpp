@@ -425,7 +425,8 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     settings->setPopupMode(QToolButton::InstantPopup);
     auto *settingsMenu = new QMenu(settings);
     settingsMenu->addSection(tr("大纲"));
-    auto *visible = settingsMenu->addAction(tr("显示大纲"));
+    auto *visible = settingsMenu->addAction(tr("显示大纲(&O)"));
+    m_outlineVisibleAction = visible;
     visible->setObjectName(QStringLiteral("NddMarkdownOutlineVisible"));
     visible->setCheckable(true);
     visible->setChecked(true);
@@ -433,12 +434,15 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         preserveLayoutTarget();
         m_outlineWanted = show;
         updateResponsiveLayout();
+        if (show) explainCompactOutline();
         m_layoutSyncTimer->start();
     });
-    auto *positionMenu = settingsMenu->addMenu(tr("位置"));
+    auto *positionMenu = settingsMenu->addMenu(tr("大纲位置：左侧(&P)"));
+    m_outlinePositionMenu = positionMenu;
+    positionMenu->setObjectName(QStringLiteral("NddMarkdownOutlinePosition"));
     auto *sideGroup = new QActionGroup(positionMenu);
     for (bool right : {false, true}) {
-        auto *side = positionMenu->addAction(right ? tr("右侧") : tr("左侧"));
+        auto *side = positionMenu->addAction(right ? tr("右侧(&R)") : tr("左侧(&L)"));
         side->setObjectName(right ? QStringLiteral("NddMarkdownOutlineRight") : QStringLiteral("NddMarkdownOutlineLeft"));
         side->setCheckable(true);
         side->setChecked(!right);
@@ -1786,6 +1790,7 @@ void MarkdownPreviewDock::setOutlineOnRight(bool right)
     }
     preserveLayoutTarget();
     m_outlineOnRight = right;
+    m_outlinePositionMenu->setTitle(right ? tr("大纲位置：右侧(&P)") : tr("大纲位置：左侧(&P)"));
     m_splitter->insertWidget(right ? 1 : 0, m_outline);
     m_splitter->setStretchFactor(right ? 0 : 1, 1);
     m_splitter->setStretchFactor(right ? 1 : 0, 0);
@@ -1801,4 +1806,16 @@ void MarkdownPreviewDock::setNavigationFeedback(const QString &message)
     m_feedbackLabel->setText(message);
     m_feedbackLabel->setToolTip(message);
     m_feedbackLabel->setVisible(!message.isEmpty());
+}
+
+void MarkdownPreviewDock::openSearch()
+{
+    m_search->openSearch();
+}
+
+void MarkdownPreviewDock::explainCompactOutline()
+{
+    if (m_outlineWanted && m_compactOutline) {
+        setNavigationFeedback(tr("面板较窄，大纲暂时隐藏；请加宽预览面板以显示大纲。"));
+    }
 }

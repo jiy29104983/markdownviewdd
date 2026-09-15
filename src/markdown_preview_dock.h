@@ -23,6 +23,7 @@ class QSplitter;
 class QLabel;
 class QAction;
 class QMainWindow;
+class QMenu;
 class QLayout;
 class QScrollBar;
 class QTextBrowser;
@@ -83,6 +84,10 @@ public:
     void releaseNavigationTarget();
     void setNavigationFeedback(const QString &message);
     QVector<HeadingRecord> headings() const;
+    QAction *outlineVisibleAction() const { return m_outlineVisibleAction; }
+    QMenu *outlinePositionMenu() const { return m_outlinePositionMenu; }
+    void openSearch();
+    void explainCompactOutline();
 
 
 signals:
@@ -151,6 +156,8 @@ private:
     QPointer<QMainWindow> m_dockOwner;
     QToolButton *m_floatButton = nullptr;
     Qt::DockWidgetArea m_lastDockArea = Qt::RightDockWidgetArea;
+    QAction *m_outlineVisibleAction = nullptr;
+    QMenu *m_outlinePositionMenu = nullptr;
     bool m_outlineWanted = true;
     bool m_compactOutline = false;
     bool m_updatingChrome = false;
