@@ -63,7 +63,7 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
         return true;
     }
     static const QRegularExpression atx(QStringLiteral("^ {0,3}(#{1,6})(?:[ \\t]+(.*)|$)"));
-    static const QRegularExpression closing(QStringLiteral("[ \\t]+#+[ \\t]*$"));
+    static const QRegularExpression closing(QStringLiteral("(?:^|[ \\t]+)#+[ \\t]*$"));
     static const QRegularExpression fence(QStringLiteral("^ {0,3}(`{3,}|~{3,})(.*)$"));
     static const QRegularExpression setext(QStringLiteral("^ {0,3}(=+|-+)[ \\t]*$"));
     static const QRegularExpression quote(QStringLiteral("^ {0,3}>[ \\t]?"));
@@ -71,6 +71,10 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
     QVector<SourceHeading> candidates;
     QChar fenceChar;
     int fenceLength = 0;
+    int fenceQuoteDepth = 0;
+    int fenceListIndent = 0;
+    int listIndent = 0;
+    int listQuoteDepth = 0;
     QString paragraph;
     int paragraphLine = -1;
     int paragraphOffset = -1;
@@ -89,18 +93,61 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
             next < source.size() && source.at(next) == QLatin1Char('\n')) {
             ++next;
         }
-        QString line = source.mid(start, end - start);
-        // Container prefixes are retained in the original source offset/line.
-        for (;;) {
-            const auto match = quote.match(line);
-            if (!match.hasMatch()) {
-                break;
+        const QString originalLine = source.mid(start, end - start);
+        QString line = originalLine;
+        int quoteDepth = 0;
+        if (!fenceChar.isNull()) {
+            // Only strip the opening fence's containers. Extra quote/list
+            // markers inside code are literal, not new containers or closers.
+            while (quoteDepth < fenceQuoteDepth) {
+                const auto match = quote.match(line);
+                if (!match.hasMatch()) {
+                    break;
+                }
+                line.remove(0, match.capturedLength());
+                ++quoteDepth;
             }
-            line.remove(0, match.capturedLength());
+            int indent = 0;
+            while (indent < line.size() && line.at(indent) == QLatin1Char(' ')) {
+                ++indent;
+            }
+            if (quoteDepth < fenceQuoteDepth ||
+                (!line.trimmed().isEmpty() && indent < fenceListIndent)) {
+                // Leaving a container implicitly closes its fenced code block.
+                fenceChar = QChar();
+                line = originalLine;
+            } else {
+                line.remove(0, qMin(indent, fenceListIndent));
+            }
         }
-        const auto listMatch = list.match(line);
-        if (listMatch.hasMatch()) {
-            line.remove(0, listMatch.capturedLength());
+        if (fenceChar.isNull()) {
+            quoteDepth = 0;
+            for (;;) {
+                const auto match = quote.match(line);
+                if (!match.hasMatch()) {
+                    break;
+                }
+                line.remove(0, match.capturedLength());
+                ++quoteDepth;
+            }
+            if (quoteDepth != listQuoteDepth) {
+                listIndent = 0;
+            }
+            listQuoteDepth = quoteDepth;
+            int indent = 0;
+            while (indent < line.size() && line.at(indent) == QLatin1Char(' ')) {
+                ++indent;
+            }
+            if (indent >= listIndent) {
+                line.remove(0, listIndent);
+            } else if (!line.trimmed().isEmpty()) {
+                listIndent = 0;
+            }
+            const auto listMatch = list.match(line);
+            if (listMatch.hasMatch()) {
+                listIndent += listMatch.capturedLength();
+                line.remove(0, listMatch.capturedLength());
+            }
         }
         const QString trimmed = line.trimmed();
         const auto fenceMatch = fence.match(line);
@@ -115,6 +162,8 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
                      fenceMatch.captured(2).contains(QLatin1Char('`')))) {
             fenceChar = fenceMatch.captured(1).at(0);
             fenceLength = fenceMatch.capturedLength(1);
+            fenceQuoteDepth = quoteDepth;
+            fenceListIndent = listIndent;
             paragraph.clear();
         } else if (trimmed.isEmpty()) {
             paragraph.clear();
@@ -129,7 +178,12 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
             if (heading.hasMatch()) {
                 QString body = heading.captured(2);
                 body.remove(closing);
-                candidates.append({heading.capturedLength(1), inlineText(body), lineNumber, scalarOffset});
+                // An ATX closing sequence may occupy the entire body. Qt does
+                // not emit an indexed block for an empty ATX heading.
+                const QString text = inlineText(body);
+                if (!text.isEmpty()) {
+                    candidates.append({heading.capturedLength(1), text, lineNumber, scalarOffset});
+                }
                 paragraph.clear();
             } else if (underline.hasMatch() && !paragraph.isEmpty()) {
                 candidates.append({underline.captured(1).startsWith(QLatin1Char('=')) ? 1 : 2,

@@ -72,7 +72,7 @@ public:
                             QWidget *editor, quint64 version);
     void setOutlineStatus(const PreviewStatus &status);
     bool navigateHeading(const HeadingRecord &heading);
-    bool navigatePreviewPosition(QWidget *editor, quint64 version, int position);
+    bool navigatePreviewPosition(QWidget *editor, quint64 version, int position, int length = 0);
     void setSearchStatus(const PreviewStatus &status);
     bool hasNavigationTarget() const { return m_hasNavigationTarget; }
     void releaseNavigationTarget();
@@ -128,6 +128,7 @@ private:
     QTimer *m_headingTimer = nullptr;
     QMetaObject::Connection m_headingScrollConnection;
     HeadingRecord m_navigationTarget;
+    int m_navigationLength = 0;
     bool m_hasNavigationTarget = false;
     bool m_outlineOnRight = false;
     int m_outlineWidth = 180;

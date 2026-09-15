@@ -392,6 +392,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         if (!isVisible() || !m_syncButton) {
             return;
         }
+        m_search->updateHighlights();
         if (m_hasNavigationTarget) {
             restoreNavigationTarget();
             return;
@@ -1422,16 +1423,18 @@ bool MarkdownPreviewDock::navigateHeading(const HeadingRecord &heading)
     return navigatePreviewPosition(heading.editor, heading.version, heading.blockPosition);
 }
 
-bool MarkdownPreviewDock::navigatePreviewPosition(QWidget *editor, quint64 version, int position)
+bool MarkdownPreviewDock::navigatePreviewPosition(QWidget *editor, quint64 version, int position, int length)
 {
     if (!hasDisplayedPreviewFor(editor, version) || position < 0 ||
-        position >= m_nativeTextEdit->document()->characterCount() - 1) {
+        position >= m_nativeTextEdit->document()->characterCount() - 1 || length < 0 ||
+        length > m_nativeTextEdit->document()->characterCount() - 1 - position) {
         return false;
     }
     cancelPreservedScroll();
     m_navigationTarget.editor = editor;
     m_navigationTarget.version = version;
     m_navigationTarget.blockPosition = position;
+    m_navigationLength = length;
     m_hasNavigationTarget = true;
     restoreNavigationTarget();
     m_layoutSyncTimer->start();
@@ -1454,6 +1457,7 @@ void MarkdownPreviewDock::releaseNavigationTarget()
     const bool hadTarget = m_hasNavigationTarget;
     m_hasNavigationTarget = false;
     m_navigationTarget = HeadingRecord();
+    m_navigationLength = 0;
     if (hadTarget) {
         emit navigationTargetReleased();
     }
@@ -1476,6 +1480,21 @@ void MarkdownPreviewDock::restoreNavigationTarget()
     QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
     const int target = bar->value() + m_nativeTextEdit->cursorRect(cursor).top();
     bar->setValue(qBound(bar->minimum(), target, bar->maximum()));
+    // Wide tables can place a search result outside the horizontal viewport.
+    // Move only as far as needed and never replace the user's text selection.
+    QRect targetRect = m_nativeTextEdit->cursorRect(cursor);
+    if (m_navigationLength > 0 &&
+        m_navigationLength <= document->characterCount() - 1 - cursor.position()) {
+        cursor.setPosition(cursor.position() + m_navigationLength);
+        targetRect = targetRect.united(m_nativeTextEdit->cursorRect(cursor));
+    }
+    const QRect viewportRect = m_nativeTextEdit->viewport()->rect();
+    QScrollBar *horizontal = m_nativeTextEdit->horizontalScrollBar();
+    if (targetRect.width() > viewportRect.width() || targetRect.left() < viewportRect.left()) {
+        horizontal->setValue(horizontal->value() + targetRect.left() - viewportRect.left());
+    } else if (targetRect.right() > viewportRect.right()) {
+        horizontal->setValue(horizontal->value() + targetRect.right() - viewportRect.right());
+    }
     m_headingTimer->start();
 }
 

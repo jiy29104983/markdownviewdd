@@ -42,7 +42,7 @@ public:
     qint64 maxHighlightNanoseconds() const { return m_maxHighlightNs; }
 
 signals:
-    void navigateRequested(QWidget *editor, quint64 version, int position);
+    void navigateRequested(QWidget *editor, quint64 version, int position, int length);
     void searchFinished();
     void closed();
 

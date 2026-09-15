@@ -227,6 +227,8 @@ private slots:
     void formattingDuringSearch();
     void failureRejectsPartialDocument();
     void themeAndZoom();
+    void wideTableNavigation();
+    void resizeUpdatesHighlights();
     void nativeLayoutWithoutSearch();
     void longDocument_data();
     void longDocument();
@@ -604,6 +606,67 @@ void PreviewSearchTest::navigationArbitration()
     QVERIFY(f.dock->hasNavigationTarget());
     f.preview()->verticalScrollBar()->triggerAction(QAbstractSlider::SliderToMinimum);
     QTRY_VERIFY(!f.dock->hasNavigationTarget());
+}
+
+void PreviewSearchTest::wideTableNavigation()
+{
+    QString markdown = QStringLiteral("|") + QStringLiteral(" longcolumnname |").repeated(60);
+    markdown += QStringLiteral("\n|") + QStringLiteral(" --- |").repeated(60);
+    markdown += QStringLiteral("\n|") + QStringLiteral(" longcolumnvalue |").repeated(59);
+    markdown += QStringLiteral(" needle |\n");
+    Fixture f(markdown);
+    QVERIFY(QMetaObject::invokeMethod(f.controller.get(), "setSyncScrolling", Q_ARG(bool, false)));
+    auto *view = f.preview();
+    auto *s = search(f);
+    setQuery(s, QStringLiteral("needle"));
+    QTRY_VERIFY(!s->isSearching());
+    QCOMPARE(s->matchCount(), 1);
+    QTRY_VERIFY(view->horizontalScrollBar()->maximum() > view->viewport()->width());
+    QTextCursor selection(view->document());
+    selection.setPosition(1);
+    selection.setPosition(4, QTextCursor::KeepAnchor);
+    view->setTextCursor(selection);
+    const QString html = view->document()->toHtml();
+    const int renders = f.adapter.renders;
+    next(s);
+    QTextCursor target(view->document());
+    target.setPosition(s->currentPosition());
+    QTRY_VERIFY(view->viewport()->rect().contains(view->cursorRect(target).center()));
+    QTextCursor endTarget(target);
+    endTarget.movePosition(QTextCursor::NextCharacter, QTextCursor::MoveAnchor, 6);
+    QVERIFY(view->viewport()->rect().contains(view->cursorRect(endTarget).center()));
+    f.window.resize(1000, 620);
+    QTest::qWait(150);
+    QVERIFY(view->viewport()->rect().contains(view->cursorRect(target).center()));
+    QVERIFY(view->viewport()->rect().contains(view->cursorRect(endTarget).center()));
+    QCOMPARE(view->textCursor(), selection);
+    QCOMPARE(view->document()->toHtml(), html);
+    QCOMPARE(f.adapter.renders, renders);
+    QCOMPARE(f.adapter.navigations, 0);
+}
+
+void PreviewSearchTest::resizeUpdatesHighlights()
+{
+    Fixture f(QStringLiteral("needle\n\n").repeated(100));
+    QVERIFY(QMetaObject::invokeMethod(f.controller.get(), "setSyncScrolling", Q_ARG(bool, false)));
+    f.window.resize(1100, 350);
+    auto *view = f.preview();
+    auto *s = search(f);
+    setQuery(s, QStringLiteral("needle"));
+    QTRY_VERIFY(!s->isSearching());
+    QTRY_VERIFY(!view->extraSelections().isEmpty());
+    const int before = view->extraSelections().size();
+    const int height = view->viewport()->height();
+    const quint64 generation = s->generation();
+    const int renders = f.adapter.renders;
+    QCOMPARE(view->verticalScrollBar()->value(), 0);
+    f.window.resize(1100, 1000);
+    QTRY_VERIFY(view->viewport()->height() > height * 2);
+    QTRY_VERIFY(view->extraSelections().size() > before * 2);
+    QCOMPARE(view->verticalScrollBar()->value(), 0);
+    QCOMPARE(s->matchCount(), 100);
+    QCOMPARE(s->generation(), generation);
+    QCOMPARE(f.adapter.renders, renders);
 }
 
 void PreviewSearchTest::themeAndZoom()

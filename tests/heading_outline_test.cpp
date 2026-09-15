@@ -535,6 +535,12 @@ void HeadingOutlineTest::mappingEdgeCases_data()
     QTest::newRow("quote-and-list") << QStringLiteral("> # 引用标题\n>\n> 内容\n\n- ## 列表标题\n\n# 正文标题\n") << QVector<int>{0, 4, 6};
     QTest::newRow("indented-code") << QStringLiteral("    # 代码内容\n\n# 真标题\n") << QVector<int>{2};
     QTest::newRow("link-inline") << QStringLiteral("## [链接](https://example.invalid) 与 ~~删除~~\n") << QVector<int>{0};
+    QTest::newRow("quote-fence-container-end") << QStringLiteral("> ```\n> code\n\n# Real heading\n") << QVector<int>{3};
+    QTest::newRow("nested-quote-fence-end") << QStringLiteral("> > ~~~\n> > # code\n>\n> # Outer\n\n# Tail\n") << QVector<int>{3, 5};
+    QTest::newRow("root-fence-quote-is-code") << QStringLiteral("```\n> ```\n# code\n```\n\n# Tail\n") << QVector<int>{5};
+    QTest::newRow("list-fence-container-end") << QStringLiteral("- ```\n  # code\n\n# Tail\n") << QVector<int>{3};
+    QTest::newRow("list-fence-explicit-close") << QStringLiteral("- ```\n  # code\n  ```\n\n# Tail\n") << QVector<int>{4};
+    QTest::newRow("empty-atx-before-heading") << QStringLiteral("# ###\n\n# Real heading\n") << QVector<int>{2};
     QTest::newRow("multiline-setext") << QStringLiteral("多行\n标题\n===\n\n# 尾部\n") << QVector<int>{0, 4};
 }
 

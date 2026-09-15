@@ -458,7 +458,7 @@ void PreviewSearch::navigate(int direction)
     m_notice = wrapped ? (direction > 0 ? tr("已从末尾回到开头") : tr("已从开头回到末尾")) : QString();
     rememberCurrent();
     updateUi();
-    emit navigateRequested(m_editor, m_version, currentPosition());
+    emit navigateRequested(m_editor, m_version, currentPosition(), m_pattern.size());
     updateHighlights();
 }
 
