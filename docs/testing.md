@@ -50,6 +50,9 @@ ctest --test-dir build -C Release -L multi-window --output-on-failure
 | `markdownview_document_identity_tests` | 快速切换、防抖、后台内容／路径变化后的缓存失效、隐藏 Dock 导出、原子保存、滚动信号传递与位置恢复、慢文档策略跨标签保存 | 真实宿主 ABI、真实磁盘对话框、设备性能结论 |
 | `markdownview_multi_window_tests` | 每窗口控制器、重复初始化、窗口关闭和右键菜单隔离 | notepad-- 多进程或非基线窗口结构 |
 | `markdownview_font_tests` | 宿主配置样本、18 个主题、只读与待写缓存、打开次数、默认字体、原生滚轮对照、比例格式、旧快照、缓存和多窗口 | 真实 Windows 路径、宿主保存操作、DPI 视觉和滚轮手感 |
+| `markdownview_outline_tests` | 标题提取、源行映射、树层级、当前章节和主动导航 | 真实宿主折叠、可访问性接口及键鼠时序 |
+| `markdownview_search_tests` | 快照搜索、大小写、分批计数、导航、高亮与窗口隔离 | 真实输入法、设备性能及 Windows 交互体验 |
+| `markdownview_code_tests` | 代码块索引、完整复制、语言标识、换行设置和导出隔离 | 真实系统剪贴板、DPI 和键盘体验 |
 | `markdownview_diagnostics_tests` | 日志初始化幂等、窗口标识、容量轮转、不可写目录和路径脱敏 | Windows 多进程日志与长期使用情况 |
 | `release_publish_test.sh` | Release 不存在、相同附件、缺失附件、内容冲突和查询错误 | GitHub 在线权限、网络、并发和生产 Release |
 
