@@ -208,6 +208,8 @@ class PreviewSearchTest final : public QObject
 private slots:
     void matching_data();
     void matching();
+    void supplementarySearchPositions_data();
+    void supplementarySearchPositions();
     void blockAndFormatBoundaries();
     void wrapsAndDoesNotMoveSelection();
     void typingKeepsReadingPosition();
@@ -252,6 +254,11 @@ void PreviewSearchTest::matching_data()
     QTest::newRow("KMP-prefix") << QStringLiteral("ababababac") << QStringLiteral("ababac") << false << 1;
     QTest::newRow("chunk-boundary") << (QString(4094, QLatin1Char('x')) + QStringLiteral("中文needle尾"))
         << QStringLiteral("中文needle") << false << 1;
+    QTest::newRow("Deseret-lower") << QString::fromUtf8("𐐀 𐐨") << QString::fromUtf8("𐐨") << false << 2;
+    QTest::newRow("Deseret-upper") << QString::fromUtf8("𐐀 𐐨") << QString::fromUtf8("𐐀") << false << 2;
+    QTest::newRow("Deseret-sensitive") << QString::fromUtf8("𐐀 𐐨") << QString::fromUtf8("𐐨") << true << 1;
+    QTest::newRow("Osage") << QString::fromUtf8("𐒰 𐓘") << QString::fromUtf8("𐓘") << false << 2;
+    QTest::newRow("Adlam") << QString::fromUtf8("𞤀 𞤢") << QString::fromUtf8("𞤢") << false << 2;
 }
 
 void PreviewSearchTest::matching()
@@ -267,6 +274,55 @@ void PreviewSearchTest::matching()
     QTRY_VERIFY(!s->isSearching());
     QCOMPARE(s->matchCount(), count);
     QCOMPARE(s->currentIndex(), count ? 0 : -1);
+}
+
+void PreviewSearchTest::supplementarySearchPositions_data()
+{
+    QTest::addColumn<int>("prefixLength");
+    QTest::newRow("start") << 0;
+    QTest::newRow("within-chunk") << 4094;
+    QTest::newRow("split-pair-at-chunk") << 4095;
+    QTest::newRow("split-pair-at-batch") << 65535;
+}
+
+void PreviewSearchTest::supplementarySearchPositions()
+{
+    QFETCH(int, prefixLength);
+    const QString upper = QString::fromUtf8("𐐀word");
+    const QString lower = QString::fromUtf8("𐐨word");
+    QWidget editor;
+    QTextEdit view;
+    view.resize(600, 300);
+    view.setPlainText(QString(prefixLength, QLatin1Char('x')) + upper + QLatin1Char(' ') + lower);
+    view.show();
+    PreviewSearch s;
+    s.setSnapshot(&view, &editor, 1);
+    s.openSearch();
+    setQuery(&s, lower);
+    QTRY_VERIFY(!s.isSearching());
+    QCOMPARE(s.matchCount(), 2);
+    QCOMPARE(s.currentPosition(), prefixLength);
+    auto hasHighlight = [&view](int position, const QString &text) {
+        for (const auto &selection : view.extraSelections())
+            if (selection.cursor.selectionStart() == position && selection.cursor.selectedText() == text)
+                return true;
+        return false;
+    };
+    QTRY_VERIFY(hasHighlight(prefixLength, upper));
+    int position = -1;
+    int length = -1;
+    connect(&s, &PreviewSearch::navigateRequested, this,
+        [&position, &length](QWidget *, quint64, int target, int size) { position = target; length = size; });
+    next(&s);
+    const int second = prefixLength + upper.size() + 1;
+    QCOMPARE(s.currentPosition(), second);
+    QCOMPARE(position, second);
+    QCOMPARE(length, lower.size());
+    QTRY_VERIFY(hasHighlight(second, lower));
+    s.findChild<QCheckBox *>()->setChecked(true);
+    QTRY_VERIFY(!s.isSearching());
+    QCOMPARE(s.matchCount(), 1);
+    QCOMPARE(s.currentPosition(), second);
 }
 
 void PreviewSearchTest::blockAndFormatBoundaries()
