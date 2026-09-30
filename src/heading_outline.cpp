@@ -37,6 +37,7 @@ HeadingOutline::HeadingOutline(QWidget *parent) : QWidget(parent)
     // itemActivated may also be emitted by a mouse double-click. Mouse clicks
     // activate here; keyboard Enter is handled by the tree's activation signal.
     connect(m_tree, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int) {
+        if (!item) return;
         const int index = item->data(0, Qt::UserRole).toInt();
         if (index >= 0 && index < m_headings.size()) {
             const HeadingRecord target = m_headings.at(index);
@@ -44,6 +45,7 @@ HeadingOutline::HeadingOutline(QWidget *parent) : QWidget(parent)
         }
     });
     connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item, int) {
+        if (!item) return;
         const int index = item->data(0, Qt::UserRole).toInt();
         if (index >= 0 && index < m_headings.size()) {
             const HeadingRecord target = m_headings.at(index);
