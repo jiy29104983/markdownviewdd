@@ -19,6 +19,7 @@
 #include <QMenu>
 #include <QRegularExpression>
 #include <QScrollBar>
+#include <QShowEvent>
 #include <QTabWidget>
 #include <QTemporaryDir>
 #include <QTextEdit>
@@ -149,6 +150,7 @@ private slots:
     void largeFileDefersAutomaticRefreshUntilManualRequest();
     void slowRenderEnablesManualRefreshPolicy();
     void injectedHostAdapterAvoidsHostObjectNameAssumptions();
+    void nonMenuShowDoesNotResolveCurrentEditor();
     void nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument();
     void tabChangeSynchronizesWithoutPollingDelay();
     void editorRangeChangeUpdatesPreviewRatio();
@@ -183,7 +185,7 @@ public:
     {
     }
 
-    QWidget *currentEditor() const override { return m_editor; }
+    QWidget *currentEditor() const override { ++currentEditorCalls; return m_editor; }
     QMetaObject::Connection connectActiveEditorChanged(
         QObject *, std::function<void()>) override
     {
@@ -261,6 +263,7 @@ public:
     }
 
     int refreshCount() const { return m_refreshCount; }
+    mutable int currentEditorCalls = 0;
     bool failEnsure = false;
     bool failRefresh = false;
     bool mutateOnFailure = false;
@@ -851,6 +854,26 @@ void PreviewControllerDocumentIdentityTest::injectedHostAdapterAvoidsHostObjectN
     QVERIFY(html.contains("Injected adapter"));
     QCOMPARE(sourcePath, QStringLiteral("/virtual/injected.md"));
     QCOMPARE(adapter.refreshCount(), 0);
+}
+
+void PreviewControllerDocumentIdentityTest::nonMenuShowDoesNotResolveCurrentEditor()
+{
+    QMainWindow window;
+    QWidget editor;
+    TestHostAdapter adapter(&editor);
+    PreviewController controller(&window, &adapter);
+    QWidget ordinary;
+    QMenu menu;
+    adapter.currentEditorCalls = 0;
+    for (int i = 0; i < 20; ++i) {
+        QShowEvent event;
+        QCoreApplication::sendEvent(&ordinary, &event);
+    }
+    QCOMPARE(adapter.currentEditorCalls, 0);
+
+    QShowEvent menuEvent;
+    QCoreApplication::sendEvent(&menu, &menuEvent);
+    QCOMPARE(adapter.currentEditorCalls, 1);
 }
 
 void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument()

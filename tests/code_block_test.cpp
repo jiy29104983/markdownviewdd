@@ -216,12 +216,37 @@ void CodeBlockTest::extraction_data()
         << QStringList{QStringLiteral("a\n  \nb\n")} << QStringList{QString()};
     QTest::newRow("tab-indent") << QStringLiteral("\ta\tb\n\t  c\n")
         << QStringList{QStringLiteral("a\tb\n  c\n")} << QStringList{QString()};
+    QTest::newRow("consecutive-tab-indent") << QStringLiteral("\t\tcode\n\t\tmore\n")
+        << QStringList{QStringLiteral("\tcode\n\tmore\n")} << QStringList{QString()};
+    QTest::newRow("mixed-space-tab-indent") << QStringLiteral(" \t\tcode\n   \t\tmore\n")
+        << QStringList{QStringLiteral("\tcode\n\tmore\n")} << QStringList{QString()};
+    QTest::newRow("consecutive-tab-blank-indent") << QStringLiteral("\t\tcode\n\t\t\n\t\tmore\n")
+        << QStringList{QStringLiteral("\tcode\n\t\n\tmore\n")} << QStringList{QString()};
     QTest::newRow("quote") << QStringLiteral("> ```js\n>   a\n> \tb\n> ```\n")
         << QStringList{QStringLiteral("  a\n\tb\n")} << QStringList{QStringLiteral("js")};
+    QTest::newRow("quote-tab-indent") << QStringLiteral(">\t\tcode\n>\t\t\tmore\n")
+        << QStringList{QStringLiteral("  code\n  \tmore\n")} << QStringList{QString()};
+    QTest::newRow("quote-tab-fenced-content") << QStringLiteral("> ```cpp\n>\t\tcode\n> ```\n")
+        << QStringList{QStringLiteral("  \tcode\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("quote-tab-opening-fence") << QStringLiteral(">\t```cpp\n>  code\n>\t```\n")
+        << QStringList{QStringLiteral(" code\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("quote-tab-fence-and-content") << QStringLiteral(">\t```cpp\n>\t\tcode\n>\t```\n")
+        << QStringList{QStringLiteral("  \tcode\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("quote-tab-padding-preserves-code-spaces") << QStringLiteral(">\t```cpp\n>\t  \tcode\n>\t```\n")
+        << QStringList{QStringLiteral("    \tcode\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("quote-list-tab-fenced-content") << QStringLiteral("> - ```cpp\n> \t\tcode\n>   ```\n")
+        << QStringList{QStringLiteral("\tcode\n")} << QStringList{QStringLiteral("cpp")};
     QTest::newRow("nested-quote") << QStringLiteral("> > ```\n> > > literal\n> > ```\n")
         << QStringList{QStringLiteral("> literal\n")} << QStringList{QString()};
     QTest::newRow("list") << QStringLiteral("- ```cpp\n  a\n  ```\n\nend")
         << QStringList{QStringLiteral("a\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("list-tab-fenced-content") << QStringLiteral("- ```cpp\n\t\tcode\n  ```\n")
+        << QStringList{QStringLiteral("  \tcode\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("indented-list-tab-fenced-content") << QStringLiteral("  - ```cpp\n\t\tcode\n    ```\n")
+        << QStringList{QStringLiteral("\tcode\n")} << QStringList{QStringLiteral("cpp")};
+    QTest::newRow("tab-block-preserves-other-block-copy") << QStringLiteral("```cpp\nnormal\n```\n\n\t\tcode\n")
+        << QStringList{QStringLiteral("normal\n"), QStringLiteral("\tcode\n")}
+        << QStringList{QStringLiteral("cpp"), QString()};
     QTest::newRow("list-indented") << QStringLiteral("- item\n\n      a\n      b\n")
         << QStringList{QStringLiteral("a\nb\n")} << QStringList{QString()};
     QTest::newRow("quote-implicit-end") << QStringLiteral("> ```\n> a\n\n```\nb\n```\n")

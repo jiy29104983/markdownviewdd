@@ -48,7 +48,7 @@ int spaces(const QString &line)
 }
 // Remove structural indentation only. A tab straddling the boundary leaves
 // spaces; tabs after that boundary are code and remain literal tabs.
-bool removeIndent(QString *line, int columns)
+bool removeIndent(QString *line, int columns, int *column)
 {
     int consumed = 0;
     int width = 0;
@@ -57,7 +57,7 @@ bool removeIndent(QString *line, int columns)
         if (ch == QLatin1Char(' '))
             ++width;
         else if (ch == QLatin1Char('\t'))
-            width += 4 - width % 4;
+            width += 4 - (*column + width) % 4;
         else
             break;
         ++consumed;
@@ -67,6 +67,7 @@ bool removeIndent(QString *line, int columns)
     line->remove(0, consumed);
     if (width > columns)
         line->prepend(QString(width - columns, QLatin1Char(' ')));
+    *column += qMin(width, columns);
     return true;
 }
 
@@ -95,27 +96,39 @@ QVector<Candidate> sourceBlocks(const QString &source, bool *supported)
     const int count = lines.size() - (normalized.endsWith(QLatin1Char('\n')) ? 1 : 0);
     for (int i = 0; i < count; ++i) {
         QString line = lines.at(i);
+        int column = 0;
+        int quoteTabPadding = 0;
         const QString newline = i < lines.size() - 1 ? QStringLiteral("\n") : QString();
         int depth = 0;
         while (!fenced || depth < activeQuotes) {
             const auto match = quote.match(line);
             if (!match.hasMatch())
                 break;
-            line.remove(0, match.capturedLength());
+            const int prefixLength = match.capturedLength();
+            const bool endsWithTab = line.at(prefixLength - 1) == QLatin1Char('\t');
+            const int tabWidth = endsWithTab ? 4 - (column + prefixLength - 1) % 4 : 1;
+            line.remove(0, prefixLength);
+            column += prefixLength;
+            // A quote marker consumes one following whitespace column. Keep
+            // the rest of a tab as content indentation at its original column.
+            quoteTabPadding = tabWidth - 1;
+            if (quoteTabPadding > 0)
+                line.prepend(QString(quoteTabPadding, QLatin1Char(' ')));
             ++depth;
         }
         if (fenced) {
             QString content = line;
-            if (depth == activeQuotes && removeIndent(&content, activeList)) {
+            int contentColumn = column;
+            if (depth == activeQuotes && removeIndent(&content, activeList, &contentColumn)) {
                 const auto match = fence.match(content);
                 if (match.hasMatch() && match.captured(2).at(0) == active.fence &&
                     match.capturedLength(2) >= fenceLength && match.captured(3).trimmed().isEmpty()) {
                     result.append(active);
                     fenced = false;
                 } else {
-                    QString display = renderedIndent(content, lines.at(i).size() - content.size());
+                    QString display = renderedIndent(content, contentColumn);
                     display.remove(0, qMin(spaces(display), fenceIndent));
-                    if (!removeIndent(&content, fenceIndent))
+                    if (!removeIndent(&content, fenceIndent, &contentColumn))
                         content.remove(0, spaces(content));
                     active.text += content + newline;
                     active.renderedText += display + newline;
@@ -136,9 +149,11 @@ QVector<Candidate> sourceBlocks(const QString &source, bool *supported)
         }
         quoteDepth = depth;
         QString content = line;
-        if (!removeIndent(&content, listIndent)) {
+        int contentColumn = column;
+        if (!removeIndent(&content, listIndent, &contentColumn)) {
             listIndent = 0;
             content = line;
+            contentColumn = column;
             paragraph = false;
         }
         auto listMatch = list.match(content);
@@ -149,20 +164,23 @@ QVector<Candidate> sourceBlocks(const QString &source, bool *supported)
             }
             listIndent += listMatch.capturedLength();
             content.remove(0, listMatch.capturedLength());
+            contentColumn += listMatch.capturedLength();
             paragraph = false;
         }
         if (indented) {
             QString code = content;
+            int codeColumn = contentColumn;
             if (content.trimmed().isEmpty()) {
                 QString blank = content;
-                removeIndent(&blank, 4);
+                int blankColumn = contentColumn;
+                removeIndent(&blank, 4, &blankColumn);
                 pendingBlank += blank + newline;
-                pendingDisplayBlank += renderedIndent(blank, lines.at(i).size() - blank.size()) + newline;
+                pendingDisplayBlank += renderedIndent(blank, blankColumn) + newline;
                 continue;
             }
-            if (depth == activeQuotes && listIndent == activeList && removeIndent(&code, 4)) {
+            if (depth == activeQuotes && listIndent == activeList && removeIndent(&code, 4, &codeColumn)) {
                 active.text += pendingBlank + code + newline;
-                active.renderedText += pendingDisplayBlank + renderedIndent(code, lines.at(i).size() - code.size()) + newline;
+                active.renderedText += pendingDisplayBlank + renderedIndent(code, codeColumn) + newline;
                 pendingBlank.clear();
                 pendingDisplayBlank.clear();
                 continue;
@@ -179,15 +197,18 @@ QVector<Candidate> sourceBlocks(const QString &source, bool *supported)
             active.fence = match.captured(2).at(0);
             active.language = match.captured(3).trimmed().section(QRegularExpression(QStringLiteral("\\s+")), 0, 0);
             fenceLength = match.capturedLength(2);
-            fenceIndent = match.capturedLength(1);
+            // Qt does not count padding left by the quote's optional tab as
+            // indentation of the opening fence. List indentation may consume it.
+            const int remainingQuotePadding = qMax(0, quoteTabPadding - (contentColumn - column));
+            fenceIndent = qMax(0, match.capturedLength(1) - remainingQuotePadding);
             activeQuotes = depth;
             activeList = listIndent;
             fenced = true;
             paragraph = false;
-        } else if (!paragraph && !content.trimmed().isEmpty() && removeIndent(&content, 4)) {
+        } else if (!paragraph && !content.trimmed().isEmpty() && removeIndent(&content, 4, &contentColumn)) {
             active = Candidate();
             active.text = content + newline;
-            active.renderedText = renderedIndent(content, lines.at(i).size() - content.size()) + newline;
+            active.renderedText = renderedIndent(content, contentColumn) + newline;
             activeQuotes = depth;
             activeList = listIndent;
             indented = true;
