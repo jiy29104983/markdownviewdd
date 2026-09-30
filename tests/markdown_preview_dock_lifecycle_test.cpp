@@ -53,10 +53,14 @@ private slots:
     void dockDestructionDisconnectsAllPreviewCallbacks();
     void editorDestructionDeleteLaterIsSafe();
     void nativePreviewActivatesAllowedLinks();
+    void nativePreviewOpensExternalFragmentLinks_data();
+    void nativePreviewOpensExternalFragmentLinks();
     void nativePreviewScrollsToAnchors();
     void nativePreviewRejectsUnsupportedSchemes();
     void nativePreviewSelectionDoesNotOpenLink();
     void htmlSnapshotEmbedsLocalImagesWithoutChangingPreview();
+    void htmlSnapshotEmbedsQuotedImageNames_data();
+    void htmlSnapshotEmbedsQuotedImageNames();
     void documentStyleRefreshesForThemeWithoutChangingPosition();
     void userScrollCancelsOldReadingPosition();
 };
@@ -301,6 +305,39 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
              QUrl::fromLocalFile(root.filePath(QStringLiteral("guide/next.md"))));
 }
 
+void MarkdownPreviewDockLifecycleTest::nativePreviewOpensExternalFragmentLinks_data()
+{
+    QTest::addColumn<QString>("href");
+    QTest::newRow("https-empty-path") << QStringLiteral("https://example.com#target");
+    QTest::newRow("http-empty-path") << QStringLiteral("http://example.com#target");
+    QTest::newRow("https-root-path") << QStringLiteral("https://example.com/#target");
+    QTest::newRow("network-authority") << QStringLiteral("//example.com#target");
+    QTest::newRow("query-and-fragment") << QStringLiteral("?download=1#target");
+}
+
+void MarkdownPreviewDockLifecycleTest::nativePreviewOpensExternalFragmentLinks()
+{
+    QFETCH(QString, href);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    MarkdownPreviewDock dock;
+    QWidget *preview = createNativePreview();
+    QWidget editor;
+    auto *textEdit = preview->findChild<QTextEdit *>();
+    textEdit->setHtml(QStringLiteral("<p><a name=\"target\"></a>Local target</p>"));
+    QVERIFY(dock.adoptNativePreview(preview, textEdit,
+        QDir(directory.path()).filePath(QStringLiteral("current.md")), &editor, 1));
+    dock.show();
+    QTest::qWait(1);
+    QList<QUrl> opened;
+    dock.setUrlOpener([&opened](const QUrl &url) { opened.append(url); return true; });
+    const QUrl url(href);
+    const QUrl expected = url.isRelative() ? textEdit->document()->baseUrl().resolved(url) : url;
+    QVERIFY(QMetaObject::invokeMethod(&dock, "openLink", Qt::DirectConnection, Q_ARG(QUrl, url)));
+    QCOMPARE(opened.size(), 1);
+    QCOMPARE(opened.first(), expected);
+}
+
 void MarkdownPreviewDockLifecycleTest::nativePreviewScrollsToAnchors()
 {
     MarkdownPreviewDock dock;
@@ -432,6 +469,38 @@ void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsLocalImagesWithoutChang
     QFile exported(targetPath);
     QVERIFY(exported.open(QIODevice::ReadOnly));
     QVERIFY(exported.readAll().contains("data:image/png;base64,"));
+}
+
+void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsQuotedImageNames_data()
+{
+    QTest::addColumn<QString>("name");
+    QTest::newRow("plain") << QStringLiteral("plain.png");
+    QTest::newRow("apostrophe") << QStringLiteral("photo's.png");
+    QTest::newRow("apostrophe-and-entity") << QStringLiteral("photo's & cover.png");
+}
+
+void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsQuotedImageNames()
+{
+    QFETCH(QString, name);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QDir root(directory.path());
+    QImage image(2, 2, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(root.filePath(name), "PNG"));
+    MarkdownPreviewDock dock;
+    QWidget editor;
+    QWidget *preview = createNativePreview();
+    auto *textEdit = preview->findChild<QTextEdit *>();
+    QVERIFY(dock.adoptNativePreview(preview, textEdit,
+        root.filePath(QStringLiteral("current.md")), &editor, 1));
+    textEdit->setMarkdown(QStringLiteral("![image](<%1>)").arg(name));
+    const QString originalHtml = textEdit->document()->toHtml();
+    QVERIFY(originalHtml.contains(QStringLiteral("<img ")));
+    const QByteArray snapshot = dock.htmlSnapshotFor(&editor, 1);
+    QCOMPARE(snapshot.count("data:image/png;base64,"), 1);
+    QVERIFY(!snapshot.contains("local images not embedded"));
+    QCOMPARE(textEdit->document()->toHtml(), originalHtml);
 }
 
 void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChangingPosition()

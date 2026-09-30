@@ -137,8 +137,8 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
 
     QString html = CodeBlockTools::htmlForExport(document);
     const QRegularExpression imageSourcePattern(
-        QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])([^\\\"']+)\\2"),
-        QRegularExpression::CaseInsensitiveOption);
+        QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])(.*?)\\2"),
+        QRegularExpression::CaseInsensitiveOption | QRegularExpression::DotMatchesEverythingOption);
     QList<QPair<int, QPair<int, QString>>> replacements;
     QStringList missingResources;
     qint64 embeddedBytes = 0;
@@ -1427,7 +1427,8 @@ void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
 
 void MarkdownPreviewDock::openLink(const QUrl &url)
 {
-    if (url.path().isEmpty() && !url.fragment().isEmpty()) {
+    if (url.isRelative() && url.authority().isEmpty() && url.path().isEmpty() &&
+        !url.hasQuery() && !url.fragment().isEmpty()) {
         if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
             if (!scrollNativeToAnchor(url.fragment())) {
                 showLinkFailure(url, tr("页内锚点不存在"));

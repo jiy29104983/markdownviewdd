@@ -336,7 +336,7 @@ void PreviewSearch::restart(bool keepAnchor)
     if (!keepAnchor) { m_anchorContext.clear(); m_anchorPosition = -1; }
     m_pattern = m_query->text();
     if (!m_case->isChecked()) {
-        for (QChar &ch : m_pattern) ch = ch.toCaseFolded();
+        m_pattern = m_pattern.toCaseFolded();
     }
     if (!m_open || !m_active || !usable() || m_pattern.isEmpty()) { updateUi(); return; }
     m_prefix.fill(0, m_pattern.size());
@@ -378,18 +378,23 @@ void PreviewSearch::scan(quint64 generation)
             continue;
         }
         const int start = m_block.position() + m_offset;
-        const int count = qMin(kChunkCharacters, length - m_offset);
+        int count = qMin(kChunkCharacters, length - m_offset);
+        // Fold complete surrogate pairs together, including at chunk boundaries.
+        if (count < length - m_offset &&
+            m_document->characterAt(start + count - 1).isHighSurrogate() &&
+            m_document->characterAt(start + count).isLowSurrogate())
+            --count;
         QTextCursor cursor(m_document);
         cursor.setPosition(start);
         cursor.setPosition(start + count, QTextCursor::KeepAnchor);
-        const QString text = cursor.selectedText();
+        QString text = cursor.selectedText();
+        if (!m_case->isChecked()) text = text.toCaseFolded();
         for (int i = 0; i < text.size(); ++i) {
-            const QChar original = text.at(i);
-            if (original == QChar::ObjectReplacementCharacter || original == QChar::LineSeparator) {
+            const QChar ch = text.at(i);
+            if (ch == QChar::ObjectReplacementCharacter || ch == QChar::LineSeparator) {
                 m_matched = 0;
                 continue;
             }
-            const QChar ch = m_case->isChecked() ? original : original.toCaseFolded();
             while (m_matched > 0 && ch != m_pattern.at(m_matched)) m_matched = m_prefix.at(m_matched - 1);
             if (ch == m_pattern.at(m_matched)) ++m_matched;
             if (m_matched == m_pattern.size()) {

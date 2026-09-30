@@ -1,4 +1,5 @@
 #include "code_block_index.h"
+#include "markdown_autolink.h"
 
 #include <QRegularExpression>
 #include <QStringList>
@@ -196,7 +197,8 @@ QVector<Candidate> sourceBlocks(const QString &source, bool *supported)
         } else {
             // HTML block interpretation and unusual list/tab containers are not
             // guessed: matching displayed text alone would not prove identity.
-            if (content.trimmed().startsWith(QLatin1Char('<')))
+            const QString trimmed = content.trimmed();
+            if (trimmed.startsWith(QLatin1Char('<')) && !startsWithMarkdownAutolink(trimmed))
                 *supported = false;
             paragraph = !content.trimmed().isEmpty();
         }
