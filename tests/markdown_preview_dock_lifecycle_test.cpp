@@ -59,6 +59,8 @@ private slots:
     void nativePreviewRejectsUnsupportedSchemes();
     void nativePreviewSelectionDoesNotOpenLink();
     void htmlSnapshotEmbedsLocalImagesWithoutChangingPreview();
+    void htmlSnapshotEmbedsQuotedImageNames_data();
+    void htmlSnapshotEmbedsQuotedImageNames();
     void documentStyleRefreshesForThemeWithoutChangingPosition();
     void userScrollCancelsOldReadingPosition();
 };
@@ -467,6 +469,38 @@ void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsLocalImagesWithoutChang
     QFile exported(targetPath);
     QVERIFY(exported.open(QIODevice::ReadOnly));
     QVERIFY(exported.readAll().contains("data:image/png;base64,"));
+}
+
+void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsQuotedImageNames_data()
+{
+    QTest::addColumn<QString>("name");
+    QTest::newRow("plain") << QStringLiteral("plain.png");
+    QTest::newRow("apostrophe") << QStringLiteral("photo's.png");
+    QTest::newRow("apostrophe-and-entity") << QStringLiteral("photo's & cover.png");
+}
+
+void MarkdownPreviewDockLifecycleTest::htmlSnapshotEmbedsQuotedImageNames()
+{
+    QFETCH(QString, name);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QDir root(directory.path());
+    QImage image(2, 2, QImage::Format_ARGB32);
+    image.fill(Qt::red);
+    QVERIFY(image.save(root.filePath(name), "PNG"));
+    MarkdownPreviewDock dock;
+    QWidget editor;
+    QWidget *preview = createNativePreview();
+    auto *textEdit = preview->findChild<QTextEdit *>();
+    QVERIFY(dock.adoptNativePreview(preview, textEdit,
+        root.filePath(QStringLiteral("current.md")), &editor, 1));
+    textEdit->setMarkdown(QStringLiteral("![image](<%1>)").arg(name));
+    const QString originalHtml = textEdit->document()->toHtml();
+    QVERIFY(originalHtml.contains(QStringLiteral("<img ")));
+    const QByteArray snapshot = dock.htmlSnapshotFor(&editor, 1);
+    QCOMPARE(snapshot.count("data:image/png;base64,"), 1);
+    QVERIFY(!snapshot.contains("local images not embedded"));
+    QCOMPARE(textEdit->document()->toHtml(), originalHtml);
 }
 
 void MarkdownPreviewDockLifecycleTest::documentStyleRefreshesForThemeWithoutChangingPosition()

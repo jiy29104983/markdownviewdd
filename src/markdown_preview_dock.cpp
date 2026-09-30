@@ -137,8 +137,8 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
 
     QString html = CodeBlockTools::htmlForExport(document);
     const QRegularExpression imageSourcePattern(
-        QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])([^\\\"']+)\\2"),
-        QRegularExpression::CaseInsensitiveOption);
+        QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])(.*?)\\2"),
+        QRegularExpression::CaseInsensitiveOption | QRegularExpression::DotMatchesEverythingOption);
     QList<QPair<int, QPair<int, QString>>> replacements;
     QStringList missingResources;
     qint64 embeddedBytes = 0;
