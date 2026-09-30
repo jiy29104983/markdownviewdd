@@ -174,6 +174,7 @@ private slots:
     void sourceMapping_data();
     void sourceMapping();
     void sourceMappingFailsClosed();
+    void autolinksPreserveSourceNavigation();
     void repositoryExampleMaps();
     void mappingEdgeCases_data();
     void mappingEdgeCases();
@@ -243,6 +244,22 @@ void HeadingOutlineTest::sourceMappingFailsClosed()
     QVERIFY(mapHeadingSource(&records, QStringLiteral("~~~\n# fake\n~~~\n\n# A\n\n## A")));
     QCOMPARE(records.first().sourceLine, 4);
     QCOMPARE(records.last().sourceLine, 6);
+}
+
+void HeadingOutlineTest::autolinksPreserveSourceNavigation()
+{
+    Fixture f(QStringLiteral("# Before\n\n<https://example.com>\n## After\n"));
+    QCOMPARE(f.dock->headings().size(), 2);
+    QCOMPARE(f.dock->headings().at(0).sourceLine, 0);
+    QCOMPARE(f.dock->headings().at(1).sourceLine, 3);
+    const QString source = f.editor->toPlainText();
+    f.activate(1);
+    QCOMPARE(f.adapter.navigations, 1);
+    QCOMPARE(f.adapter.lastLine, 3);
+    f.activate(0);
+    QCOMPARE(f.adapter.navigations, 2);
+    QCOMPARE(f.adapter.lastLine, 0);
+    QCOMPARE(f.editor->toPlainText(), source);
 }
 
 void HeadingOutlineTest::hierarchyAndIndependentSelection()
@@ -545,6 +562,13 @@ void HeadingOutlineTest::mappingEdgeCases_data()
     QTest::newRow("list-fence-explicit-close") << QStringLiteral("- ```\n  # code\n  ```\n\n# Tail\n") << QVector<int>{4};
     QTest::newRow("empty-atx-before-heading") << QStringLiteral("# ###\n\n# Real heading\n") << QVector<int>{2};
     QTest::newRow("multiline-setext") << QStringLiteral("多行\n标题\n===\n\n# 尾部\n") << QVector<int>{0, 4};
+    QTest::newRow("uri-autolink-before-atx") << QStringLiteral("# Before\n\n<https://example.com>\n## After\n") << QVector<int>{0, 3};
+    QTest::newRow("email-autolink-before-atx") << QStringLiteral("# Before\n\n<person@example.com>\n## After\n") << QVector<int>{0, 3};
+    QTest::newRow("custom-autolink-before-atx") << QStringLiteral("<custom+scheme:resource>\n# After\n") << QVector<int>{1};
+    QTest::newRow("uri-autolink-setext") << QStringLiteral("<https://example.com>\n===\n\n# After\n") << QVector<int>{0, 3};
+    QTest::newRow("email-autolink-setext") << QStringLiteral("<person@example.com>\n---\n\n# After\n") << QVector<int>{0, 3};
+    QTest::newRow("quoted-autolink-before-atx") << QStringLiteral("> <https://example.com>\n> ## After\n\n# Tail\n") << QVector<int>{1, 3};
+    QTest::newRow("list-autolink-before-atx") << QStringLiteral("- <https://example.com>\n  ## After\n\n# Tail\n") << QVector<int>{1, 3};
 }
 
 void HeadingOutlineTest::mappingEdgeCases()
