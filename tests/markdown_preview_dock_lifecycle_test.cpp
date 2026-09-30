@@ -53,6 +53,8 @@ private slots:
     void dockDestructionDisconnectsAllPreviewCallbacks();
     void editorDestructionDeleteLaterIsSafe();
     void nativePreviewActivatesAllowedLinks();
+    void nativePreviewOpensExternalFragmentLinks_data();
+    void nativePreviewOpensExternalFragmentLinks();
     void nativePreviewScrollsToAnchors();
     void nativePreviewRejectsUnsupportedSchemes();
     void nativePreviewSelectionDoesNotOpenLink();
@@ -299,6 +301,39 @@ void MarkdownPreviewDockLifecycleTest::nativePreviewActivatesAllowedLinks()
     QCOMPARE(openedUrls.size(), 2);
     QCOMPARE(openedUrls.constLast(),
              QUrl::fromLocalFile(root.filePath(QStringLiteral("guide/next.md"))));
+}
+
+void MarkdownPreviewDockLifecycleTest::nativePreviewOpensExternalFragmentLinks_data()
+{
+    QTest::addColumn<QString>("href");
+    QTest::newRow("https-empty-path") << QStringLiteral("https://example.com#target");
+    QTest::newRow("http-empty-path") << QStringLiteral("http://example.com#target");
+    QTest::newRow("https-root-path") << QStringLiteral("https://example.com/#target");
+    QTest::newRow("network-authority") << QStringLiteral("//example.com#target");
+    QTest::newRow("query-and-fragment") << QStringLiteral("?download=1#target");
+}
+
+void MarkdownPreviewDockLifecycleTest::nativePreviewOpensExternalFragmentLinks()
+{
+    QFETCH(QString, href);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    MarkdownPreviewDock dock;
+    QWidget *preview = createNativePreview();
+    QWidget editor;
+    auto *textEdit = preview->findChild<QTextEdit *>();
+    textEdit->setHtml(QStringLiteral("<p><a name=\"target\"></a>Local target</p>"));
+    QVERIFY(dock.adoptNativePreview(preview, textEdit,
+        QDir(directory.path()).filePath(QStringLiteral("current.md")), &editor, 1));
+    dock.show();
+    QTest::qWait(1);
+    QList<QUrl> opened;
+    dock.setUrlOpener([&opened](const QUrl &url) { opened.append(url); return true; });
+    const QUrl url(href);
+    const QUrl expected = url.isRelative() ? textEdit->document()->baseUrl().resolved(url) : url;
+    QVERIFY(QMetaObject::invokeMethod(&dock, "openLink", Qt::DirectConnection, Q_ARG(QUrl, url)));
+    QCOMPARE(opened.size(), 1);
+    QCOMPARE(opened.first(), expected);
 }
 
 void MarkdownPreviewDockLifecycleTest::nativePreviewScrollsToAnchors()
