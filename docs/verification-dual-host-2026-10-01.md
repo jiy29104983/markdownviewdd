@@ -46,12 +46,36 @@
 | 双版本字体场景 | passed：3.8.3／3.9.0 各 13 个主题，模板与用户配置均匹配 |
 | 原六项错误的独立复现程序 | passed：13 个主题全部匹配，mismatches 从 6 降为 0 |
 | 发布脚本隔离测试 | passed，未操作真实 Release |
-| 本次 Windows Release 构建与回归 | 由现有 Windows 工作流验证，最终结果见本次 PR 检查 |
+| 本次 Windows Release 构建与回归 | passed：Qt 5.15.2、MSVC v142、x64；8/8 组共 260 项通过，发布脚本测试通过 |
+| 候选 Artifact | passed：ZIP／Artifact 校验和、三项文件清单、DLL x64 和两个入口导出均通过 |
+| 候选 DLL 对两版运行库的导入检查 | passed：分别匹配 3.8.3 和 3.9.0 的全部 1,112 个 Qt／MSVC 导入符号 |
 | 修复后的 Windows 宿主加载与交互 | not verified：当前环境无 Windows，用户此前确认 3.9.0 尚未实测 |
 
 本地日志位于已忽略的 `build/compatibility-3.9.0/`：`dual-build.log`、
 `dual-ctest.log`、`regression/markdownview_font_tests.txt`、
 `dual-font-mapping-probe.json`、`dual-release-tests.log`。
+
+[草稿 PR #3](https://github.com/jiy29104983/markdownviewdd/pull/3)；
+[Windows 验证流水线](https://github.com/jiy29104983/markdownviewdd/actions/runs/36874277432)。
+该流水线对应代码提交 `2af72ffe8344c673df6b849cf3f95789350beed2`，构建 PR 合并引用
+`1164d4c`。后续验证记录提交仅改文档，不改变经验证的插件源码和测试。
+
+候选包 `markdownviewdd-v0.2.9-windows-x64-1164d4c.zip` 的 SHA256：
+
+```text
+d8cd682a833c086202829b5faeda357ac63fdd07edf9d9d1c068e4b2c8565564
+```
+
+包内 `plugin/markdownviewdd.dll` 为 405,504 字节，SHA256：
+
+```text
+5275bcadaeb6460b66b556e7c5fa383801b286cdade1531e6f22ffab5b9c1051
+```
+
+候选包及解包后的 Windows 测试文本保存在本地
+`build/compatibility-3.9.0/windows-candidate/`，结构化核验结果在
+`build/compatibility-3.9.0/dual-validation.json`。Windows 系统 DLL 的实际加载仍需
+宿主实测；符号对照只覆盖发布包中的 Qt／MSVC 依赖。
 
 原 v0.2.9 的 Windows 构建成功记录不替代本次修复后的构建。自动化通过也不代表已
 完成实际宿主加载。两版的手工验收至少包括加载／重开、六个受影响主题的自定义字体、
