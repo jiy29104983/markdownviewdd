@@ -14,13 +14,15 @@
 #include <memory>
 
 namespace {
+// The official Windows 3.8.3 and 3.9.0 binaries share this skinid order.
+// Their public source tags still contain an older 18-theme table. Evidence
+// from both release binaries is pinned in tests/fixtures/host-theme-maps/.
 const QStringList kThemes = {
     QStringLiteral("Default"), QStringLiteral("Bespin"), QStringLiteral("Black board"),
     QStringLiteral("Blue light"), QStringLiteral("Choco"), QStringLiteral("DansLeRuSH-Dark"),
-    QStringLiteral("Deep Black"), QStringLiteral("lavender"), QStringLiteral("HotFudgeSundae"),
-    QStringLiteral("misty rose"), QStringLiteral("Mono Industrial"), QStringLiteral("Monokai"),
-    QStringLiteral("Obsidian"), QStringLiteral("Plastic Code Wrap"), QStringLiteral("Ruby Blue"),
-    QStringLiteral("Twilight"), QStringLiteral("Vibrant Ink"), QStringLiteral("yellow rice")
+    QStringLiteral("Deep Black"), QStringLiteral("HotFudgeSundae"), QStringLiteral("Monokai"),
+    QStringLiteral("One Dark"), QStringLiteral("Twilight"), QStringLiteral("yellow rice"),
+    QStringLiteral("bean green")
 };
 
 QString builtinFamily()

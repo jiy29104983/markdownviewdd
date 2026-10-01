@@ -343,14 +343,27 @@ void SavedMarkdownFontTest::themeMapping_data()
 {
     QTest::addColumn<int>("id");
     QTest::addColumn<QString>("name");
-    const QStringList names = {QStringLiteral("Default"), QStringLiteral("Bespin"), QStringLiteral("Black board"),
-        QStringLiteral("Blue light"), QStringLiteral("Choco"), QStringLiteral("DansLeRuSH-Dark"),
-        QStringLiteral("Deep Black"), QStringLiteral("lavender"), QStringLiteral("HotFudgeSundae"),
-        QStringLiteral("misty rose"), QStringLiteral("Mono Industrial"), QStringLiteral("Monokai"),
-        QStringLiteral("Obsidian"), QStringLiteral("Plastic Code Wrap"), QStringLiteral("Ruby Blue"),
-        QStringLiteral("Twilight"), QStringLiteral("Vibrant Ink"), QStringLiteral("yellow rice")};
-    for (int id = 0; id < names.size(); ++id) {
-        QTest::newRow(qPrintable(names.at(id))) << id << names.at(id);
+    QTest::addColumn<QStringList>("releaseThemes");
+    const QString fixtureDirectory = QFINDTESTDATA("fixtures/host-theme-maps/3.8.3.json");
+    QVERIFY(!fixtureDirectory.isEmpty());
+    const QDir directory = QFileInfo(fixtureDirectory).dir();
+    for (const QString &version : {QStringLiteral("3.8.3"), QStringLiteral("3.9.0")}) {
+        const QJsonObject fixture = QJsonDocument::fromJson(
+            bytes(directory.filePath(version + QStringLiteral(".json")))).object();
+        QCOMPARE(fixture.value(QStringLiteral("version")).toString(), version);
+        const QJsonArray themes = fixture.value(QStringLiteral("themes")).toArray();
+        QCOMPARE(themes.size(), 13);
+        QStringList names;
+        for (int id = 0; id < themes.size(); ++id) {
+            const QJsonObject row = themes.at(id).toObject();
+            QCOMPARE(row.value(QStringLiteral("id")).toInt(-1), id);
+            names.append(row.value(QStringLiteral("name")).toString());
+            QVERIFY(!names.last().isEmpty());
+        }
+        for (int id = 0; id < names.size(); ++id) {
+            QTest::newRow(qPrintable(version + QLatin1Char('/') + names.at(id)))
+                << id << names.at(id) << names;
+        }
     }
 }
 
@@ -358,15 +371,48 @@ void SavedMarkdownFontTest::themeMapping()
 {
     QFETCH(int, id);
     QFETCH(QString, name);
+    QFETCH(QStringList, releaseThemes);
     Config config;
     config.theme(id);
+    // Distinct values for every installed theme catch accidental cross-theme
+    // reads even when both the correct and incorrectly mapped files exist.
+    for (int theme = 0; theme < releaseThemes.size(); ++theme) {
+        Config::writeFont(config.templatePath(releaseThemes.at(theme)),
+            QStringLiteral("style0/font"), releaseThemes.at(theme), 20 + theme);
+    }
+    for (const QString &legacy : {QStringLiteral("lavender"), QStringLiteral("misty rose"),
+            QStringLiteral("Mono Industrial"), QStringLiteral("Obsidian"),
+            QStringLiteral("Plastic Code Wrap"), QStringLiteral("Ruby Blue"),
+            QStringLiteral("Vibrant Ink")}) {
+        Config::writeFont(config.stylePath(legacy), QStringLiteral("style0/font"),
+            QStringLiteral("Stale User Font"), 45);
+        Config::writeFont(config.templatePath(legacy), QStringLiteral("style0/font"),
+            QStringLiteral("Stale Template Font"), 46);
+    }
     const QString path = config.templatePath(name);
-    Config::writeFont(path, QStringLiteral("style0/font"), QStringLiteral("Theme Font"), 19);
-    const SavedMarkdownFont font = readSavedMarkdownFont(config.paths);
+    const auto before = hashes(config.directory.path());
+    SavedMarkdownFont font = readSavedMarkdownFont(config.paths);
     QCOMPARE(font.themeId, id);
     QCOMPARE(font.sourcePath, path);
-    QCOMPARE(font.configuredFamily, QStringLiteral("Theme Font"));
-    QCOMPARE(font.pointSize, 19.0);
+    QCOMPARE(font.configuredFamily, name);
+    QCOMPARE(font.pointSize, qreal(20 + id));
+    QCOMPARE(hashes(config.directory.path()), before);
+
+    const QString userPath = config.stylePath(name);
+    Config::writeFont(userPath, QStringLiteral("style0/font"), QStringLiteral("User Font"), 30 + id);
+    font = readSavedMarkdownFont(config.paths);
+    QCOMPARE(font.sourcePath, userPath);
+    QCOMPARE(font.configuredFamily, QStringLiteral("User Font"));
+    QCOMPARE(font.pointSize, qreal(30 + id));
+
+    // A missing selected theme must use the built-in font, not another
+    // installed theme or a stale user file from the old public source table.
+    QVERIFY(QFile::remove(userPath));
+    QVERIFY(QFile::remove(path));
+    font = readSavedMarkdownFont(config.paths);
+    QCOMPARE(font.sourcePath, QString());
+    QCOMPARE(font.result, SavedMarkdownFont::Result::Builtin);
+    QCOMPARE(font.pointSize, 12.0);
 }
 
 void SavedMarkdownFontTest::missingFilesAndFields()
@@ -484,7 +530,9 @@ void SavedMarkdownFontTest::fontFieldDecoding()
 void SavedMarkdownFontTest::invalidTheme_data()
 {
     QTest::addColumn<QString>("value");
-    for (const QString &value : {QStringLiteral("-1"), QStringLiteral("18"), QStringLiteral("999"),
+    for (const QString &value : {QStringLiteral("-1"), QStringLiteral("13"), QStringLiteral("14"),
+                                QStringLiteral("15"), QStringLiteral("16"), QStringLiteral("17"),
+                                QStringLiteral("18"), QStringLiteral("999"),
                                 QStringLiteral("abc"), QStringLiteral("1.5"), QStringLiteral("")}) {
         QTest::newRow(qPrintable(value.isEmpty() ? QStringLiteral("empty") : value)) << value;
     }

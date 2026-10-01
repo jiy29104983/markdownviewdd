@@ -1,0 +1,869 @@
+{
+  "date": "2026-10-01",
+  "verdict": "Partial compatibility: static loading requirements satisfied; saved-font mapping mismatch reproduced; Windows runtime not verified.",
+  "plugin": {
+    "version": "0.2.9",
+    "head": "bdb97849ffadbe07527a70666d3c1293c7965bf9",
+    "release_commit": "9571e617387f594b2cdb72190145b4b70f3071bd",
+    "source_matches_release": true,
+    "zip_sha256": "2c12e00b711a1f96634d73828a302f86b713fe58243679b5fb67f274d9da0738"
+  },
+  "host": {
+    "version": "3.9.0",
+    "source_commit": "91105f68b74382128f3313ac5af8accdc77de918",
+    "source_tag": "v3.9.0",
+    "binary_release_url": "https://github.com/cxasm/notepad--/releases/tag/notepad-v3.9.0",
+    "zip_sha256": "5e19f287a9a01035f8e7171462f6298949e3625432b38db3b6f91a80b578f40a",
+    "binary_package": "Notepad--v3.9.0-win10-portable.zip"
+  },
+  "binary_files": [
+    {
+      "file": "markdownviewdd.dll",
+      "sha256": "3f2c1201626e1bb3ab1aa78cf27a05d36841c2a5637f4adfdfa58b16619d17d1",
+      "machine": "0x8664",
+      "linker": "14.29",
+      "version": {},
+      "strings": {
+        "NDD_PROC_IDENTIFY": "ascii",
+        "NDD_PROC_MAIN": "ascii",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "ascii",
+        "MarkdownViewClass": "ascii",
+        "editTabWidget": "ascii",
+        "textEdit": "ascii",
+        "filePath": "ascii",
+        "on_viewMarkdown": "ascii",
+        "on_updataMarkdown": "ascii",
+        "ensureLineVisible": "ascii",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "ascii",
+        "nddsets": "utf16",
+        "userstyle": "utf16",
+        "markdown.ini": "utf16"
+      }
+    },
+    {
+      "file": "Notepad--.exe",
+      "sha256": "a953ec9394f372d87b935026c462b1fc83415635aefd9e7206b6aa7480e056b9",
+      "machine": "0x8664",
+      "linker": "14.29",
+      "version": {
+        "CompanyName": "Ndd开源组织",
+        "FileDescription": "notepad--",
+        "FileVersion": "3.9.0.0",
+        "InternalName": "notepad--",
+        "LegalCopyright": "Copyright (C) 2020-2024",
+        "OriginalFilename": "notepad--",
+        "ProductName": "notepad--",
+        "ProductVersion": "3.9.0.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "ascii",
+        "NDD_PROC_MAIN": "ascii",
+        "ScintillaEditView": "ascii",
+        "MarkdownView": "ascii",
+        "MarkdownViewClass": "ascii",
+        "editTabWidget": "ascii",
+        "textEdit": "ascii",
+        "filePath": "ascii",
+        "on_viewMarkdown": "ascii",
+        "on_updataMarkdown": "ascii",
+        "ensureLineVisible": "ascii",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "ascii",
+        "nddsets": "ascii",
+        "userstyle": "ascii",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "Qt5Core.dll",
+      "sha256": "8d2ff4ce9096ddccc4f4cd62c2e41fc854cfd1b0d6e8d296645a7f5fd4ae565a",
+      "machine": "0x8664",
+      "linker": "14.26",
+      "version": {
+        "CompanyName": "The Qt Company Ltd.",
+        "FileDescription": "C++ Application Development Framework",
+        "FileVersion": "5.15.2.0",
+        "LegalCopyright": "Copyright (C) 2020 The Qt Company Ltd.",
+        "OriginalFilename": "Qt5Core.dll",
+        "ProductName": "Qt5",
+        "ProductVersion": "5.15.2.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "absent",
+        "filePath": "ascii",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "absent",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "absent",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "Qt5Gui.dll",
+      "sha256": "5e7d2d41b8b92a880e83b8cc0ca173f5da61218604186196787ee1600956be1e",
+      "machine": "0x8664",
+      "linker": "14.26",
+      "version": {
+        "CompanyName": "The Qt Company Ltd.",
+        "FileDescription": "C++ Application Development Framework",
+        "FileVersion": "5.15.2.0",
+        "LegalCopyright": "Copyright (C) 2020 The Qt Company Ltd.",
+        "OriginalFilename": "Qt5Gui.dll",
+        "ProductName": "Qt5",
+        "ProductVersion": "5.15.2.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "absent",
+        "filePath": "ascii",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "absent",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "absent",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "Qt5Widgets.dll",
+      "sha256": "3788c669d4b645e5a576de9fc77fca776bf516d43c89143dc2ca28291ba14358",
+      "machine": "0x8664",
+      "linker": "14.26",
+      "version": {
+        "CompanyName": "The Qt Company Ltd.",
+        "FileDescription": "C++ Application Development Framework",
+        "FileVersion": "5.15.2.0",
+        "LegalCopyright": "Copyright (C) 2020 The Qt Company Ltd.",
+        "OriginalFilename": "Qt5Widgets.dll",
+        "ProductName": "Qt5",
+        "ProductVersion": "5.15.2.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "ascii",
+        "filePath": "ascii",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "absent",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "absent",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "msvcp140.dll",
+      "sha256": "4176d8cab80e035b165eb1769047daeddc4f31f965d28578f45ae0d99e7e7c40",
+      "machine": "0x8664",
+      "linker": "14.31",
+      "version": {
+        "CompanyName": "Microsoft Corporation",
+        "FileDescription": "Microsoft® C Runtime Library",
+        "FileVersion": "14.32.31326.0",
+        "InternalName": "msvcp140.dll",
+        "LegalCopyright": "© Microsoft Corporation. All rights reserved.",
+        "OriginalFilename": "msvcp140.dll",
+        "ProductName": "Microsoft® Visual Studio®",
+        "ProductVersion": "14.32.31326.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "absent",
+        "filePath": "absent",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "absent",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "absent",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "vcruntime140.dll",
+      "sha256": "80f06c0740f31019f76fb1398a1112b3e02d1b80aee7d3a738d475408d7b4c60",
+      "machine": "0x8664",
+      "linker": "14.31",
+      "version": {
+        "CompanyName": "Microsoft Corporation",
+        "FileDescription": "Microsoft® C Runtime Library",
+        "FileVersion": "14.32.31326.0",
+        "InternalName": "vcruntime140.dll",
+        "LegalCopyright": "© Microsoft Corporation. All rights reserved.",
+        "OriginalFilename": "vcruntime140.dll",
+        "ProductName": "Microsoft® Visual Studio®",
+        "ProductVersion": "14.32.31326.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "absent",
+        "filePath": "absent",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "absent",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "absent",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "vcruntime140_1.dll",
+      "sha256": "0579d460ea1f7e8a815fa55a8821a5ff489c8097f051765e9beaf25d8d0f27d6",
+      "machine": "0x8664",
+      "linker": "14.31",
+      "version": {
+        "CompanyName": "Microsoft Corporation",
+        "FileDescription": "Microsoft® C Runtime Library",
+        "FileVersion": "14.31.31103.0",
+        "InternalName": "vcruntime140_1.dll",
+        "LegalCopyright": "© Microsoft Corporation. All rights reserved.",
+        "OriginalFilename": "vcruntime140_1.dll",
+        "ProductName": "Microsoft® Visual Studio®",
+        "ProductVersion": "14.31.31103.0"
+      },
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "absent",
+        "filePath": "absent",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "absent",
+        "QsciAccessibleScintillaBase": "absent",
+        "notepad": "absent",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    },
+    {
+      "file": "qmyedit_qt5.dll",
+      "sha256": "362bf6750765203aafdfd344f9ca114b170cc281715523475a4e43f4a749d7f2",
+      "machine": "0x8664",
+      "linker": "14.29",
+      "version": {},
+      "strings": {
+        "NDD_PROC_IDENTIFY": "absent",
+        "NDD_PROC_MAIN": "absent",
+        "ScintillaEditView": "absent",
+        "MarkdownView": "absent",
+        "MarkdownViewClass": "absent",
+        "editTabWidget": "absent",
+        "textEdit": "absent",
+        "filePath": "ascii",
+        "on_viewMarkdown": "absent",
+        "on_updataMarkdown": "absent",
+        "ensureLineVisible": "ascii",
+        "QsciAccessibleScintillaBase": "ascii",
+        "notepad": "ascii",
+        "nddsets": "absent",
+        "userstyle": "absent",
+        "markdown.ini": "absent"
+      }
+    }
+  ],
+  "plugin_exports": [
+    "NDD_PROC_IDENTIFY",
+    "NDD_PROC_MAIN"
+  ],
+  "plugin_import_checks": [
+    {
+      "dll": "Qt5Widgets.dll",
+      "required": 589,
+      "missing": []
+    },
+    {
+      "dll": "Qt5Gui.dll",
+      "required": 184,
+      "missing": []
+    },
+    {
+      "dll": "Qt5Core.dll",
+      "required": 325,
+      "missing": []
+    },
+    {
+      "dll": "MSVCP140.dll",
+      "required": 1,
+      "missing": []
+    },
+    {
+      "dll": "VCRUNTIME140.dll",
+      "required": 12,
+      "missing": []
+    },
+    {
+      "dll": "VCRUNTIME140_1.dll",
+      "required": 1,
+      "missing": []
+    }
+  ],
+  "system_imports_not_resolved_on_linux": [
+    {
+      "dll": "api-ms-win-crt-runtime-l1-1-0.dll",
+      "symbols": 11
+    },
+    {
+      "dll": "api-ms-win-crt-heap-l1-1-0.dll",
+      "symbols": 3
+    },
+    {
+      "dll": "KERNEL32.dll",
+      "symbols": 26
+    }
+  ],
+  "metaobject_checks": [
+    {
+      "file": "Notepad--.exe",
+      "class": "ScintillaEditView",
+      "method": "on_updataMarkdown",
+      "parameter_count": 0,
+      "qt_return_and_parameter_type_ids": [
+        43
+      ],
+      "method_flags": "0x8",
+      "metadata_file_offset": "0x389950"
+    },
+    {
+      "file": "Notepad--.exe",
+      "class": "ScintillaEditView",
+      "method": "on_viewMarkdown",
+      "parameter_count": 0,
+      "qt_return_and_parameter_type_ids": [
+        43
+      ],
+      "method_flags": "0x8",
+      "metadata_file_offset": "0x389950"
+    },
+    {
+      "file": "qmyedit_qt5.dll",
+      "class": "QsciScintilla",
+      "method": "ensureLineVisible",
+      "parameter_count": 1,
+      "qt_return_and_parameter_type_ids": [
+        43,
+        2
+      ],
+      "method_flags": "0xa",
+      "metadata_file_offset": "0x218120"
+    }
+  ],
+  "environment": {
+    "os": "Linux",
+    "arch": "aarch64",
+    "compiler": "GCC 13.3.0",
+    "qt": "5.15.13",
+    "configuration": "Release",
+    "platform": "offscreen"
+  },
+  "qt_tests": [
+    {
+      "group": "markdownview_code_tests",
+      "passed": 37,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_diagnostics_tests",
+      "passed": 6,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_document_identity_tests",
+      "passed": 41,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_font_tests",
+      "passed": 67,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_lifecycle_tests",
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_multi_window_tests",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_outline_tests",
+      "passed": 36,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    },
+    {
+      "group": "markdownview_search_tests",
+      "passed": 38,
+      "failed": 0,
+      "skipped": 0,
+      "blacklisted": 0
+    }
+  ],
+  "qt_test_total_passed": 247,
+  "release_script_tests": "passed",
+  "qscintilla_probe": {
+    "failed": 0,
+    "qtVersion": "5.15.13",
+    "scenarios": [
+      {
+        "actualDisplayLine": 130,
+        "actualFirstDisplayLine": 130,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "LF_chinese_emoji_duplicate_second",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 91,
+        "actualFirstDisplayLine": 91,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "CRLF_chinese_emoji",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 91,
+        "actualFirstDisplayLine": 91,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "CR_chinese_emoji",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 546,
+        "actualFirstDisplayLine": 546,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "wrap_before_target",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 1033,
+        "actualFirstDisplayLine": 1033,
+        "actualLineHeight": 28,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "wrap_CRLF_zoom",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 149,
+        "actualFirstDisplayLine": 131,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 342,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "document_end",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 0,
+        "actualFirstDisplayLine": 0,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "document_start",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 82,
+        "actualFirstDisplayLine": 82,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "foldsAfter": {
+          "0": true,
+          "110": false,
+          "20": false,
+          "80": true,
+          "85": true
+        },
+        "lineVisibleBefore": 0,
+        "name": "nested_folds",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 492,
+        "actualFirstDisplayLine": 492,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "foldsAfter": {
+          "0": true,
+          "110": false,
+          "20": false,
+          "80": true,
+          "85": true
+        },
+        "lineVisibleBefore": 0,
+        "name": "nested_folds_wrapped",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 546,
+        "actualFirstDisplayLine": 546,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "",
+        "lineVisibleBefore": 1,
+        "name": "multiple_selections",
+        "navigationPreservedState": true,
+        "ok": true,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": true
+      },
+      {
+        "actualDisplayLine": 150,
+        "actualFirstDisplayLine": 0,
+        "actualLineHeight": 19,
+        "actualLineVisible": 1,
+        "actualTargetVisible": true,
+        "actualY": 0,
+        "error": "invalid line",
+        "lineVisibleBefore": 1,
+        "name": "invalid_line",
+        "navigationPreservedState": true,
+        "ok": false,
+        "readPreservedState": true,
+        "sourceEqual": true,
+        "topOrEndClamped": false
+      },
+      {
+        "name": "null_editor",
+        "result": {
+          "error": "宿主未提供源码读取能力。",
+          "ok": false
+        }
+      },
+      {
+        "name": "missing_slot",
+        "result": {
+          "error": "宿主未提供源码读取能力。",
+          "ok": false
+        }
+      }
+    ]
+  },
+  "qscintilla_linux_build_note": "Added -include cstdint through qmake QMAKE_CXXFLAGS for upstream missing intptr_t declaration; host source unchanged.",
+  "font_mapping_probe": {
+    "mismatches": 6,
+    "qtVersion": "5.15.13",
+    "results": [
+      {
+        "actualPoints": 20,
+        "expectedPoints": 20,
+        "id": 0,
+        "literal_address": "0x1402aedf8",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Default/markdown.ini",
+        "store_instruction": "0x1401b69c0",
+        "table_address": "0x140451240",
+        "theme": "Default",
+        "plugin_theme": "Default"
+      },
+      {
+        "actualPoints": 21,
+        "expectedPoints": 21,
+        "id": 1,
+        "literal_address": "0x1402c5928",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Bespin/markdown.ini",
+        "store_instruction": "0x1401b69d9",
+        "table_address": "0x140451248",
+        "theme": "Bespin",
+        "plugin_theme": "Bespin"
+      },
+      {
+        "actualPoints": 22,
+        "expectedPoints": 22,
+        "id": 2,
+        "literal_address": "0x1402c5930",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Black board/markdown.ini",
+        "store_instruction": "0x1401b69f2",
+        "table_address": "0x140451250",
+        "theme": "Black board",
+        "plugin_theme": "Black board"
+      },
+      {
+        "actualPoints": 23,
+        "expectedPoints": 23,
+        "id": 3,
+        "literal_address": "0x1402d0f58",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Blue light/markdown.ini",
+        "store_instruction": "0x1401b6a0b",
+        "table_address": "0x140451258",
+        "theme": "Blue light",
+        "plugin_theme": "Blue light"
+      },
+      {
+        "actualPoints": 24,
+        "expectedPoints": 24,
+        "id": 4,
+        "literal_address": "0x1402c594c",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Choco/markdown.ini",
+        "store_instruction": "0x1401b6a24",
+        "table_address": "0x140451260",
+        "theme": "Choco",
+        "plugin_theme": "Choco"
+      },
+      {
+        "actualPoints": 25,
+        "expectedPoints": 25,
+        "id": 5,
+        "literal_address": "0x1402c5958",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/DansLeRuSH-Dark/markdown.ini",
+        "store_instruction": "0x1401b6a3d",
+        "table_address": "0x140451268",
+        "theme": "DansLeRuSH-Dark",
+        "plugin_theme": "DansLeRuSH-Dark"
+      },
+      {
+        "actualPoints": 26,
+        "expectedPoints": 26,
+        "id": 6,
+        "literal_address": "0x1402c5968",
+        "matches": true,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Deep Black/markdown.ini",
+        "store_instruction": "0x1401b6a56",
+        "table_address": "0x140451270",
+        "theme": "Deep Black",
+        "plugin_theme": "Deep Black"
+      },
+      {
+        "actualPoints": 12,
+        "expectedPoints": 27,
+        "id": 7,
+        "literal_address": "0x1402c5978",
+        "matches": false,
+        "reason": "",
+        "result": 0,
+        "sourcePath": "",
+        "store_instruction": "0x1401b6a6f",
+        "table_address": "0x140451278",
+        "theme": "HotFudgeSundae",
+        "plugin_theme": "lavender"
+      },
+      {
+        "actualPoints": 27,
+        "expectedPoints": 28,
+        "id": 8,
+        "literal_address": "0x1402c5988",
+        "matches": false,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/HotFudgeSundae/markdown.ini",
+        "store_instruction": "0x1401b6a88",
+        "table_address": "0x140451280",
+        "theme": "Monokai",
+        "plugin_theme": "HotFudgeSundae"
+      },
+      {
+        "actualPoints": 12,
+        "expectedPoints": 29,
+        "id": 9,
+        "literal_address": "0x1402c5990",
+        "matches": false,
+        "reason": "",
+        "result": 0,
+        "sourcePath": "",
+        "store_instruction": "0x1401b6aa1",
+        "table_address": "0x140451288",
+        "theme": "One Dark",
+        "plugin_theme": "misty rose"
+      },
+      {
+        "actualPoints": 12,
+        "expectedPoints": 30,
+        "id": 10,
+        "literal_address": "0x1402c59a0",
+        "matches": false,
+        "reason": "",
+        "result": 0,
+        "sourcePath": "",
+        "store_instruction": "0x1401b6aba",
+        "table_address": "0x140451290",
+        "theme": "Twilight",
+        "plugin_theme": "Mono Industrial"
+      },
+      {
+        "actualPoints": 28,
+        "expectedPoints": 31,
+        "id": 11,
+        "literal_address": "0x1402d0f68",
+        "matches": false,
+        "reason": "",
+        "result": 1,
+        "sourcePath": "notepad/userstyle/Monokai/markdown.ini",
+        "store_instruction": "0x1401b6ad3",
+        "table_address": "0x140451298",
+        "theme": "yellow rice",
+        "plugin_theme": "Monokai"
+      },
+      {
+        "actualPoints": 12,
+        "expectedPoints": 32,
+        "id": 12,
+        "literal_address": "0x1402c5dd0",
+        "matches": false,
+        "reason": "",
+        "result": 0,
+        "sourcePath": "",
+        "store_instruction": "0x1401b6aec",
+        "table_address": "0x1404512a0",
+        "theme": "bean green",
+        "plugin_theme": "Obsidian"
+      }
+    ]
+  },
+  "windows_build": {
+    "status": "passed (existing release run, verified again via GitHub API)",
+    "workflow_url": "https://github.com/jiy29104983/markdownviewdd/actions/runs/34950791883",
+    "new_build_run": false
+  },
+  "windows_host_test": {
+    "status": "not verified",
+    "user_confirmation": "尚未测试",
+    "local_environment": "Linux aarch64, no Windows/Wine runtime"
+  }
+}
