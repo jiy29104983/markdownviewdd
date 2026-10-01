@@ -1,6 +1,6 @@
 # markdownview--
 
-markdownview-- 是面向 [notepad--](https://gitee.com/cxasm/notepad--) v3.8.3 的 Markdown 侧边栏预览插件。它复用 notepad-- 自带的 Markdown 渲染，把原本独立弹出的预览窗口放进编辑器右侧，并随当前标签页和文档内容更新。
+markdownview-- 是面向 [notepad--](https://gitee.com/cxasm/notepad--) 的 Markdown 侧边栏预览插件，当前源码适配 v3.8.3 和 v3.9.0 Windows x64 插件版。它复用 notepad-- 自带的 Markdown 渲染，把原本独立弹出的预览窗口放进编辑器右侧，并随当前标签页和文档内容更新。
 
 当前版本：**v0.2.9**。本次新增功能与验证边界见[版本说明](docs/releases/v0.2.9.md)。
 
@@ -31,11 +31,16 @@ notepad-- 中的真实使用截图：左侧编辑 Markdown，右侧显示预览�
 
 ## 运行环境
 
-- notepad-- v3.8.3 插件版，x64
+- notepad-- v3.8.3 或 v3.9.0 插件版，x64；本次修复后的 Windows 实机验证状态见下方记录
 - Windows 10、Windows 11，或带桌面体验的 Windows Server 2016
 - notepad-- 安装目录中已有的 Qt 5.15.2 运行库
 
-插件按 notepad-- v3.8.3 的窗口结构和插件 ABI 开发。其他版本如果调整了 Markdown 预览、编辑器界面或插件回调签名，可能需要重新适配。
+插件沿用 v3.8.3 的窗口结构和插件 ABI，并已核对 v3.9.0 的关键接口。两版官方 Windows
+发布包使用相同的 13 项主题编号表，当前源码已修复公开旧源码表导致的字体读取错误，
+同一 DLL 可适配两版，无需手动选择版本。此修复尚未包含在已发布的 v0.2.9 包中；
+修复后的 Windows 实机加载与交互仍待验证。详见
+[双版本适配记录](docs/verification-dual-host-2026-10-01.md)和
+[修复前兼容性报告](docs/verification-notepad-3.9.0-2026-10-01.md)。
 详细的宿主版本、固定提交和 ABI 验证边界见
 [`docs/host-compatibility.md`](docs/host-compatibility.md)。
 
@@ -231,7 +236,7 @@ notepad-- v3.8.3 已经提供 `ScintillaEditView::on_viewMarkdown()` 和 `Markdo
 
 - Qt 5.15 的 Markdown 渲染不是完整浏览器，不支持 Mermaid、数学公式、JavaScript 和复杂网页样式。
 - 连续滚动同步仍按两侧比例估算；大纲主动导航单独核对标题源行。复杂或无法可靠映射的标题只支持预览内跳转。
-- 当前版本按 notepad-- v3.8.3 x64 的源码和插件 ABI 适配。
+- 当前源码针对 notepad-- v3.8.3／v3.9.0 Windows x64 插件版；其他版本及 Qt 6 构建需单独适配。
 
 遇到加载或预览问题时，可以查看当前进程的诊断日志。文件名包含 notepad-- 进程号，单个文件
 上限为 1 MiB，并保留 3 份轮转文件；日志行中的 `window-N` 可区分同进程窗口：

@@ -264,7 +264,11 @@ notepad-- 给每个编辑器对象设置了名为 `filePath` 的 Qt 动态属性
 - Qt 主次版本；
 - notepad-- v3.8.3 的插件 ABI、窗口对象名和 `on_viewMarkdown` 元对象槽。
 
-插件不再需要 `qmyedit_qt5.lib`。当前实现明确以 notepad-- v3.8.3 为目标；若宿主以后修改插件回调、结构体、窗口对象名或槽函数，需要更新适配层。
+插件不再需要 `qmyedit_qt5.lib`。当前兼容目标为 notepad-- v3.8.3／v3.9.0 Windows
+x64 插件版；两版沿用相同的插件入口。字体读取采用两版实际发布 EXE 共同使用的 13 项
+`skinid` 映射，证据固定在 `tests/fixtures/host-theme-maps/`，不以公开源码中的旧 18 项
+数组为准。未知编号返回 `invalid-saved-theme` 并使用内置字体，不搜索其他主题配置。
+若宿主以后修改插件回调、结构体、窗口对象名、槽函数或主题编号，需要重新核对适配层。
 
 ## 标题大纲与章节定位（REQ-003）
 

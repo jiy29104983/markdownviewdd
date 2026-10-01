@@ -1,0 +1,91 @@
+Notepad-- 3.9.0 theme mapping binary evidence (2026-10-01)
+Source: official Notepad--v3.9.0-win10-portable.zip
+EXE SHA256: a953ec9394f372d87b935026c462b1fc83415635aefd9e7206b6aa7480e056b9
+Image base: 0x140000000. Addresses below are preferred-image virtual addresses.
+Theme QString array starts at 0x140451240; entries are 8 bytes, IDs 0 through 12.
+The accessor at 0x1401b6977 indexes that array by the current theme ID in rdi.
+String comments were decoded from RIP-relative literal addresses.
+Read-only PE parsing/disassembly; this is not a Windows execution trace.
+
+0x1401b6940 mov qword ptr [rsp + 8], rbx
+0x1401b6945 push rdi
+0x1401b6946 sub rsp, 0x20
+0x1401b694a mov rbx, rcx
+0x1401b694d movsxd rdi, dword ptr [rip + 0x29a8b4]
+0x1401b6954 mov edx, dword ptr [rip + 0x29beb6]
+0x1401b695a mov rax, qword ptr gs:[0x58]
+0x1401b6963 mov ecx, 0x18
+0x1401b6968 mov rdx, qword ptr [rax + rdx*8]
+0x1401b696c mov eax, dword ptr [rcx + rdx]
+0x1401b696f cmp dword ptr [rip + 0x29a933], eax
+0x1401b6975 jg 0x1401b6999
+0x1401b6977 lea rcx, [rip + 0x29a8c2]
+0x1401b697e lea rdx, [rcx + rdi*8]
+0x1401b6982 mov rcx, rbx
+0x1401b6985 call qword ptr [rip + 0xe3c25]
+0x1401b698b mov rax, rbx
+0x1401b698e mov rbx, qword ptr [rsp + 0x30]
+0x1401b6993 add rsp, 0x20
+0x1401b6997 pop rdi
+0x1401b6998 ret 
+0x1401b6999 lea rcx, [rip + 0x29a908]
+0x1401b69a0 call 0x1402778b8
+0x1401b69a5 cmp dword ptr [rip + 0x29a8fc], -1
+0x1401b69ac jne 0x1401b6977
+0x1401b69ae mov edx, 7
+0x1401b69b3 lea rcx, [rip + 0xf843e] ; Default
+0x1401b69ba call qword ptr [rip + 0xe3ba8]
+0x1401b69c0 mov qword ptr [rip + 0x29a879], rax
+0x1401b69c7 mov edx, 6
+0x1401b69cc lea rcx, [rip + 0x10ef55] ; Bespin
+0x1401b69d3 call qword ptr [rip + 0xe3b8f]
+0x1401b69d9 mov qword ptr [rip + 0x29a868], rax
+0x1401b69e0 mov edx, 0xb
+0x1401b69e5 lea rcx, [rip + 0x10ef44] ; Black board
+0x1401b69ec call qword ptr [rip + 0xe3b76]
+0x1401b69f2 mov qword ptr [rip + 0x29a857], rax
+0x1401b69f9 mov edx, 0xa
+0x1401b69fe lea rcx, [rip + 0x11a553] ; Blue light
+0x1401b6a05 call qword ptr [rip + 0xe3b5d]
+0x1401b6a0b mov qword ptr [rip + 0x29a846], rax
+0x1401b6a12 mov edx, 5
+0x1401b6a17 lea rcx, [rip + 0x10ef2e] ; Choco
+0x1401b6a1e call qword ptr [rip + 0xe3b44]
+0x1401b6a24 mov qword ptr [rip + 0x29a835], rax
+0x1401b6a2b mov edx, 0xf
+0x1401b6a30 lea rcx, [rip + 0x10ef21] ; DansLeRuSH-Dark
+0x1401b6a37 call qword ptr [rip + 0xe3b2b]
+0x1401b6a3d mov qword ptr [rip + 0x29a824], rax
+0x1401b6a44 mov edx, 0xa
+0x1401b6a49 lea rcx, [rip + 0x10ef18] ; Deep Black
+0x1401b6a50 call qword ptr [rip + 0xe3b12]
+0x1401b6a56 mov qword ptr [rip + 0x29a813], rax
+0x1401b6a5d mov edx, 0xe
+0x1401b6a62 lea rcx, [rip + 0x10ef0f] ; HotFudgeSundae
+0x1401b6a69 call qword ptr [rip + 0xe3af9]
+0x1401b6a6f mov qword ptr [rip + 0x29a802], rax
+0x1401b6a76 mov edx, 7
+0x1401b6a7b lea rcx, [rip + 0x10ef06] ; Monokai
+0x1401b6a82 call qword ptr [rip + 0xe3ae0]
+0x1401b6a88 mov qword ptr [rip + 0x29a7f1], rax
+0x1401b6a8f mov edx, 8
+0x1401b6a94 lea rcx, [rip + 0x10eef5] ; One Dark
+0x1401b6a9b call qword ptr [rip + 0xe3ac7]
+0x1401b6aa1 mov qword ptr [rip + 0x29a7e0], rax
+0x1401b6aa8 mov edx, 8
+0x1401b6aad lea rcx, [rip + 0x10eeec] ; Twilight
+0x1401b6ab4 call qword ptr [rip + 0xe3aae]
+0x1401b6aba mov qword ptr [rip + 0x29a7cf], rax
+0x1401b6ac1 mov edx, 0xb
+0x1401b6ac6 lea rcx, [rip + 0x11a49b] ; yellow rice
+0x1401b6acd call qword ptr [rip + 0xe3a95]
+0x1401b6ad3 mov qword ptr [rip + 0x29a7be], rax
+0x1401b6ada mov edx, 0xa
+0x1401b6adf lea rcx, [rip + 0x10f2ea] ; bean green
+0x1401b6ae6 call qword ptr [rip + 0xe3a7c]
+0x1401b6aec mov qword ptr [rip + 0x29a7ad], rax
+0x1401b6af3 lea rcx, [rip + 0xe09f6]
+0x1401b6afa call 0x140277718
+0x1401b6aff lea rcx, [rip + 0x29a7a2]
+0x1401b6b06 call 0x140277858
+0x1401b6b0b jmp 0x1401b6977

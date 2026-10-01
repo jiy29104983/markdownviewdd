@@ -49,7 +49,7 @@ ctest --test-dir build -C Release -L multi-window --output-on-failure
 | `markdownview_lifecycle_tests` | Dock／预览销毁顺序、链接与锚点、相对图片导出、主题格式和位置、用户滚动取消旧恢复目标 | notepad-- 真实控件销毁顺序、系统 URL 打开器、真实主题视觉 |
 | `markdownview_document_identity_tests` | 快速切换、防抖、后台内容／路径变化后的缓存失效、隐藏 Dock 导出、原子保存、滚动信号传递与位置恢复、慢文档策略跨标签保存 | 真实宿主 ABI、真实磁盘对话框、设备性能结论 |
 | `markdownview_multi_window_tests` | 每窗口控制器、重复初始化、窗口关闭和右键菜单隔离 | notepad-- 多进程或非基线窗口结构 |
-| `markdownview_font_tests` | 宿主配置样本、18 个主题、只读与待写缓存、打开次数、默认字体、原生滚轮对照、比例格式、旧快照、缓存和多窗口 | 真实 Windows 路径、宿主保存操作、DPI 视觉和滚轮手感 |
+| `markdownview_font_tests` | 宿主配置样本、3.8.3／3.9.0 各 13 个发布主题、旧配置残留与越界编号、只读与待写缓存、打开次数、默认字体、原生滚轮对照、比例格式、旧快照、缓存和多窗口 | 真实 Windows 路径、宿主保存操作、DPI 视觉和滚轮手感 |
 | `markdownview_outline_tests` | 标题提取、源行映射、树层级、当前章节和主动导航 | 真实宿主折叠、可访问性接口及键鼠时序 |
 | `markdownview_search_tests` | 快照搜索、大小写、分批计数、导航、高亮与窗口隔离 | 真实输入法、设备性能及 Windows 交互体验 |
 | `markdownview_code_tests` | 代码块索引、完整复制、语言标识、换行设置和导出隔离 | 真实系统剪贴板、DPI 和键盘体验 |

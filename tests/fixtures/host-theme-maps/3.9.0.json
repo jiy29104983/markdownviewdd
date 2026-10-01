@@ -1,0 +1,66 @@
+{
+  "version": "3.9.0",
+  "release_url": "https://github.com/cxasm/notepad--/releases/tag/notepad-v3.9.0",
+  "package": "Notepad--v3.9.0-win10-portable.zip",
+  "package_sha256": "5e19f287a9a01035f8e7171462f6298949e3625432b38db3b6f91a80b578f40a",
+  "executable_sha256": "a953ec9394f372d87b935026c462b1fc83415635aefd9e7206b6aa7480e056b9",
+  "file_version": "3.9.0.0",
+  "theme_table_initializers_rva": [
+    "0x1b69ae",
+    "0x1b6b7c"
+  ],
+  "themes": [
+    {
+      "id": 0,
+      "name": "Default"
+    },
+    {
+      "id": 1,
+      "name": "Bespin"
+    },
+    {
+      "id": 2,
+      "name": "Black board"
+    },
+    {
+      "id": 3,
+      "name": "Blue light"
+    },
+    {
+      "id": 4,
+      "name": "Choco"
+    },
+    {
+      "id": 5,
+      "name": "DansLeRuSH-Dark"
+    },
+    {
+      "id": 6,
+      "name": "Deep Black"
+    },
+    {
+      "id": 7,
+      "name": "HotFudgeSundae"
+    },
+    {
+      "id": 8,
+      "name": "Monokai"
+    },
+    {
+      "id": 9,
+      "name": "One Dark"
+    },
+    {
+      "id": 10,
+      "name": "Twilight"
+    },
+    {
+      "id": 11,
+      "name": "yellow rice"
+    },
+    {
+      "id": 12,
+      "name": "bean green"
+    }
+  ]
+}

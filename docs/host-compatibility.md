@@ -1,19 +1,40 @@
 # notepad-- 宿主兼容性
 
-## 兼容性基线
+## 兼容性基线与当前源码参考
 
 截至 2026 年 9 月 4 日，本插件兼容性基线为 notepad-- `v3.8.3`，固定提交为
 `91105f68b74382128f3313ac5af8accdc77de918`。该版本于 2026 年 8 月 5 日作为预览
 release 发布；截至同一日期，`v3.8.2` 是 notepad-- 的最新稳定版。
 
-宿主源码以自主发布仓库 Gitee 的标签和提交为准。GitHub 镜像的 3.8.x 标签未同步到
-相同提交，不应作为本插件的兼容性基线。上述记录是带日期的已验证基线，不代表未来
-一直是 notepad-- 的最新版本。
+2026 年 10 月 1 日重新核对[官方 release 列表](https://gitee.com/cxasm/notepad--/releases)，
+最新正式 release 为 [v3.9.0](https://gitee.com/cxasm/notepad--/releases/tag/v3.9.0)，
+发布于 2026 年 9 月 10 日。本地宿主源码参考已切换到该标签，其标签对象为
+`b2190a2ded8f6ad828e024ead633fa03742ef9f6`，解引用后的提交仍为
+`91105f68b74382128f3313ac5af8accdc77de918`。官方 `v3.8.3` 和 `v3.9.0` 指向同一
+源码提交，两个标签之间没有文件差异。
+
+当前源码兼容目标为 `v3.8.3` 和 `v3.9.0` Windows x64 插件版。2026 年 10 月 1 日
+核对两版实际发布 EXE，确认它们均使用同一套 13 项主题编号；公开源码中的旧 18 项表
+与两版发布包都不一致。插件已按发布包修正字体映射，保留原有插件入口和宿主适配接口。
+证据与修复验证见[双版本适配记录](verification-dual-host-2026-10-01.md)。
+
+既有实机兼容性基线仍为 `v3.8.3`，修复后的 Windows 实机验证待补齐。
+[修复前兼容性报告](verification-notepad-3.9.0-2026-10-01.md)记录了原六项字体错误；
+不能仅凭源码标签相同或静态检查通过判定完整运行兼容。
+
+宿主源码以自主发布仓库 Gitee 的标签和提交为准。GitHub 镜像的 release 标签和提交
+与 Gitee 不同，不应替代本插件的源码参考。上述记录均以核对日期为准。
 
 ## 本地宿主源码
 
 `notepad--/` 是已忽略的本地宿主源码参考目录，不属于本插件的提交内容。除非任务明确
 要求修改宿主，否则不要编辑或提交其中内容。
+
+新工作区没有该目录时，从仓库根目录检出固定 release：
+
+```bash
+git clone --depth 1 --branch v3.9.0 https://gitee.com/cxasm/notepad--.git notepad--
+```
 
 重点参考文件：
 
@@ -26,13 +47,25 @@ release 发布；截至同一日期，`v3.8.2` 是 notepad-- 的最新稳定版�
 使用以下命令确认本地参考源码和预览调用：
 
 ```bash
-git -C notepad-- describe --tags --exact-match HEAD
+git -C notepad-- describe --tags --exact-match --match v3.9.0 HEAD
 git -C notepad-- rev-parse HEAD
 rg -n "on_viewMarkdown|on_updataMarkdown" notepad--/src
 ```
 
-前两条命令应分别返回 `v3.8.3` 和
-`91105f68b74382128f3313ac5af8accdc77de918`。
+前两条命令应分别返回 `v3.9.0` 和
+`91105f68b74382128f3313ac5af8accdc77de918`。同一提交存在多个标签，因此显式限定
+`--match v3.9.0`，避免 `describe` 选中其他 release 标签。
+
+首次仅更新源码参考时的验证结果（2026 年 10 月 1 日；后续完整核验见上方报告）：
+
+| 验证项 | 结果 |
+| --- | --- |
+| 官方 release、远程标签对象与提交、本地检出一致性 | passed |
+| 与 `v3.8.3` 的完整源码差异 | passed：无差异 |
+| 插件 ABI 字段及回调、Markdown 槽、窗口对象名与预览所有权静态核对 | passed：与原基线一致 |
+| 自动化回归、Windows Release DLL 编译 | not run：本次未改动插件或宿主源码 |
+| `v3.9.0` 二进制包架构及依赖检查 | not run |
+| `v3.9.0` 真实宿主加载与功能测试 | not verified |
 
 ## ABI 安全边界
 
