@@ -900,9 +900,13 @@ void PreviewController::showAbout()
     QMessageBox::about(
         m_notepad,
         tr("关于 Markdown 预览"),
-        tr("Markdown 预览 %1\n\n"
-           "面向 notepad-- 的实时 Markdown 文件预览插件。\n"
-           "复用 notepad-- v3.8 原生 Markdown 渲染并嵌入侧边栏。")
+        tr("<p><b>markdownview--</b> v%1</p>"
+           "<p>为 notepad-- 提供 Markdown 侧栏预览。</p>"
+           "<p>自动与手动刷新 · 标题大纲 · 同步滚动<br>"
+           "预览内搜索 · 代码块复制 · HTML 导出</p>"
+           "<p><a href=\"https://github.com/jiy29104983/markdownviewdd\">项目主页</a>"
+           " · <a href=\"https://github.com/jiy29104983/markdownviewdd/issues\">问题反馈</a><br>"
+           "开源许可：GPL-3.0-or-later</p>")
             .arg(QStringLiteral(NDD_MARKDOWN_VIEW_VERSION)));
 }
 

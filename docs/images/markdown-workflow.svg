@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="300" viewBox="0 0 1120 300" fill="none" role="img" aria-labelledby="title description">
+  <title id="title">Markdown editing, sidebar preview, and HTML export</title>
+  <desc id="description">Feature illustration: write Markdown source, view the rendered document and heading outline in the notepad-- sidebar, then export the preview as HTML. This is a conceptual diagram, not an application screenshot.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto">
+      <path d="M1 1L4 4L1 7" stroke="#58A7A1" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+  </defs>
+  <rect x=".5" y=".5" width="1119" height="299" rx="18" fill="#FFFFFF" stroke="#DDE7ED"/>
+  <g font-family="Arial, Helvetica, sans-serif">
+    <text x="32" y="40" fill="#18364C" font-size="21" font-weight="700">Write. Preview. Export.</text>
+    <text x="1088" y="38" text-anchor="end" fill="#65808E" font-size="11" letter-spacing="1.4">FEATURE ILLUSTRATION</text>
+
+    <!-- Markdown source -->
+    <rect x="32" y="66" width="230" height="192" rx="12" fill="#F6F9FB" stroke="#DDE7ED"/>
+    <rect x="48" y="82" width="29" height="26" rx="6" fill="#E4EDF4"/>
+    <text x="62.5" y="101" text-anchor="middle" fill="#28526C" font-size="18" font-weight="700">#</text>
+    <text x="88" y="100" fill="#18364C" font-size="16" font-weight="700">Markdown source</text>
+    <path d="M48 122H246" stroke="#DDE7ED"/>
+    <g font-family="Consolas, 'Liberation Mono', monospace" font-size="13">
+      <text x="50" y="149" fill="#167D76"># Project notes</text>
+      <text x="50" y="174" fill="#486575">A **clear** idea.</text>
+      <text x="50" y="199" fill="#486575">## Getting started</text>
+      <text x="50" y="224" fill="#486575">- Write something</text>
+    </g>
+    <path d="M278 161H310" stroke="#58A7A1" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+    <!-- Clearly schematic editor and sidebar -->
+    <rect x="326" y="66" width="442" height="192" rx="12" fill="#FFFFFF" stroke="#C8D9E3"/>
+    <path d="M338 66H756A12 12 0 0 1 768 78V112H326V78A12 12 0 0 1 338 66Z" fill="#18364C"/>
+    <rect x="342" y="81" width="23" height="18" rx="4" stroke="#86B3C7" stroke-width="1.5"/>
+    <path d="M357 82V98" stroke="#86B3C7" stroke-width="1.5"/>
+    <text x="375" y="96" fill="#FFFFFF" font-size="16" font-weight="700">notepad--</text>
+    <text x="752" y="95" text-anchor="end" fill="#B7D3DF" font-size="12">Markdown sidebar</text>
+    <path d="M434 112V258M651 112V258" stroke="#DDE7ED"/>
+    <text x="342" y="137" fill="#65808E" font-size="11" font-weight="700">EDITOR</text>
+    <text x="450" y="137" fill="#167D76" font-size="11" font-weight="700">PREVIEW</text>
+    <text x="666" y="137" fill="#65808E" font-size="11" font-weight="700">OUTLINE</text>
+    <g stroke-linecap="round" stroke-width="4">
+      <path d="M344 157H401" stroke="#8CB8C9"/>
+      <path d="M344 174H415M344 188H397M344 219H410M344 233H388" stroke="#D4E1E8"/>
+      <path d="M344 204H389" stroke="#8CB8C9"/>
+    </g>
+    <text x="450" y="165" fill="#18364C" font-size="18" font-weight="700">Project notes</text>
+    <text x="450" y="187" fill="#486575" font-size="12">A <tspan font-weight="700">clear</tspan> idea.</text>
+    <text x="450" y="214" fill="#18364C" font-size="13" font-weight="700">Getting started</text>
+    <circle cx="454" cy="232" r="2" fill="#167D76"/>
+    <text x="464" y="236" fill="#486575" font-size="11">Write something</text>
+    <rect x="660" y="150" width="99" height="25" rx="5" fill="#E8F5F1"/>
+    <rect x="660" y="155" width="3" height="15" rx="1.5" fill="#239385"/>
+    <text x="669" y="166" fill="#167D76" font-size="10">Project notes</text>
+    <path d="M670 181V190H677" stroke="#B4C9D3" stroke-width="1.3"/>
+    <text x="681" y="193" fill="#65808E" font-size="9">Getting started</text>
+    <path d="M784 161H816" stroke="#58A7A1" stroke-width="2" stroke-linecap="round" marker-end="url(#arrow)"/>
+
+    <!-- HTML export -->
+    <rect x="834" y="66" width="254" height="192" rx="12" fill="#F2F9F6" stroke="#CDE5DC"/>
+    <path d="M937 94H972L989 111V151A5 5 0 0 1 984 156H937A5 5 0 0 1 932 151V99A5 5 0 0 1 937 94Z" fill="#FFFFFF" stroke="#79AE9F" stroke-width="1.5"/>
+    <path d="M972 94V111H989" stroke="#79AE9F" stroke-width="1.5" stroke-linejoin="round"/>
+    <path d="M948 123L942 129L948 135M974 123L980 129L974 135M964 120L958 138" stroke="#218373" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="961" y="187" text-anchor="middle" fill="#18364C" font-size="18" font-weight="700">HTML export</text>
+    <text x="961" y="210" text-anchor="middle" fill="#4B7367" font-size="12">Save the rendered document</text>
+    <text x="961" y="232" text-anchor="middle" fill="#658078" font-size="11" font-family="Consolas, 'Liberation Mono', monospace">project-notes.html</text>
+  </g>
+</svg>

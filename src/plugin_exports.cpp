@@ -11,7 +11,7 @@ NDD_PLUGIN_EXPORT bool NDD_PROC_IDENTIFY(NDD_PROC_DATA *data)
     }
 
     data->pluginName = QStringLiteral("Markdown 预览");
-    data->comment = QStringLiteral("实时预览当前 Markdown 文件");
+    data->comment = QStringLiteral("在侧栏预览当前 Markdown 文档");
     data->version = QStringLiteral("v") +
                     QStringLiteral(NDD_MARKDOWN_VIEW_VERSION);
     data->author = QStringLiteral("markdownview-- contributors");
