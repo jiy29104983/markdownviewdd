@@ -127,7 +127,6 @@ bool ensureInitialized(State &value)
     if (value.initialized) {
         return true;
     }
-    value.initialized = true;
     QDir().mkpath(value.directory.isEmpty() ? QDir::tempPath() : value.directory);
     if (QFileInfo::exists(filePath(value))) {
         rotate(value);
@@ -137,6 +136,7 @@ bool ensureInitialized(State &value)
         return false;
     }
     writeHeader(file);
+    value.initialized = true;
     return true;
 }
 } // namespace

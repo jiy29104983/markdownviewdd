@@ -297,12 +297,14 @@ bool PreviewController::eventFilter(QObject *watched, QEvent *event)
 
     if (event && event->type() == QEvent::Show) {
         QMenu *menu = qobject_cast<QMenu *>(watched);
-        QWidget *current = resolveCurrentEditor();
-        if (m_hostAdapter->isEditorContextMenu(menu, current)) {
-            if (current != m_editor) {
-                attachEditor(current);
+        if (menu) {
+            QWidget *current = resolveCurrentEditor();
+            if (m_hostAdapter->isEditorContextMenu(menu, current)) {
+                if (current != m_editor) {
+                    attachEditor(current);
+                }
+                bridgeEditorContextMenu(menu);
             }
-            bridgeEditorContextMenu(menu);
         }
     }
 

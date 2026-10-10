@@ -188,6 +188,7 @@ private slots:
     void missingCapabilityAndReentrantNavigation();
     void sourceReadReentrancy();
     void keyboardAndSectionHighlight();
+    void nullItemSignalsAreIgnored();
     void sourceUserScrollResumesSync();
     void nullSourceCapability();
     void delayedSourceLayoutKeepsHeading();
@@ -439,6 +440,32 @@ void HeadingOutlineTest::keyboardAndSectionHighlight()
     QTRY_COMPARE(outline->currentHeading(), 11);
     QCOMPARE(tree->currentItem(), selected);
     QVERIFY(tree->hasFocus());
+}
+
+void HeadingOutlineTest::nullItemSignalsAreIgnored()
+{
+    Fixture f;
+    auto *outline = f.dock->findChild<HeadingOutline *>();
+    auto *tree = f.tree();
+    int activations = 0;
+    connect(outline, &HeadingOutline::headingActivated, outline,
+            [&](const HeadingRecord &) { ++activations; });
+    tree->itemActivated(nullptr, -1);
+    tree->itemClicked(nullptr, -1);
+    QCOMPARE(activations, 0);
+    QCOMPARE(f.adapter.navigations, 0);
+
+    tree->itemActivated(tree->topLevelItem(0), 0);
+    QCOMPARE(activations, 1);
+    QCOMPARE(f.adapter.navigations, 1);
+
+    outline->clearSnapshot();
+    tree->itemActivated(nullptr, -1);
+    tree->itemClicked(nullptr, -1);
+    tree->setFocus();
+    QTest::keyClick(tree, Qt::Key_Return);
+    QCOMPARE(activations, 1);
+    QCOMPARE(f.adapter.navigations, 1);
 }
 
 void HeadingOutlineTest::sourceUserScrollResumesSync()

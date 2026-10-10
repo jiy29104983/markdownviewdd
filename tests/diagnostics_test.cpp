@@ -1,6 +1,7 @@
 #include "diagnostics.h"
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QFile>
 #include <QFileInfo>
 #include <QTemporaryDir>
@@ -15,6 +16,8 @@ private slots:
     void initializationIsIdempotentAndWindowsAreDistinct();
     void rotatesAtConfiguredCapacity();
     void unwritableLocationDoesNotCrash();
+    void initializationFailureCanRecover_data();
+    void initializationFailureCanRecover();
     void pathIdentityDoesNotExposeParentDirectory();
 };
 
@@ -75,6 +78,44 @@ void DiagnosticsTest::unwritableLocationDoesNotCrash()
     Diagnostics::initialize();
     Diagnostics::write(QStringLiteral("silently ignored"), Diagnostics::Level::Error);
     QVERIFY(QFileInfo(regularFilePath).isFile());
+}
+
+void DiagnosticsTest::initializationFailureCanRecover_data()
+{
+    QTest::addColumn<bool>("createDirectoryBeforeRetry");
+    QTest::newRow("retry-creates-directory") << false;
+    QTest::newRow("directory-restored-externally") << true;
+}
+
+void DiagnosticsTest::initializationFailureCanRecover()
+{
+    QFETCH(bool, createDirectoryBeforeRetry);
+    QTemporaryDir directory;
+    QVERIFY(directory.isValid());
+    const QString blockedPath = directory.filePath(QStringLiteral("blocked-directory"));
+    QFile blocker(blockedPath);
+    QVERIFY(blocker.open(QIODevice::WriteOnly));
+    blocker.close();
+    Diagnostics::configureForTesting(blockedPath, 1024 * 1024, 3);
+    Diagnostics::initialize();
+    Diagnostics::write(QStringLiteral("blocked-marker"));
+    const QString logPath = Diagnostics::logFilePath();
+    QVERIFY(!QFileInfo::exists(logPath));
+    QVERIFY(blocker.remove());
+    if (createDirectoryBeforeRetry)
+        QVERIFY(QDir().mkpath(blockedPath));
+
+    Diagnostics::write(QStringLiteral("recovered-marker"));
+    Diagnostics::initialize();
+    Diagnostics::write(QStringLiteral("second-marker"));
+    QFile log(logPath);
+    QVERIFY(log.open(QIODevice::ReadOnly | QIODevice::Text));
+    const QByteArray content = log.readAll();
+    QCOMPARE(content.count("Markdown Preview diagnostic log"), 1);
+    QVERIFY(content.contains("recovered-marker"));
+    QVERIFY(content.contains("second-marker"));
+    QVERIFY(!content.contains("blocked-marker"));
+    QVERIFY(!QFileInfo::exists(logPath + QStringLiteral(".1")));
 }
 
 void DiagnosticsTest::pathIdentityDoesNotExposeParentDirectory()
