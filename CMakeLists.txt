@@ -17,6 +17,7 @@ add_library(markdownview SHARED
     src/saved_markdown_font.cpp
     src/saved_markdown_font.h
     src/source_navigation.cpp
+    src/markdown_autolink.h
     src/code_block_index.cpp
     src/code_block_tools.cpp
     src/heading_index.cpp

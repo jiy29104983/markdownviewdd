@@ -1,4 +1,5 @@
 #include "heading_index.h"
+#include "markdown_autolink.h"
 
 #include <QRegularExpression>
 #include <QTextBlock>
@@ -168,7 +169,8 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
         } else if (trimmed.isEmpty()) {
             paragraph.clear();
             htmlBlock = false;
-        } else if (htmlBlock || trimmed.startsWith(QLatin1Char('<'))) {
+        } else if (htmlBlock || (trimmed.startsWith(QLatin1Char('<')) &&
+                                 !startsWithMarkdownAutolink(trimmed))) {
             // Raw HTML containers are deliberately not guessed as Markdown.
             htmlBlock = true;
             paragraph.clear();

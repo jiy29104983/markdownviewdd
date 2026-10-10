@@ -21,6 +21,7 @@ SOURCES += \
     src/preview_controller.cpp
 
 HEADERS += \
+    src/markdown_autolink.h \
     src/diagnostics.h \
     src/source_navigation.h \
     src/code_block_index.h \

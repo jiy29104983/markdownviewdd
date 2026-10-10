@@ -172,6 +172,8 @@ private slots:
     void extraction_data();
     void extraction();
     void uncertainMapping();
+    void autolinksPreserveCopy_data();
+    void autolinksPreserveCopy();
     void clipboardAndKeyboard();
     void manualAndCacheIdentity();
     void sourceReadReentry();
@@ -266,6 +268,37 @@ void CodeBlockTest::uncertainMapping()
     records = indexCodeBlocks(&doc, &editor, 1, nullptr);
     QVERIFY(!records.first().reliable);
     QVERIFY(records.first().error.contains(QStringLiteral("源码")));
+    const QString html = QStringLiteral("<div>HTML</div>\n\n```cpp\nbody\n```\n");
+    doc.setMarkdown(html);
+    records = indexCodeBlocks(&doc, &editor, 2, &html);
+    QCOMPARE(records.size(), 1);
+    QVERIFY(!records.first().reliable);
+}
+
+void CodeBlockTest::autolinksPreserveCopy_data()
+{
+    QTest::addColumn<QString>("link");
+    QTest::newRow("uri") << QStringLiteral("<https://example.com>");
+    QTest::newRow("email") << QStringLiteral("<person@example.com>");
+    QTest::newRow("mailto") << QStringLiteral("<mailto:person@example.com>");
+    QTest::newRow("custom-scheme") << QStringLiteral("<custom+scheme:resource>");
+    QTest::newRow("leading-spaces") << QStringLiteral("   <https://example.com>");
+    QTest::newRow("trailing-text") << QStringLiteral("<https://example.com> and text");
+}
+
+void CodeBlockTest::autolinksPreserveCopy()
+{
+    QFETCH(QString, link);
+    Fixture f(link + QStringLiteral("\n\n```cpp\nfirst\n```\n\n") + link +
+        QStringLiteral("\n\n```text\nsecond\n```\n\n") + link);
+    auto *code = tools(f);
+    QCOMPARE(code->records().size(), 2);
+    QString copied;
+    code->setClipboardWriter([&copied](const QString &text) { copied = text; return true; });
+    QVERIFY(code->copyBlock(0));
+    QCOMPARE(copied, QStringLiteral("first\n"));
+    QVERIFY(code->copyBlock(1));
+    QCOMPARE(copied, QStringLiteral("second\n"));
 }
 
 void CodeBlockTest::clipboardAndKeyboard()
