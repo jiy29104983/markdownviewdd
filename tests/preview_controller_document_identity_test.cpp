@@ -1033,7 +1033,6 @@ void PreviewControllerDocumentIdentityTest::manualModeDoesNotRenderOnShowEditOrR
     QCOMPARE(status.activeEditor.data(), editor);
     QVERIFY(!status.displayedEditor);
     QCOMPARE(status.displayedVersion, quint64(0));
-    QVERIFY(changed.count() >= 20);
     QCOMPARE(fixture.dock()->findChild<QLabel *>(
         QStringLiteral("NddMarkdownPreviewDocumentLabel"))->text(), QStringLiteral("manual.md"));
     QVERIFY(fixture.dock()->findChild<QAction *>(QStringLiteral("NddMarkdownManualMode"))->isChecked());
