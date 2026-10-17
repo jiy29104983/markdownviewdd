@@ -152,9 +152,6 @@ PreviewSearch::PreviewSearch(QWidget *parent) : QWidget(parent)
     PreviewUi::setup(m_previous, PreviewUi::Symbol::Previous, tr("上一处（Shift+Enter）"));
     PreviewUi::setup(m_next, PreviewUi::Symbol::Next, tr("下一处（Enter）"));
     PreviewUi::setup(close, PreviewUi::Symbol::Close, tr("关闭搜索（Esc）"));
-    m_previous->setToolTip(tr("上一处（Shift+Enter）"));
-    m_next->setToolTip(tr("下一处（Enter）"));
-    close->setToolTip(tr("关闭搜索（Esc）"));
     layout->addLayout(actions);
     m_message = new QLabel(this);
     m_message->setObjectName(QStringLiteral("NddMarkdownSearchMessage"));
@@ -352,9 +349,6 @@ void PreviewSearch::restart(bool keepAnchor)
     m_bestAnchor = -1;
     m_bestDistance = std::numeric_limits<int>::max();
     m_searching = true;
-    m_maxBatchNs = 0;
-    m_maxHighlightNs = 0;
-    m_elapsed.start();
     m_paintElapsed.start();
     updateUi();
     const quint64 generation = m_generation;
@@ -408,7 +402,6 @@ void PreviewSearch::scan(quint64 generation)
         m_offset += count;
         processed += count;
     }
-    m_maxBatchNs = qMax(m_maxBatchNs, batch.nsecsElapsed());
     const bool complete = !m_block.isValid();
     if (complete) {
         m_searching = false;
@@ -422,10 +415,7 @@ void PreviewSearch::scan(quint64 generation)
         updateHighlights();
         m_paintElapsed.restart();
     }
-    if (complete) {
-        m_lastSearchNs = m_elapsed.nsecsElapsed();
-        emit searchFinished();
-    } else {
+    if (!complete) {
         QTimer::singleShot(5, this, [this, generation]() { scan(generation); });
     }
 }
@@ -491,11 +481,8 @@ void PreviewSearch::updateHighlights()
 {
     if (!m_open || !m_active || !usable() || m_updatingHighlights) return;
     const QScopedValueRollback<bool> updating(m_updatingHighlights, true);
-    QElapsedTimer elapsed;
-    elapsed.start();
     if (m_matches.isEmpty()) {
         clearHighlights();
-        m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
         return;
     }
     // Geometry queries during Qt's lazy initial layout can synchronously advance
@@ -516,7 +503,6 @@ void PreviewSearch::updateHighlights()
                 updateHighlights();
             });
         }
-        m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
         return;
     }
     if (m_waitingForLayout) {
@@ -534,7 +520,6 @@ void PreviewSearch::updateHighlights()
     // recreate hundreds of identical cursors and repaint on every progress tick.
     if (m_highlightGeneration == m_generation && m_highlightBegin == begin &&
         m_highlightEnd == end && m_highlightCurrent == m_current && m_highlightPalette == colors) {
-        m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
         return;
     }
     m_highlightGeneration = m_generation;
@@ -562,7 +547,6 @@ void PreviewSearch::updateHighlights()
     for (int i = begin; i < end; ++i) if (i != m_current) add(i, false);
     if (m_current >= 0) add(m_current, true);
     m_view->setExtraSelections(selections);
-    m_maxHighlightNs = qMax(m_maxHighlightNs, elapsed.nsecsElapsed());
 }
 
 void PreviewSearch::updateUi()

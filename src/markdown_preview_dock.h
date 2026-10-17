@@ -6,7 +6,6 @@
 
 #include <QByteArray>
 #include <QDockWidget>
-#include <QHash>
 #include <QFont>
 #include <QMetaObject>
 #include <QPointer>
@@ -51,7 +50,6 @@ public:
     bool hasPreviewFor(QWidget *editor, quint64 contentVersion) const;
     QByteArray htmlSnapshotFor(QWidget *editor,
                                quint64 contentVersion) const;
-    void renderMarkdown(const QString &markdown, const QString &filePath);
     void showMessage(const QString &title, const QString &message);
     void setDocumentInfo(const QString &filePath, int characterCount,
                          bool hasDocument = true);
@@ -83,12 +81,10 @@ public:
     bool hasNavigationTarget() const { return m_hasNavigationTarget; }
     void releaseNavigationTarget();
     void setNavigationFeedback(const QString &message);
-    QVector<HeadingRecord> headings() const;
     QAction *outlineVisibleAction() const { return m_outlineVisibleAction; }
     QMenu *outlinePositionMenu() const { return m_outlinePositionMenu; }
     void openSearch();
     void explainCompactOutline();
-
 
 signals:
     void navigationTargetReleased();
@@ -116,16 +112,13 @@ private:
     void setOutlineOnRight(bool right);
     QAbstractScrollArea *activeScrollArea() const;
     void connectNativeScrollBar(QScrollBar *scrollBar);
-    void trackNativePreview(QWidget *previewWindow);
-    void handleNativePreviewDestroyed(QObject *previewObject);
-    void disconnectNativePreviews();
+    void handleNativePreviewDestroyed();
     void emitPreviewScrollRatio(QScrollBar *scrollBar);
     void restorePreservedScrollRatio();
     void cancelPreservedScroll();
     bool applyDocumentStyle(QTextEdit *textEdit);
     void restyleNativePreview(double ratio);
     bool handleNativeWheel(QObject *watched, QEvent *event);
-    void scheduleThemeStyleRefresh();
     bool scrollNativeToAnchor(const QString &anchor);
     void showLinkFailure(const QUrl &url, const QString &reason);
     bool hasDisplayedPreviewFor(QWidget *editor, quint64 contentVersion) const;
@@ -178,11 +171,10 @@ private:
     QPointer<QWidget> m_previewEditor;
     QPointer<QWidget> m_nativePreviewEditor;
     QPointer<QWidget> m_preservedScrollEditor;
-    QObject *m_currentNativePreviewObject = nullptr;
+    QMetaObject::Connection m_nativePreviewDestroyConnection;
     QMetaObject::Connection m_nativeScrollConnection;
     QMetaObject::Connection m_nativeHorizontalActionConnection;
     QMetaObject::Connection m_nativeScrollRangeConnection;
-    QHash<QObject *, QMetaObject::Connection> m_nativePreviewDestroyConnections;
     QTimer *m_layoutSyncTimer = nullptr;
     QTimer *m_themeStyleTimer = nullptr;
     QString m_currentFilePath;
@@ -202,5 +194,4 @@ private:
     bool m_handlingNativeWheel = false;
     double m_preservedScrollRatio = 0.0;
     bool m_hasPreservedScrollRatio = false;
-    bool m_isDestroying = false;
 };

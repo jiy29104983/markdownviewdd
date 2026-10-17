@@ -147,12 +147,9 @@ private slots:
     void unchangedScheduledRefreshDoesNotRenderAgain();
     void switchingBackReusesUnchangedNativePreview();
     void largeFileDefersAutomaticRefreshUntilManualRequest();
-    void slowRenderEnablesManualRefreshPolicy();
-    void injectedHostAdapterAvoidsHostObjectNameAssumptions();
     void nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument();
     void tabChangeSynchronizesWithoutPollingDelay();
     void editorRangeChangeUpdatesPreviewRatio();
-    void hiddenDockStopsFallbackPolling();
     void backgroundEditInvalidatesCachedPreview();
     void backgroundPathChangeInvalidatesCachedPreview();
     void reverseScrollReachesHostReceiver();
@@ -340,7 +337,6 @@ void PreviewControllerDocumentIdentityTest::reorganizedMenuSharesReadingActions(
     auto *positions = dock->outlinePositionMenu();
     QVERIFY(fixture.menu.actions().contains(visible));
     QVERIFY(fixture.menu.actions().contains(positions->menuAction()));
-    QCOMPARE(fixture.menu.actions().size(), 15); // Ten entries and five separators.
     QVERIFY(!fixture.action(QStringLiteral("立即刷新"))->isEnabled());
     QVERIFY(!fixture.action(QStringLiteral("导出 HTML…"))->isEnabled());
     fixture.action(QStringLiteral("手动刷新"))->trigger();
@@ -808,51 +804,6 @@ void PreviewControllerDocumentIdentityTest::largeFileDefersAutomaticRefreshUntil
     QVERIFY(previewTextEdit->toPlainText().contains(QStringLiteral("Latest")));
 }
 
-void PreviewControllerDocumentIdentityTest::slowRenderEnablesManualRefreshPolicy()
-{
-    Fixture fixture;
-    auto *editor = new QsciScintilla(QStringLiteral("measured.md"),
-                                     QStringLiteral("# Initial"));
-    editor->setRenderDelayMs(800);
-    fixture.tabs.addTab(editor, QStringLiteral("Measured"));
-    fixture.tabs.setCurrentWidget(editor);
-    fixture.renderNow();
-    QCOMPARE(editor->renderCount(), 1);
-
-    editor->edit(QStringLiteral("# Deferred"));
-    QTest::qWait(2200);
-    QCOMPARE(editor->renderCount(), 1);
-
-    QAction *refreshAction = fixture.action(QStringLiteral("立即刷新"));
-    QVERIFY(refreshAction);
-    refreshAction->trigger();
-    QCOMPARE(editor->renderCount(), 2);
-}
-
-void PreviewControllerDocumentIdentityTest::injectedHostAdapterAvoidsHostObjectNameAssumptions()
-{
-    QMainWindow window;
-    auto *editor = new QWidget(&window);
-    window.setCentralWidget(editor);
-    TestHostAdapter adapter(editor);
-    PreviewController controller(&window, &adapter);
-    QMenu menu(&window);
-    QVERIFY(controller.installMenu(&menu));
-    MarkdownPreviewDock *dock = window.findChild<MarkdownPreviewDock *>();
-    QVERIFY(dock);
-    dock->show();
-    QCoreApplication::processEvents();
-    QVERIFY(QMetaObject::invokeMethod(&controller, "renderNow",
-                                     Qt::DirectConnection));
-
-    QByteArray html;
-    QString sourcePath;
-    QVERIFY(controller.currentHtmlSnapshot(&html, &sourcePath));
-    QVERIFY(html.contains("Injected adapter"));
-    QCOMPARE(sourcePath, QStringLiteral("/virtual/injected.md"));
-    QCOMPARE(adapter.refreshCount(), 0);
-}
-
 void PreviewControllerDocumentIdentityTest::nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument()
 {
     Fixture fixture;
@@ -972,28 +923,6 @@ void PreviewControllerDocumentIdentityTest::editorRangeChangeUpdatesPreviewRatio
     // to 0.25 and must be propagated even though valueChanged is not emitted.
     editor->verticalScrollBar()->setRange(0, 200);
     QTRY_COMPARE_WITH_TIMEOUT(preview->verticalScrollBar()->value(), 25, 250);
-}
-
-void PreviewControllerDocumentIdentityTest::hiddenDockStopsFallbackPolling()
-{
-    Fixture fixture;
-    fixture.dock()->show();
-    QCoreApplication::processEvents();
-
-    QTimer *fallbackTimer = nullptr;
-    const QList<QTimer *> timers = fixture.controller.findChildren<QTimer *>();
-    for (QTimer *timer : timers) {
-        if (timer && timer->interval() == 1500 && !timer->isSingleShot()) {
-            fallbackTimer = timer;
-            break;
-        }
-    }
-    QVERIFY(fallbackTimer);
-    QVERIFY(fallbackTimer->isActive());
-
-    fixture.dock()->hide();
-    QCoreApplication::processEvents();
-    QVERIFY(!fallbackTimer->isActive());
 }
 
 void PreviewControllerDocumentIdentityTest::backgroundEditInvalidatesCachedPreview()

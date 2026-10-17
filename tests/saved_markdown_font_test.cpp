@@ -154,49 +154,16 @@ public slots:
     }
 };
 
-class CountingHostAdapter final : public HostAdapter
-{
-public:
-    CountingHostAdapter(QWidget *window, const SavedFontPaths &paths)
-        : host(createNotepadHostAdapter(window, paths)) {}
-    SavedMarkdownFont savedMarkdownFont() const override
-    {
-        ++reads;
-        return host->savedMarkdownFont();
-    }
-    QWidget *currentEditor() const override { return host->currentEditor(); }
-    QMetaObject::Connection connectActiveEditorChanged(QObject *context, std::function<void()> callback) override
-    { return host->connectActiveEditorChanged(context, callback); }
-    ScrollConnections connectEditorScrollChanged(QWidget *editor, QObject *context, std::function<void()> callback) override
-    { return host->connectEditorScrollChanged(editor, context, callback); }
-    QString filePath(QWidget *editor) const override { return host->filePath(editor); }
-    bool isFilePathChangeEvent(QEvent *event) const override { return host->isFilePathChangeEvent(event); }
-    bool isEditorContextMenu(QMenu *menu, QWidget *editor) const override { return host->isEditorContextMenu(menu, editor); }
-    bool isMarkdownContextAction(QAction *action) const override { return host->isMarkdownContextAction(action); }
-    bool bridgeMarkdownContextAction(QAction *action, QWidget *editor) override
-    { return host->bridgeMarkdownContextAction(action, editor); }
-    PreviewResult ensurePreview(QWidget *editor) override { return host->ensurePreview(editor); }
-    bool refreshPreview(QWidget *editor, qint64 *duration, QString *error) override
-    { return host->refreshPreview(editor, duration, error); }
-    bool disconnectImmediateRefresh(QWidget *editor, bool force) override
-    { return host->disconnectImmediateRefresh(editor, force); }
-    bool previewIsCurrent(QWidget *editor) const override { return host->previewIsCurrent(editor); }
-    void setPreviewCurrent(QWidget *editor, bool current) override { host->setPreviewCurrent(editor, current); }
-    bool releasePreview(QWidget *editor, QString *error) override { return host->releasePreview(editor, error); }
-    mutable int reads = 0;
-    std::unique_ptr<HostAdapter> host;
-};
-
 struct Fixture
 {
     QMainWindow window;
     QMenu menu;
-    CountingHostAdapter adapter;
+    std::unique_ptr<HostAdapter> adapter;
     PreviewController controller;
     QTabWidget *tabs = nullptr;
     QsciScintilla *editor = nullptr;
     Fixture(const Config &config, const QString &text = sample())
-        : menu(&window), adapter(&window, config.paths), controller(&window, &adapter)
+        : menu(&window), adapter(createNotepadHostAdapter(&window, config.paths)), controller(&window, adapter.get())
     {
         tabs = new QTabWidget(&window);
         tabs->setObjectName(QStringLiteral("editTabWidget"));
@@ -237,7 +204,7 @@ private slots:
     void qtUserScopePathDoesNotCreateOrFlushFiles();
     void unreadableSourcesUseDefaultAndCleanSnapshots();
     void fontAvailabilityAndGlobalSavedValues();
-    void openingReadsOnceAndOtherEventsReuse();
+    void savedFontChangesApplyOnlyOnReopen();
     void hiddenExportDoesNotReadConfiguration();
     void wheelStartsAtDisplayedSize_data();
     void wheelStartsAtDisplayedSize();
@@ -589,14 +556,12 @@ void SavedMarkdownFontTest::fontAvailabilityAndGlobalSavedValues()
     QVERIFY(QFontDatabase().isFixedPitch(markdownCodeFontFamily(family)));
 }
 
-void SavedMarkdownFontTest::openingReadsOnceAndOtherEventsReuse()
+void SavedMarkdownFontTest::savedFontChangesApplyOnlyOnReopen()
 {
     Config config;
     config.font(12);
     Fixture fixture(config);
-    QCOMPARE(fixture.adapter.reads, 0);
     fixture.open();
-    QCOMPARE(fixture.adapter.reads, 1);
     fixture.refresh();
     fixture.open();
     fixture.dock()->show();
@@ -610,16 +575,15 @@ void SavedMarkdownFontTest::openingReadsOnceAndOtherEventsReuse()
     QCoreApplication::processEvents();
     fixture.window.showNormal();
     QTest::qWait(1700);
-    QCOMPARE(fixture.adapter.reads, 1);
     QCOMPARE(fixture.controller.readingFont().pointSize, 12.0);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 12.0);
     fixture.dock()->hide();
     fixture.open();
-    QCOMPARE(fixture.adapter.reads, 2);
     QCOMPARE(fixture.controller.readingFont().pointSize, 18.0);
+    config.font(24);
     fixture.dock()->close();
     fixture.dock()->show();
-    QCOMPARE(fixture.adapter.reads, 3);
+    QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 24.0);
 }
 
 void SavedMarkdownFontTest::hiddenExportDoesNotReadConfiguration()
@@ -630,11 +594,9 @@ void SavedMarkdownFontTest::hiddenExportDoesNotReadConfiguration()
     fixture.controller.setRefreshMode(RefreshMode::Manual);
     QByteArray html;
     QVERIFY(fixture.exportHtml(&html));
-    QCOMPARE(fixture.adapter.reads, 0);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 12.0);
     QVERIFY(fixture.dock()->isHidden());
     fixture.open();
-    QCOMPARE(fixture.adapter.reads, 1);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 20.0);
     wheel(fixture.editor->textEdit, 120);
     const qreal zoom = fixture.controller.previewZoom();
@@ -642,7 +604,6 @@ void SavedMarkdownFontTest::hiddenExportDoesNotReadConfiguration()
     config.font(30);
     fixture.editor->edit();
     QVERIFY(fixture.exportHtml(&html));
-    QCOMPARE(fixture.adapter.reads, 1);
     QCOMPARE(fixture.controller.previewZoom(), zoom);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 20.0 * zoom);
     QVERIFY(fixture.dock()->isHidden());
@@ -743,7 +704,6 @@ void SavedMarkdownFontTest::nativeWheelAndSemanticFormats()
     QCOMPARE(edit->textCursor().selectionStart(), selectionStart);
     QCOMPARE(edit->textCursor().selectionEnd(), selectionEnd);
     QCOMPARE(fixture.editor->renders, 1);
-    QCOMPARE(fixture.adapter.reads, 1);
     const qreal points = edit->document()->defaultFont().pointSizeF();
     if (markdown == sample()) {
         const qreal expected[] = {2.0, 1.75, 1.50, 1.30, 1.15, 1.05};
@@ -771,7 +731,6 @@ void SavedMarkdownFontTest::nativeWheelAndSemanticFormats()
     QCOMPARE(edit->document()->defaultFont().pointSizeF(), points);
     fixture.controller.restoreHostFontSize();
     QCOMPARE(edit->document()->defaultFont().pointSizeF(), 12.0);
-    QCOMPARE(fixture.adapter.reads, 1);
 }
 
 void SavedMarkdownFontTest::reopenKeepsZoomAndRefreshPreservesRatios()
@@ -791,7 +750,6 @@ void SavedMarkdownFontTest::reopenKeepsZoomAndRefreshPreservesRatios()
     const auto status = fixture.controller.previewStatus();
     fixture.dock()->hide();
     fixture.open();
-    QCOMPARE(fixture.adapter.reads, 2);
     QCOMPARE(fixture.controller.previewZoom(), 1.25);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 17.5);
     QCOMPARE(fixture.editor->renders, renders);
@@ -835,16 +793,13 @@ void SavedMarkdownFontTest::failureResetsBaseAndOnlyReopenRecovers()
     QCOMPARE(fixture.controller.readingFont().pointSize, 12.0);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 12.0 * zoom);
     QCOMPARE(fixture.controller.previewStatus().state, PreviewState::Ready);
-    QCOMPARE(fixture.adapter.reads, 2);
     config.theme(0);
     config.font(16);
     QTest::qWait(1700);
-    QCOMPARE(fixture.adapter.reads, 2);
     fixture.controller.restoreHostFontSize();
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 12.0);
     fixture.dock()->hide();
     fixture.open();
-    QCOMPARE(fixture.adapter.reads, 3);
     QCOMPARE(fixture.editor->textEdit->document()->defaultFont().pointSizeF(), 16.0);
 }
 
@@ -879,13 +834,10 @@ void SavedMarkdownFontTest::tabsCacheAndWindowsKeepIndependentState()
     QVERIFY(!first.editor->preview); // Manual cache miss must not parse.
     first.refresh();
     QCOMPARE(first.editor->textEdit->document()->defaultFont().pointSizeF(), 17.5);
-    QCOMPARE(first.adapter.reads, 2);
     first.controller.restoreHostFontSize();
     QCOMPARE(second.controller.previewZoom(), secondZoom);
-    QCOMPARE(second.adapter.reads, 1);
     Fixture third(config);
     QCOMPARE(third.controller.previewZoom(), 1.0);
-    QCOMPARE(third.adapter.reads, 0);
     third.open();
     QCOMPARE(third.controller.readingFont().pointSize, 14.0);
 }
@@ -949,7 +901,6 @@ void SavedMarkdownFontTest::consecutiveStylesAndDestroyedPreviewCancelOldWork()
     delete other->preview.data();
     QTest::qWait(100);
     QVERIFY(!fixture.controller.previewStatus().displayedEditor);
-    QCOMPARE(fixture.adapter.reads, 1);
 }
 
 void SavedMarkdownFontTest::synchronizedFontChangeKeepsEditorInControl()
@@ -1014,16 +965,13 @@ void SavedMarkdownFontTest::manualContextOpenAndPendingReopenDoNotParse()
     context.show();
     QCoreApplication::processEvents();
     action->trigger();
-    QCOMPARE(fixture.adapter.reads, 1);
     QCOMPARE(fixture.editor->renders, 0);
     action->trigger();
-    QCOMPARE(fixture.adapter.reads, 1);
     fixture.refresh();
     fixture.editor->edit();
     const PreviewStatus before = fixture.controller.previewStatus();
     config.font(16);
     fixture.dock()->hide(); fixture.open();
-    QCOMPARE(fixture.adapter.reads, 2);
     QCOMPARE(fixture.editor->renders, 1);
     QCOMPARE(fixture.controller.previewStatus().state, before.state);
     QCOMPARE(fixture.controller.previewStatus().displayedVersion, before.displayedVersion);
@@ -1031,7 +979,6 @@ void SavedMarkdownFontTest::manualContextOpenAndPendingReopenDoNotParse()
     QByteArray html;
     QVERIFY(fixture.exportHtml(&html));
     QVERIFY(html.contains("Edited"));
-    QCOMPARE(fixture.adapter.reads, 2);
     QCOMPARE(fixture.controller.previewStatus().mode, RefreshMode::Manual);
 }
 

@@ -6,14 +6,11 @@
 #include "preview_search.h"
 #include <QAction>
 #include <QAbstractTextDocumentLayout>
-#include <algorithm>
 #include <QApplication>
 #include <QClipboard>
-#include <QComboBox>
 #include <QContextMenuEvent>
 #include <QWheelEvent>
 #include <QDir>
-#include <QElapsedTimer>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -41,13 +38,9 @@ public:
     QHash<QWidget *, Cache> cache;
     int renders = 0;
     mutable int reads = 0;
-    int navigations = 0;
-    int lastLine = -1;
     bool readable = true;
-    bool navigable = true;
     bool failRefresh = false;
     std::function<void()> duringRead;
-    std::function<void()> duringNavigate;
     QWidget *currentEditor() const override { return tabs->currentWidget(); }
     QMetaObject::Connection connectActiveEditorChanged(QObject *context, std::function<void()> fn) override
     { return QObject::connect(tabs, &QTabWidget::currentChanged, context, [fn]() { fn(); }); }
@@ -98,23 +91,6 @@ public:
         const QString text = qobject_cast<QTextEdit *>(editor)->toPlainText();
         if (duringRead) duringRead();
         return {text, readable ? QString() : QStringLiteral("源码读取不可用"), readable};
-    }
-    SourceNavigationResult navigateSource(QWidget *editor, int line, int offset,
-        const std::function<bool()> &valid) override
-    {
-        if (duringNavigate) duringNavigate();
-        if (!valid()) return {false, QStringLiteral("expired")};
-        if (!navigable) return {false, QStringLiteral("源码定位不可用")};
-        auto *edit = qobject_cast<QTextEdit *>(editor);
-        const QTextBlock block = edit->document()->findBlockByNumber(line);
-        if (!block.isValid() || edit->toPlainText().left(block.position()).toUcs4().size() != offset)
-            return {false, QStringLiteral("wrong source position")};
-        ++navigations;
-        lastLine = line;
-        QTextCursor cursor(block);
-        QScrollBar *bar = edit->verticalScrollBar();
-        bar->setValue(bar->value() + edit->cursorRect(cursor).top());
-        return {valid(), QString()};
     }
 };
 
@@ -179,7 +155,7 @@ private slots:
     void wrapStyleSearchAndExport();
     void preferenceAndWindows();
     void contextMenuAndReentrantClipboard();
-    void screenshotsAndMeasurements();
+    void screenshots();
     void attachedButtonsFollowLayout();
     void attachedButtonsVirtualized();
 };
@@ -249,7 +225,6 @@ void CodeBlockTest::extraction()
         QCOMPARE(records.at(i).language, languages.at(i));
         QCOMPARE(records.at(i).editor.data(), &editor);
         QCOMPARE(records.at(i).version, quint64(7));
-        QCOMPARE(records.at(i).ordinal, i);
     }
 }
 
@@ -281,7 +256,6 @@ void CodeBlockTest::clipboardAndKeyboard()
     button->setFocus();
     QTest::keyClick(button, Qt::Key_Space);
     QCOMPARE(copied, QStringLiteral("  a\tb\n\n[]*\n"));
-    QVERIFY(!f.dock->findChild<QComboBox *>(QStringLiteral("NddMarkdownCodeBlocks")));
     QContextMenuEvent context(QContextMenuEvent::Keyboard, QPoint(), QPoint());
     QCoreApplication::sendEvent(f.preview(), &context);
     auto *menu = code->findChild<QMenu *>();
@@ -565,24 +539,8 @@ void CodeBlockTest::attachedButtonsVirtualized()
     QVERIFY(f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode")).size() < 12);
 }
 
-void CodeBlockTest::screenshotsAndMeasurements()
+void CodeBlockTest::screenshots()
 {
-    QString source;
-    for (int i = 0; i < 100; ++i)
-        source += QStringLiteral("```cpp\n    item_%1\t= value;\n\n```\n\n").arg(i);
-    Fixture f(source);
-    QVector<qint64> samples;
-    for (int i = 0; i < 21; ++i) {
-        QElapsedTimer timer;
-        timer.start();
-        const auto records = indexCodeBlocks(f.preview()->document(), f.editor, 1, &source);
-        QCOMPARE(records.size(), 100);
-        QVERIFY(records.last().reliable);
-        if (i)
-            samples.append(timer.nsecsElapsed());
-    }
-    std::sort(samples.begin(), samples.end());
-    qInfo("100 code blocks, n=20, median_ms=%.3f p95_ms=%.3f", samples[10] / 1e6, samples[18] / 1e6);
     const QString directory = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
     if (!directory.isEmpty()) {
         Fixture visual(QStringLiteral("```python\ndef greet(name):\n    return f\"Hello, {name}!\"\n\nprint(greet(\"Markdown\"))\n```\n\n"

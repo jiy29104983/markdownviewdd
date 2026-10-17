@@ -26,6 +26,7 @@ NDD_PLUGIN_EXPORT int NDD_PROC_MAIN(QWidget *notepad,
                                     NDD_PROC_DATA *data)
 {
     Q_UNUSED(pluginFilePath);
+    Q_UNUSED(hostCallback);
 
     Diagnostics::initialize();
     Diagnostics::write(notepad, QStringLiteral("NDD_PROC_MAIN entered"));
@@ -41,8 +42,6 @@ NDD_PLUGIN_EXPORT int NDD_PROC_MAIN(QWidget *notepad,
     const bool createdController = !controller;
     if (!controller) {
         Diagnostics::write(notepad, QStringLiteral("creating PreviewController for host window"));
-        Q_UNUSED(getCurrentEditor);
-        Q_UNUSED(hostCallback);
         controller = new PreviewController(notepad);
     } else {
         Diagnostics::write(notepad, QStringLiteral(

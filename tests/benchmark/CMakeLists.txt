@@ -13,21 +13,14 @@ add_executable(refresh_benchmark
     "${MARKDOWNVIEW_SOURCE_DIR}/src/host_adapter.cpp"
     "${MARKDOWNVIEW_SOURCE_DIR}/src/markdown_preview_dock.cpp"
     "${MARKDOWNVIEW_SOURCE_DIR}/src/preview_controller.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/saved_markdown_font.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/source_navigation.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_index.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_outline.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/preview_search.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_index.cpp"
+    "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_tools.cpp"
     "${MARKDOWNVIEW_SOURCE_DIR}/resources/markdownview.qrc")
-if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/saved_markdown_font.cpp")
-    target_compile_definitions(refresh_benchmark PRIVATE MARKDOWNVIEW_FONT_BENCHMARK)
-    target_sources(refresh_benchmark PRIVATE
-        "${MARKDOWNVIEW_SOURCE_DIR}/src/saved_markdown_font.cpp")
-endif()
-if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_outline.cpp")
-    target_sources(refresh_benchmark PRIVATE
-        "${MARKDOWNVIEW_SOURCE_DIR}/src/source_navigation.cpp"
-        "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_index.cpp"
-        "${MARKDOWNVIEW_SOURCE_DIR}/src/heading_outline.cpp")
-endif()
-if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/preview_search.cpp")
-    target_sources(refresh_benchmark PRIVATE "${MARKDOWNVIEW_SOURCE_DIR}/src/preview_search.cpp")
-endif()
 target_include_directories(refresh_benchmark PRIVATE "${MARKDOWNVIEW_SOURCE_DIR}/src")
 target_link_libraries(refresh_benchmark PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets)
 target_compile_definitions(refresh_benchmark PRIVATE NDD_MARKDOWN_VIEW_VERSION="benchmark")
@@ -35,8 +28,4 @@ if(MSVC)
     target_compile_options(refresh_benchmark PRIVATE /utf-8 /W4)
 else()
     target_compile_options(refresh_benchmark PRIVATE -Wall -Wextra -Wpedantic)
-endif()
-
-if(EXISTS "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_tools.cpp")
-    target_sources(refresh_benchmark PRIVATE "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_index.cpp" "${MARKDOWNVIEW_SOURCE_DIR}/src/code_block_tools.cpp")
 endif()

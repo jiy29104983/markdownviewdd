@@ -5,9 +5,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QSettings>
 #include <QWheelEvent>
-#ifdef MARKDOWNVIEW_FONT_BENCHMARK
 #include "saved_markdown_font.h"
-#endif
 #include <QApplication>
 #include <QAction>
 #include <QBuffer>
@@ -139,7 +137,6 @@ int main(int argc, char **argv)
         }
     }
     const bool layerMetrics = app.arguments().contains(QStringLiteral("--layers"));
-#ifdef MARKDOWNVIEW_FONT_BENCHMARK
     SavedFontPaths fontPaths;
     fontPaths.userConfigRoot = directory.filePath(QStringLiteral("user"));
     fontPaths.applicationDirectory = directory.filePath(QStringLiteral("installation"));
@@ -151,7 +148,6 @@ int main(int argc, char **argv)
                           QStringLiteral("0"), QStringLiteral("0"), QStringLiteral("0")});
         host.sync();
     }
-#endif
     int htmlSnapshotBytes = 0;
     QMap<QString, QList<double>> measures;
     for (int iteration = -1; iteration < 20; ++iteration) {
@@ -204,13 +200,11 @@ int main(int argc, char **argv)
                 edit->document()->documentLayout()->documentSize();
                 QCoreApplication::processEvents();
             });
-#ifdef MARKDOWNVIEW_FONT_BENCHMARK
             measure(QStringLiteral("saved-font-read"), [&]() {
                 if (readSavedMarkdownFont(fontPaths).pointSize != 12.0) {
                     qFatal("font read failed");
                 }
             });
-#endif
             continue;
         }
         Fixture fixture(path, text);
@@ -242,8 +236,6 @@ int main(int argc, char **argv)
             QMetaObject::invokeMethod(&fixture.controller, "pollEditor", Qt::DirectConnection);
             QByteArray html;
             QString source;
-            // The same public snapshot entry activates cached previews on the
-            // baseline, whose normal tab activation waits for a timer.
             if (!fixture.controller.currentHtmlSnapshot(&html, &source)) {
                 qFatal("cached snapshot unavailable");
             }

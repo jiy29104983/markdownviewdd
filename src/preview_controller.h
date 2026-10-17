@@ -1,6 +1,5 @@
 #pragma once
 
-#include "ndd_plugin_api.h"
 #include "preview_status.h"
 #include "saved_markdown_font.h"
 #include "heading_index.h"
@@ -16,10 +15,10 @@
 class QAction;
 class QEvent;
 class MarkdownPreviewDock;
-class QMainWindow;
 class QMenu;
 class QTimer;
 class QTextEdit;
+class QWidget;
 class HostAdapter;
 
 class PreviewController final : public QObject
@@ -45,7 +44,6 @@ signals:
 
 private slots:
     void pollEditor();
-    void synchronizeFromHostEvent();
     void onEditorTextChanged();
     void onEditorDestroyed(QObject *editor);
     void scheduleRender();
@@ -70,7 +68,6 @@ private:
         qint64 lastFullRenderDurationMs = 0;
         double scrollRatio = 0.0;
         bool hasScrollRatio = false;
-        bool hasNativePreview = false;
         bool hasRendered = false;
         QPointer<QWidget> previewWindow;
         QPointer<QTextEdit> previewTextEdit;
@@ -88,7 +85,6 @@ private:
     void applyReadingFont();
     void bridgeEditorContextMenu(QMenu *menu);
     void showPreviewFromNativeAction();
-    QWidget *resolveCurrentEditor() const;
     void attachEditor(QWidget *editor);
     void observeEditor(QWidget *editor);
     void synchronizeActiveEditor();
@@ -105,7 +101,6 @@ private:
     void showCachedPreviewOrMessage();
     bool automaticRenderAllowed(bool allowInitialRender) const;
     QString protectionReason() const;
-    bool disconnectHostImmediateRefresh(bool force = false);
     bool activateNativePreview(bool forceHostUpdate, bool *performedFullRender);
     void rememberCurrentPreviewScroll();
     void touchPreviewCache(QWidget *editor);
@@ -115,13 +110,11 @@ private:
     void updateSynchronizedScroll();
     void ensureHostEventConnection();
     void updatePollTimerState();
-    QString currentFilePath() const;
     bool isMarkdownDocument(const QString &filePath) const;
 
     QPointer<QWidget> m_notepad;
     HostAdapter *m_hostAdapter = nullptr;
     bool m_ownsHostAdapter = false;
-    QPointer<QMainWindow> m_mainWindow;
     QPointer<QWidget> m_editor;
     QPointer<QWidget> m_previewEditor;
     QPointer<MarkdownPreviewDock> m_dock;

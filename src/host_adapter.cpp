@@ -116,8 +116,7 @@ public:
     bool isEditorContextMenu(QMenu *menu, QWidget *editor) const override
     {
         QWidget *menuParent = menu ? menu->parentWidget() : nullptr;
-        return menuParent && editor && m_notepad && menuParent == editor &&
-            menuParent->window() == m_notepad->window() &&
+        return editor && m_notepad && menuParent == editor &&
             editor->window() == m_notepad->window();
     }
 
@@ -165,7 +164,7 @@ public:
                 QString::fromLatin1(kNativePreviewClassName));
         }
 
-        disconnectImmediateRefresh(editor, result.created || preview);
+        disconnectImmediateRefresh(editor, true);
         if (!preview) {
             result.error = QStringLiteral("宿主未创建 MarkdownView");
             return result;
@@ -243,10 +242,7 @@ public:
             return true;
         }
 
-        // The host stores this object in a QPointer, so deferred deletion
-        // clears its handle and lets on_viewMarkdown create a fresh preview.
-        // Remove only the ownership connection installed by this adapter's
-        // editor-to-preview relationship before scheduling deletion.
+        // The host uses a QPointer and recreates the preview after deferred deletion.
         QObject::disconnect(editor, &QObject::destroyed,
                             preview, &QObject::deleteLater);
         preview->hide();

@@ -6,12 +6,6 @@
 #include <QTextDocument>
 
 namespace {
-bool isCode(const QTextBlock &block)
-{
-    const auto format = block.blockFormat();
-    return format.hasProperty(QTextFormat::BlockCodeLanguage) ||
-        format.hasProperty(QTextFormat::BlockCodeFence);
-}
 struct Candidate
 {
     QString language;
@@ -215,7 +209,9 @@ QVector<CodeBlockRecord> indexCodeBlocks(QTextDocument *document, QWidget *edito
         return records;
     QVector<QTextBlock> rendered;
     for (auto block = document->begin(); block.isValid(); block = block.next()) {
-        if (isCode(block))
+        const auto format = block.blockFormat();
+        if (format.hasProperty(QTextFormat::BlockCodeLanguage) ||
+            format.hasProperty(QTextFormat::BlockCodeFence))
             rendered.append(block);
     }
     bool supported = source != nullptr;
@@ -225,7 +221,6 @@ QVector<CodeBlockRecord> indexCodeBlocks(QTextDocument *document, QWidget *edito
         CodeBlockRecord record;
         record.editor = editor;
         record.version = version;
-        record.ordinal = records.size();
         record.language = candidate.language;
         record.text = candidate.text;
         if (!candidate.text.isEmpty()) {
@@ -267,7 +262,6 @@ QVector<CodeBlockRecord> indexCodeBlocks(QTextDocument *document, QWidget *edito
                 CodeBlockRecord record;
                 record.editor = editor;
                 record.version = version;
-                record.ordinal = records.size();
                 record.position = block.position();
                 record.language = language;
                 record.error = source ? QObject::tr("代码块与当前预览不能可靠对应，复制不可用。")
