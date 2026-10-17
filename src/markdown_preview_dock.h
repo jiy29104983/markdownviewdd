@@ -51,8 +51,7 @@ public:
     QByteArray htmlSnapshotFor(QWidget *editor,
                                quint64 contentVersion) const;
     void showMessage(const QString &title, const QString &message);
-    void setDocumentInfo(const QString &filePath, int characterCount,
-                         bool hasDocument = true);
+    void setDocumentInfo(const QString &filePath, bool hasDocument = true);
     void setRefreshStatus(const QString &status, const QString &details,
                           bool failed = false);
     void setRefreshMode(RefreshMode mode);

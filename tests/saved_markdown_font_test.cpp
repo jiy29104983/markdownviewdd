@@ -20,7 +20,6 @@
 #include <QTemporaryDir>
 #include <QTextBlock>
 #include <QTextEdit>
-#include <QTextFragment>
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QtTest>

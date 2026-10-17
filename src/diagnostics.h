@@ -9,7 +9,6 @@ namespace Diagnostics {
 
 enum class Level {
     Info,
-    Warning,
     Error
 };
 

@@ -17,7 +17,6 @@
 #include <QMenu>
 #include <QScrollBar>
 #include <QShortcut>
-#include <QSplitter>
 #include <QTabWidget>
 #include <QTextBlock>
 #include <QTextEdit>

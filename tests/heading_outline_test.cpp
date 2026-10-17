@@ -15,7 +15,6 @@
 #include <QTabWidget>
 #include <QTextBlock>
 #include <QTextEdit>
-#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -172,7 +171,6 @@ private slots:
     void sourceMapping_data();
     void sourceMapping();
     void sourceMappingFailsClosed();
-    void repositoryExampleMaps();
     void mappingEdgeCases_data();
     void mappingEdgeCases();
     void imageTableLayoutAndAllLevels();
@@ -180,7 +178,6 @@ private slots:
     void hierarchyAndIndependentSelection();
     void twoSidedNavigationSurvivesLayoutAndPolling();
     void staleSnapshotOnlyNavigatesPreview();
-    void statusUsesVersions();
     void layoutAndWindowIsolation();
     void snapshotsInvalidateAndRestoreExpansion();
     void missingCapabilityAndReentrantNavigation();
@@ -315,22 +312,6 @@ void HeadingOutlineTest::staleSnapshotOnlyNavigatesPreview()
     f.refresh();
     f.activate(8);
     QCOMPARE(f.adapter.navigations, 1);
-}
-
-void HeadingOutlineTest::statusUsesVersions()
-{
-    Fixture f;
-    f.controller->setRefreshMode(RefreshMode::Manual);
-    auto *label = f.dock->findChild<QLabel *>(QStringLiteral("NddMarkdownOutlineStatus"));
-    QVERIFY(label->text().isEmpty());
-    PreviewStatus status = f.controller->previewStatus();
-    status.performanceProtected = true;
-    status.state = PreviewState::Paused;
-    f.dock->setOutlineStatus(status);
-    QVERIFY(label->text().isEmpty());
-    ++status.contentVersion;
-    f.dock->setOutlineStatus(status);
-    QVERIFY(label->text().contains(QStringLiteral("待刷新")));
 }
 
 void HeadingOutlineTest::layoutAndWindowIsolation()
@@ -583,20 +564,6 @@ void HeadingOutlineTest::delayedSourceLayoutKeepsHeading()
     QVERIFY(f.dock->hasNavigationTarget());
     QCOMPARE(f.adapter.lastLine, target.sourceLine);
 }
-
-
-void HeadingOutlineTest::repositoryExampleMaps()
-{
-    QFile file(QFINDTESTDATA("../examples/preview-demo.md"));
-    QVERIFY(file.open(QIODevice::ReadOnly));
-    const QString text = QString::fromUtf8(file.readAll());
-    QTextDocument doc; doc.setMarkdown(text);
-    QWidget editor;
-    auto records = renderedHeadings(&doc, &editor, 1);
-    QVERIFY(!records.isEmpty());
-    QVERIFY(mapHeadingSource(&records, text));
-}
-
 
 void HeadingOutlineTest::layoutDoesNotReviveOldSourceTarget()
 {

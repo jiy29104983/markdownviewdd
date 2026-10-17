@@ -39,14 +39,10 @@ public slots:
     void setRefreshMode(RefreshMode mode);
     void restoreHostFontSize();
 
-signals:
-    void previewStatusChanged();
-
 private slots:
     void pollEditor();
     void onEditorTextChanged();
     void onEditorDestroyed(QObject *editor);
-    void scheduleRender();
     void renderScheduled();
     void renderNow();
     void togglePreview(bool visible);
@@ -90,6 +86,7 @@ private:
     void synchronizeActiveEditor();
     void handleFilePathChanged();
     void markPreviewPending();
+    void scheduleRender(bool allowInitialRender);
     void scheduleAutomaticRender();
     void updateLargeDocumentPolicy(qint64 renderDurationMs);
     bool fileExceedsAutomaticRefreshLimit() const;
@@ -149,7 +146,7 @@ private:
     RefreshMode m_refreshMode = RefreshMode::Automatic;
     bool m_performanceProtected = false;
     bool m_renderInProgress = false;
-    bool m_allowInitialAutomaticRender = false;
+    bool m_scheduledInitialRender = false;
     QPointer<QWidget> m_scheduledEditor;
     quint64 m_scheduledVersion = 0;
     quint64 m_nextContentVersion = 0;

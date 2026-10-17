@@ -63,15 +63,8 @@ void rotate(State &value)
 
 QString levelName(Diagnostics::Level level)
 {
-    switch (level) {
-    case Diagnostics::Level::Info:
-        return QStringLiteral("info");
-    case Diagnostics::Level::Warning:
-        return QStringLiteral("warning");
-    case Diagnostics::Level::Error:
-        return QStringLiteral("error");
-    }
-    return QStringLiteral("info");
+    return level == Diagnostics::Level::Error ? QStringLiteral("error")
+                                              : QStringLiteral("info");
 }
 
 QString windowId(State &value, const QObject *context)

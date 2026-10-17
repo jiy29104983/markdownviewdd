@@ -147,7 +147,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
             // Using the same debounce timer as editor updates also coalesces
             // a context-menu request with this visibility notification.
             pollEditor();
-            scheduleRender();
+            scheduleRender(true);
         } else {
             m_renderTimer->stop();
             if (m_hostAdapter->disconnectImmediateRefresh(m_editor.data())) {
@@ -350,7 +350,7 @@ void PreviewController::showPreviewFromNativeAction()
     // The original QAction connection has been removed.  Route the request
     // through the debounce timer so showing the dock and triggering the action
     // cannot render the document twice.
-    scheduleRender();
+    scheduleRender(true);
 }
 
 void PreviewController::pollEditor()
@@ -392,7 +392,6 @@ void PreviewController::onEditorTextChanged()
     }
     m_hostAdapter->setPreviewCurrent(changedEditor, false);
     if (changedEditor != m_editor) {
-        // Keep the displayed snapshot version, but advance the source version.
         if (PreviewCacheEntry *entry = previewCacheEntry(changedEditor)) {
             entry->contentVersion = ++m_nextContentVersion;
             entry->error.clear();
@@ -424,9 +423,9 @@ bool PreviewController::automaticRenderAllowed(bool allowInitialRender) const
     return false;
 }
 
-void PreviewController::scheduleRender()
+void PreviewController::scheduleRender(bool allowInitialRender)
 {
-    if (!automaticRenderAllowed(true)) {
+    if (!automaticRenderAllowed(allowInitialRender)) {
         m_renderTimer->stop();
         return;
     }
@@ -436,19 +435,14 @@ void PreviewController::scheduleRender()
         kMaximumRenderDebounceMs);
     m_scheduledEditor = m_editor;
     m_scheduledVersion = m_contentVersion;
-    m_allowInitialAutomaticRender = true;
+    m_scheduledInitialRender = allowInitialRender;
     m_renderTimer->start(static_cast<int>(adaptiveDelay));
 }
 
 void PreviewController::scheduleAutomaticRender()
 {
     updateLargeDocumentPolicy(m_lastRenderDurationMs);
-    if (!automaticRenderAllowed(false)) {
-        m_renderTimer->stop();
-    } else {
-        scheduleRender();
-        m_allowInitialAutomaticRender = false;
-    }
+    scheduleRender(false);
     publishStatus();
 }
 
@@ -456,7 +450,7 @@ void PreviewController::renderScheduled()
 {
     const QPointer<QWidget> scheduledEditor = m_scheduledEditor;
     const quint64 scheduledVersion = m_scheduledVersion;
-    const bool allowInitialRender = m_allowInitialAutomaticRender;
+    const bool allowInitialRender = m_scheduledInitialRender;
     synchronizeActiveEditor();
     if (!scheduledEditor || scheduledEditor != m_editor ||
         scheduledVersion != m_contentVersion ||
@@ -529,7 +523,7 @@ void PreviewController::publishStatus()
         m_dock->setOutlineStatus(status);
         m_dock->setSearchStatus(status);
         m_dock->setRefreshMode(status.mode);
-        m_dock->setDocumentInfo(status.filePath, -1, !status.activeEditor.isNull());
+        m_dock->setDocumentInfo(status.filePath, !status.activeEditor.isNull());
         QString text;
         QString details;
         switch (status.state) {
@@ -564,7 +558,6 @@ void PreviewController::publishStatus()
         m_dock->setRefreshStatus(text, details, status.state == PreviewState::Failed);
     }
     updateExportActionState();
-    emit previewStatusChanged();
 }
 
 void PreviewController::renderNow()
@@ -704,7 +697,6 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         m_dock->setCodeSnapshot(entry->codeBlocks, renderEditor, renderVersion);
     }
     m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
-    m_dock->setDocumentInfo(filePath, -1);
     m_hasLastEditorScrollState = false;
     if (m_syncScrolling) {
         QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
@@ -896,19 +888,13 @@ void PreviewController::showAbout()
 void PreviewController::attachEditor(QWidget *editor)
 {
     rememberCurrentPreviewScroll();
-    if (m_editorScrollValueConnection) {
-        disconnect(m_editorScrollValueConnection);
-        m_editorScrollValueConnection = QMetaObject::Connection();
-    }
-    if (m_editorScrollRangeConnection) {
-        disconnect(m_editorScrollRangeConnection);
-        m_editorScrollRangeConnection = QMetaObject::Connection();
-    }
+    disconnect(m_editorScrollValueConnection);
+    disconnect(m_editorScrollRangeConnection);
 
     ++m_navigationGeneration;
     m_editor = editor;
     observeEditor(editor);
-    m_editorFilePath = m_hostAdapter->filePath(m_editor.data());
+    m_editorFilePath = m_editor ? m_hostAdapter->filePath(m_editor.data()) : QString();
     const PreviewCacheEntry *entry = previewCacheEntry(editor);
     m_contentVersion = entry ? entry->contentVersion : 0;
     m_previewEditor = nullptr;
@@ -992,23 +978,8 @@ void PreviewController::onEditorDestroyed(QObject *editor)
     if (m_editor && m_editor != editor) {
         return;
     }
-    m_editor = nullptr;
-    m_editorFilePath.clear();
-    m_contentVersion = 0;
-    m_previewEditor = nullptr;
-    m_renderedVersion = 0;
-    m_previewState = PreviewState::NoDocument;
-    m_lastScrollEditor = nullptr;
-    m_hasLastEditorScrollState = false;
-    if (m_dock) {
-        m_dock->invalidatePreview();
-    }
     m_renderTimer->stop();
-    m_lastRenderDurationMs = 0;
-    m_performanceProtected = false;
-    m_lastHostError.clear();
-    showCachedPreviewOrMessage();
-    publishStatus();
+    attachEditor(nullptr);
     m_hostEventTimer->start();
 }
 
@@ -1031,9 +1002,6 @@ void PreviewController::handleFilePathChanged()
         entry->filePath = filePath;
     }
     markPreviewPending();
-    if (m_dock) {
-        m_dock->setDocumentInfo(filePath, -1);
-    }
     showCachedPreviewOrMessage();
     scheduleAutomaticRender();
 }
@@ -1045,15 +1013,20 @@ void PreviewController::updateLargeDocumentPolicy(qint64 renderDurationMs)
     const bool wasProtected = m_performanceProtected;
     m_performanceProtected = fileIsLarge || renderWasSlow;
     if (m_performanceProtected && !wasProtected) {
+        const qint64 fileBytes = m_editor
+            ? QFileInfo(m_hostAdapter->filePath(m_editor.data())).size() : 0;
         Diagnostics::write(this,
             QStringLiteral("performance protection enabled: fileBytes=%1, renderMs=%2")
-                .arg(QFileInfo(m_hostAdapter->filePath(m_editor.data())).size())
+                .arg(fileBytes)
                 .arg(renderDurationMs));
     }
 }
 
 bool PreviewController::fileExceedsAutomaticRefreshLimit() const
 {
+    if (!m_editor) {
+        return false;
+    }
     const QString filePath = m_hostAdapter->filePath(m_editor.data());
     if (filePath.isEmpty()) {
         return false;
@@ -1075,7 +1048,7 @@ void PreviewController::synchronizeActiveEditor()
                            .arg(reinterpret_cast<quintptr>(current), 0, 16));
     attachEditor(current);
     if (m_dock && m_dock->isVisible()) {
-        scheduleRender();
+        scheduleRender(true);
     }
 }
 

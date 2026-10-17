@@ -21,10 +21,8 @@
 #include <QTextBrowser>
 #include <QTextBlock>
 #include <QTextCursor>
-#include <QTextFragment>
 #include <QTextEdit>
 #include <QTemporaryDir>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QtTest>
@@ -77,7 +75,7 @@ void MarkdownPreviewDockLifecycleTest::redesignedChromeRetainsState()
     auto *text = native->findChild<QTextEdit *>();
     text->setMarkdown(QStringLiteral("# Preview\n\nneedle\n\n") + QStringLiteral("paragraph\n\n").repeated(150));
     QVERIFY(dock->adoptNativePreview(native, text, QStringLiteral("/docs/demo.md"), &editor, 1));
-    dock->setDocumentInfo(QStringLiteral("/docs/demo.md"), 1800);
+    dock->setDocumentInfo(QStringLiteral("/docs/demo.md"));
     dock->setRefreshStatus(QStringLiteral("已更新"), QString());
     dock->setSyncScrolling(false);
     dock->setRefreshMode(RefreshMode::Manual);

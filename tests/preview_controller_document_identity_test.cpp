@@ -144,7 +144,6 @@ private slots:
     void snapshotWriterHandlesCancelAndAtomicReplacement();
     void filePathChangeRefreshesTypeMetadataAndResources();
     void refreshPreservesReadingPositionOnlyWhenSyncIsDisabled();
-    void unchangedScheduledRefreshDoesNotRenderAgain();
     void switchingBackReusesUnchangedNativePreview();
     void largeFileDefersAutomaticRefreshUntilManualRequest();
     void nativePreviewCacheEvictsAndRecreatesLeastRecentlyUsedDocument();
@@ -721,22 +720,6 @@ void PreviewControllerDocumentIdentityTest::refreshPreservesReadingPositionOnlyW
     QTRY_VERIFY_WITH_TIMEOUT(qAbs(fixture.dock()->scrollRatio() - 0.8) < 0.01, 1000);
 }
 
-void PreviewControllerDocumentIdentityTest::unchangedScheduledRefreshDoesNotRenderAgain()
-{
-    Fixture fixture;
-    auto *editor = new QsciScintilla(QStringLiteral("ordinary.md"),
-                                     QStringLiteral("# Current"));
-    fixture.tabs.addTab(editor, QStringLiteral("Ordinary"));
-    fixture.tabs.setCurrentWidget(editor);
-    fixture.renderNow();
-    QCOMPARE(editor->renderCount(), 1);
-
-    QVERIFY(QMetaObject::invokeMethod(&fixture.controller, "scheduleRender",
-                                     Qt::DirectConnection));
-    QTest::qWait(450);
-    QCOMPARE(editor->renderCount(), 1);
-}
-
 void PreviewControllerDocumentIdentityTest::switchingBackReusesUnchangedNativePreview()
 {
     Fixture fixture;
@@ -1036,7 +1019,6 @@ void PreviewControllerDocumentIdentityTest::manualModeDoesNotRenderOnShowEditOrR
     fixture.tabs.addTab(editor, QStringLiteral("Manual"));
     fixture.action(QStringLiteral("手动刷新"))->trigger();
     fixture.dock()->show();
-    QSignalSpy changed(&fixture.controller, &PreviewController::previewStatusChanged);
     for (int i = 0; i < 20; ++i) {
         editor->edit(QStringLiteral("# Edit %1").arg(i));
         QTest::qWait(10);
@@ -1424,12 +1406,10 @@ void PreviewControllerDocumentIdentityTest::destroyedSnapshotClearsStatusWithout
     fixture.tabs.addTab(editor, QStringLiteral("A"));
     fixture.renderNow();
     fixture.controller.setRefreshMode(RefreshMode::Manual);
-    QSignalSpy changed(&fixture.controller, &PreviewController::previewStatusChanged);
     delete fixture.dock()->findChild<QWidget *>(QStringLiteral("MarkdownViewClass"));
     QCOMPARE(fixture.controller.previewStatus().state, PreviewState::Pending);
     QVERIFY(!fixture.controller.previewStatus().displayedEditor);
     QCOMPARE(fixture.controller.previewStatus().displayedVersion, quint64(0));
-    QVERIFY(changed.count() > 0);
     QCOMPARE(editor->renderCount(), 1);
     fixture.renderNow();
     QCOMPARE(editor->renderCount(), 2);

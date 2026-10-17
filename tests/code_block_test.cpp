@@ -11,7 +11,6 @@
 #include <QContextMenuEvent>
 #include <QWheelEvent>
 #include <QDir>
-#include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
 #include <QMenu>

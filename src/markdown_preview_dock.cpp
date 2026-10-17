@@ -73,6 +73,16 @@ double barRatio(const QScrollBar *bar)
             static_cast<double>(bar->maximum() - bar->minimum()) : 0.0;
 }
 
+void setBarRatio(QScrollBar *bar, double ratio)
+{
+    if (!bar || bar->maximum() <= bar->minimum()) {
+        return;
+    }
+    bar->setValue(bar->minimum() + qRound(
+        qBound(0.0, ratio, 1.0) *
+        static_cast<double>(bar->maximum() - bar->minimum())));
+}
+
 void applyFrameStyle(QTextFrame *frame, const QPalette &palette)
 {
     if (!frame) {
@@ -711,13 +721,11 @@ void MarkdownPreviewDock::showMessage(const QString &title,
 }
 
 void MarkdownPreviewDock::setDocumentInfo(const QString &filePath,
-                                          int characterCount,
                                           bool hasDocument)
 {
     m_documentName = !hasDocument ? QString()
         : filePath.isEmpty() ? tr("未命名文档") : QFileInfo(filePath).fileName();
     m_documentDetails = filePath.isEmpty() ? m_documentName : filePath;
-    if (characterCount >= 0) m_documentDetails += tr(" · 长度 %1").arg(characterCount);
     m_documentLabel->setToolTip(m_documentDetails);
     setWindowTitle(m_documentName.isEmpty() ? tr("预览") : tr("预览 · %1").arg(m_documentName));
     updateResponsiveLayout();
@@ -1091,15 +1099,7 @@ void MarkdownPreviewDock::scrollToRatio(double ratio)
         return;
     }
     QAbstractScrollArea *area = activeScrollArea();
-    QScrollBar *bar = area ? area->verticalScrollBar() : nullptr;
-    if (!bar || bar->maximum() <= bar->minimum()) {
-        return;
-    }
-
-    ratio = qBound(0.0, ratio, 1.0);
-    const int value = bar->minimum() +
-        qRound(ratio * static_cast<double>(bar->maximum() - bar->minimum()));
-    bar->setValue(value);
+    setBarRatio(area ? area->verticalScrollBar() : nullptr, ratio);
 }
 
 double MarkdownPreviewDock::scrollRatio() const
@@ -1186,17 +1186,10 @@ QAbstractScrollArea *MarkdownPreviewDock::activeScrollArea() const
 void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
 {
     disconnect(m_headingScrollConnection);
-    m_layoutSyncTimer->stop();
-    if (m_nativeScrollConnection) {
-        disconnect(m_nativeScrollConnection);
-    }
-    if (m_nativeScrollRangeConnection) {
-        disconnect(m_nativeScrollRangeConnection);
-    }
+    disconnect(m_nativeScrollConnection);
+    disconnect(m_nativeScrollRangeConnection);
     disconnect(m_nativeHorizontalActionConnection);
-    m_nativeHorizontalActionConnection = QMetaObject::Connection();
-    m_nativeScrollConnection = QMetaObject::Connection();
-    m_nativeScrollRangeConnection = QMetaObject::Connection();
+    m_layoutSyncTimer->stop();
 
     if (!scrollBar) {
         return;
@@ -1265,10 +1258,7 @@ void MarkdownPreviewDock::restorePreservedScrollRatio()
         return;
     }
 
-    const int value = bar->minimum() + qRound(
-        m_preservedScrollRatio *
-        static_cast<double>(bar->maximum() - bar->minimum()));
-    bar->setValue(value);
+    setBarRatio(bar, m_preservedScrollRatio);
 }
 
 void MarkdownPreviewDock::cancelPreservedScroll()
