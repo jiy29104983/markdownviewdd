@@ -11,7 +11,15 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt5 5.15 REQUIRED COMPONENTS Core Gui Widgets)
 
-add_library(markdownview SHARED
+if(MSVC)
+    add_compile_options(/utf-8 /W4)
+else()
+    add_compile_options(-Wall -Wextra -Wpedantic)
+endif()
+
+add_compile_definitions(NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
+
+add_library(markdownview_objects OBJECT
     src/diagnostics.cpp
     src/diagnostics.h
     src/saved_markdown_font.cpp
@@ -26,31 +34,19 @@ add_library(markdownview SHARED
     src/host_adapter.h
     src/markdown_preview_dock.cpp
     src/markdown_preview_dock.h
-    src/plugin_exports.cpp
     src/preview_controller.cpp
     src/preview_controller.h
     src/preview_status.h
     src/ndd_plugin_api.h
     resources/markdownview.qrc)
 
-target_include_directories(markdownview PRIVATE
-    "${CMAKE_CURRENT_SOURCE_DIR}/src")
+set_target_properties(markdownview_objects PROPERTIES POSITION_INDEPENDENT_CODE ON)
+target_include_directories(markdownview_objects PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(markdownview_objects PUBLIC Qt5::Core Qt5::Gui Qt5::Widgets)
+target_compile_definitions(markdownview_objects PUBLIC UNICODE _UNICODE)
 
-target_link_libraries(markdownview PRIVATE
-    Qt5::Core
-    Qt5::Gui
-    Qt5::Widgets)
-
-target_compile_definitions(markdownview PRIVATE
-    NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}"
-    UNICODE
-    _UNICODE)
-
-if(MSVC)
-    target_compile_options(markdownview PRIVATE /utf-8 /W4)
-else()
-    target_compile_options(markdownview PRIVATE -Wall -Wextra -Wpedantic)
-endif()
+add_library(markdownview SHARED src/plugin_exports.cpp)
+target_link_libraries(markdownview PRIVATE markdownview_objects)
 
 set_target_properties(markdownview PROPERTIES
     OUTPUT_NAME "markdownviewdd"
@@ -66,289 +62,35 @@ install(TARGETS markdownview
 if(BUILD_TESTING)
     find_package(Qt5 5.15 REQUIRED COMPONENTS Test)
 
-    add_executable(markdownview_lifecycle_tests
-        tests/markdown_preview_dock_lifecycle_test.cpp
-        src/diagnostics.cpp
-        src/diagnostics.h
-        src/saved_markdown_font.cpp
-        src/saved_markdown_font.h
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/preview_search.cpp
-        src/heading_outline.cpp
-        src/host_adapter.cpp
-        src/host_adapter.h
-        src/markdown_preview_dock.cpp
-        src/markdown_preview_dock.h
-        resources/markdownview.qrc)
+    function(add_markdownview_test target source label timeout)
+        add_executable(${target} ${source} ${ARGN})
+        target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(${target} PRIVATE Qt5::Widgets Qt5::Test)
+        if(NOT target STREQUAL "markdownview_diagnostics_tests")
+            target_link_libraries(${target} PRIVATE markdownview_objects)
+        endif()
+        add_test(NAME ${target}
+            COMMAND ${target} -platform offscreen -v1 -o ${target}.txt,txt)
+        set_tests_properties(${target} PROPERTIES
+            LABELS "behavior;${label}" TIMEOUT ${timeout})
+    endfunction()
 
-    target_include_directories(markdownview_lifecycle_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-
-    target_link_libraries(markdownview_lifecycle_tests PRIVATE
-        Qt5::Core
-        Qt5::Gui
-        Qt5::Widgets
-        Qt5::Test)
-
-    target_compile_definitions(markdownview_lifecycle_tests PRIVATE
-        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-
-    if(MSVC)
-        target_compile_options(markdownview_lifecycle_tests PRIVATE /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_lifecycle_tests PRIVATE
-            -Wall -Wextra -Wpedantic)
-    endif()
-
-    add_test(NAME markdownview_lifecycle_tests
-        COMMAND markdownview_lifecycle_tests -platform offscreen -v1
-            -o markdownview_lifecycle_tests.txt,txt)
-    set_tests_properties(markdownview_lifecycle_tests PROPERTIES
-        LABELS "behavior;lifecycle"
-        TIMEOUT 60)
-
-    add_executable(markdownview_document_identity_tests
-        tests/preview_controller_document_identity_test.cpp
-        src/diagnostics.cpp
-        src/diagnostics.h
-        src/saved_markdown_font.cpp
-        src/saved_markdown_font.h
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/preview_search.cpp
-        src/heading_outline.cpp
-        src/host_adapter.cpp
-        src/host_adapter.h
-        src/markdown_preview_dock.cpp
-        src/markdown_preview_dock.h
-        src/preview_controller.cpp
-        src/preview_controller.h
-        resources/markdownview.qrc)
-
-    target_include_directories(markdownview_document_identity_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-
-    target_link_libraries(markdownview_document_identity_tests PRIVATE
-        Qt5::Core
-        Qt5::Gui
-        Qt5::Widgets
-        Qt5::Test)
-
-    target_compile_definitions(markdownview_document_identity_tests PRIVATE
-        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-
-    if(MSVC)
-        target_compile_options(markdownview_document_identity_tests PRIVATE
-            /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_document_identity_tests PRIVATE
-            -Wall -Wextra -Wpedantic)
-    endif()
-
-    add_test(NAME markdownview_document_identity_tests
-        COMMAND markdownview_document_identity_tests -platform offscreen -v1
-            -o markdownview_document_identity_tests.txt,txt)
-    set_tests_properties(markdownview_document_identity_tests PROPERTIES
-        LABELS "behavior;document"
-        TIMEOUT 120)
-
-    add_executable(markdownview_multi_window_tests
-        tests/plugin_multi_window_test.cpp
-        src/diagnostics.cpp
-        src/diagnostics.h
-        src/saved_markdown_font.cpp
-        src/saved_markdown_font.h
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/preview_search.cpp
-        src/heading_outline.cpp
-        src/host_adapter.cpp
-        src/host_adapter.h
-        src/markdown_preview_dock.cpp
-        src/markdown_preview_dock.h
-        src/plugin_exports.cpp
-        src/preview_controller.cpp
-        src/preview_controller.h
-        src/ndd_plugin_api.h
-        resources/markdownview.qrc)
-
-    target_include_directories(markdownview_multi_window_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-
-    target_link_libraries(markdownview_multi_window_tests PRIVATE
-        Qt5::Core
-        Qt5::Gui
-        Qt5::Widgets
-        Qt5::Test)
-
-    target_compile_definitions(markdownview_multi_window_tests PRIVATE
-        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-
-    if(MSVC)
-        target_compile_options(markdownview_multi_window_tests PRIVATE
-            /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_multi_window_tests PRIVATE
-            -Wall -Wextra -Wpedantic)
-    endif()
-
-    add_test(NAME markdownview_multi_window_tests
-        COMMAND markdownview_multi_window_tests -platform offscreen -v1
-            -o markdownview_multi_window_tests.txt,txt)
-    set_tests_properties(markdownview_multi_window_tests PROPERTIES
-        LABELS "behavior;multi-window"
-        TIMEOUT 60)
-
-    add_executable(markdownview_diagnostics_tests
-        tests/diagnostics_test.cpp
-        src/diagnostics.cpp
-        src/diagnostics.h)
-
-    target_include_directories(markdownview_diagnostics_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-
-    target_link_libraries(markdownview_diagnostics_tests PRIVATE
-        Qt5::Core
-        Qt5::Widgets
-        Qt5::Test)
-
-    target_compile_definitions(markdownview_diagnostics_tests PRIVATE
-        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-
-    if(MSVC)
-        target_compile_options(markdownview_diagnostics_tests PRIVATE /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_diagnostics_tests PRIVATE
-            -Wall -Wextra -Wpedantic)
-    endif()
-
-    add_test(NAME markdownview_diagnostics_tests
-        COMMAND markdownview_diagnostics_tests -platform offscreen -v1
-            -o markdownview_diagnostics_tests.txt,txt)
-    set_tests_properties(markdownview_diagnostics_tests PROPERTIES
-        LABELS "behavior;diagnostics"
-        TIMEOUT 60)
-
-    add_executable(markdownview_font_tests
-        tests/saved_markdown_font_test.cpp
-        src/diagnostics.cpp
-        src/saved_markdown_font.cpp
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/preview_search.cpp
-        src/heading_outline.cpp
-        src/host_adapter.cpp
-        src/markdown_preview_dock.cpp
-        src/preview_controller.cpp
-        resources/markdownview.qrc)
-    target_include_directories(markdownview_font_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(markdownview_font_tests PRIVATE
-        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
-    target_compile_definitions(markdownview_font_tests PRIVATE
-        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-    if(MSVC)
-        target_compile_options(markdownview_font_tests PRIVATE /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_font_tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
-    add_test(NAME markdownview_font_tests
-        COMMAND markdownview_font_tests -platform offscreen -v1
-            -o markdownview_font_tests.txt,txt)
-    set_tests_properties(markdownview_font_tests PROPERTIES
-        LABELS "behavior;font" TIMEOUT 90)
-
-    add_executable(markdownview_outline_tests
-        tests/heading_outline_test.cpp
-        src/diagnostics.cpp
-        src/saved_markdown_font.cpp
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/preview_search.cpp
-        src/heading_outline.cpp
-        src/host_adapter.cpp
-        src/markdown_preview_dock.cpp
-        src/preview_controller.cpp
-        resources/markdownview.qrc)
-    target_include_directories(markdownview_outline_tests PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(markdownview_outline_tests PRIVATE
-        Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
-    target_compile_definitions(markdownview_outline_tests PRIVATE
-        NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-    if(MSVC)
-        target_compile_options(markdownview_outline_tests PRIVATE /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_outline_tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
-    add_test(NAME markdownview_outline_tests
-        COMMAND markdownview_outline_tests -platform offscreen -v1
-            -o markdownview_outline_tests.txt,txt)
-    set_tests_properties(markdownview_outline_tests PROPERTIES
-        LABELS "behavior;outline" TIMEOUT 90)
-
-    add_executable(markdownview_search_tests
-        tests/preview_search_test.cpp
-        src/diagnostics.cpp
-        src/saved_markdown_font.cpp
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/heading_outline.cpp
-        src/preview_search.cpp
-        src/host_adapter.cpp
-        src/markdown_preview_dock.cpp
-        src/preview_controller.cpp
-        resources/markdownview.qrc)
-    target_include_directories(markdownview_search_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(markdownview_search_tests PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
-    target_compile_definitions(markdownview_search_tests PRIVATE NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-    if(MSVC)
-        target_compile_options(markdownview_search_tests PRIVATE /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_search_tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
-    add_test(NAME markdownview_search_tests
-        COMMAND markdownview_search_tests -platform offscreen -v1 -o markdownview_search_tests.txt,txt)
-    set_tests_properties(markdownview_search_tests PROPERTIES LABELS "behavior;search" TIMEOUT 120)
-
-    add_executable(markdownview_code_tests
-        tests/code_block_test.cpp
-        src/diagnostics.cpp
-        src/saved_markdown_font.cpp
-        src/source_navigation.cpp
-        src/code_block_index.cpp
-        src/code_block_tools.cpp
-        src/heading_index.cpp
-        src/heading_outline.cpp
-        src/preview_search.cpp
-        src/host_adapter.cpp
-        src/markdown_preview_dock.cpp
-        src/preview_controller.cpp
-        resources/markdownview.qrc)
-    target_include_directories(markdownview_code_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(markdownview_code_tests PRIVATE Qt5::Core Qt5::Gui Qt5::Widgets Qt5::Test)
-    target_compile_definitions(markdownview_code_tests PRIVATE NDD_MARKDOWN_VIEW_VERSION="${PROJECT_VERSION}")
-    if(MSVC)
-        target_compile_options(markdownview_code_tests PRIVATE /utf-8 /W4)
-    else()
-        target_compile_options(markdownview_code_tests PRIVATE -Wall -Wextra -Wpedantic)
-    endif()
-    add_test(NAME markdownview_code_tests
-        COMMAND markdownview_code_tests -platform offscreen -v1 -o markdownview_code_tests.txt,txt)
-    set_tests_properties(markdownview_code_tests PROPERTIES LABELS "behavior;code" TIMEOUT 120)
+    add_markdownview_test(markdownview_lifecycle_tests
+        tests/markdown_preview_dock_lifecycle_test.cpp lifecycle 60)
+    add_markdownview_test(markdownview_document_identity_tests
+        tests/preview_controller_document_identity_test.cpp document 120)
+    add_markdownview_test(markdownview_multi_window_tests
+        tests/plugin_multi_window_test.cpp multi-window 60 src/plugin_exports.cpp)
+    add_markdownview_test(markdownview_diagnostics_tests
+        tests/diagnostics_test.cpp diagnostics 60 src/diagnostics.cpp)
+    add_markdownview_test(markdownview_font_tests
+        tests/saved_markdown_font_test.cpp font 90)
+    add_markdownview_test(markdownview_outline_tests
+        tests/heading_outline_test.cpp outline 90)
+    add_markdownview_test(markdownview_search_tests
+        tests/preview_search_test.cpp search 120)
+    add_markdownview_test(markdownview_code_tests
+        tests/code_block_test.cpp code 120)
 
     if(WIN32)
         # Qt 5.15's offscreen backend uses the basic font database, which
@@ -357,15 +99,8 @@ if(BUILD_TESTING)
         if(NOT IS_DIRECTORY "${windows_font_directory}")
             message(FATAL_ERROR "Windows test fonts not found: ${windows_font_directory}")
         endif()
-        set_tests_properties(
-            markdownview_lifecycle_tests
-            markdownview_document_identity_tests
-            markdownview_multi_window_tests
-            markdownview_diagnostics_tests
-            markdownview_font_tests
-            markdownview_outline_tests
-            markdownview_search_tests
-            markdownview_code_tests
+        get_property(markdownview_tests DIRECTORY PROPERTY TESTS)
+        set_tests_properties(${markdownview_tests}
             PROPERTIES ENVIRONMENT "QT_QPA_FONTDIR=${windows_font_directory}")
     endif()
 endif()

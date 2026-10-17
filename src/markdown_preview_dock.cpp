@@ -113,22 +113,6 @@ QString decodeHtmlAttribute(const QString &value)
     return document.toPlainText();
 }
 
-QString exportDiagnosticComment(const QStringList &resources)
-{
-    if (resources.isEmpty()) {
-        return QString();
-    }
-
-    QStringList escapedResources;
-    for (const QString &resource : resources) {
-        QString escaped = resource;
-        escaped.replace(QStringLiteral("--"), QStringLiteral("- -"));
-        escapedResources.append(escaped);
-    }
-    return QStringLiteral("\n<!-- markdownview-export: local images not embedded: %1 -->\n")
-        .arg(escapedResources.join(QStringLiteral(", ")));
-}
-
 QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *context)
 {
     if (!document) {
@@ -148,11 +132,8 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
         const QRegularExpressionMatch match = matches.next();
         const QString source = decodeHtmlAttribute(match.captured(3));
         const QUrl sourceUrl(source);
-        if (sourceUrl.scheme().compare(QStringLiteral("data"), Qt::CaseInsensitive) == 0 ||
-            sourceUrl.scheme().compare(QStringLiteral("http"), Qt::CaseInsensitive) == 0 ||
-            sourceUrl.scheme().compare(QStringLiteral("https"), Qt::CaseInsensitive) == 0 ||
-            (!sourceUrl.scheme().isEmpty() &&
-             sourceUrl.scheme().compare(QStringLiteral("file"), Qt::CaseInsensitive) != 0)) {
+        if (!sourceUrl.scheme().isEmpty() &&
+            sourceUrl.scheme().compare(QStringLiteral("file"), Qt::CaseInsensitive) != 0) {
             continue;
         }
 
@@ -190,7 +171,10 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
 
     if (!missingResources.isEmpty()) {
         missingResources.removeDuplicates();
-        const QString comment = exportDiagnosticComment(missingResources);
+        const QString comment = QStringLiteral(
+            "\n<!-- markdownview-export: local images not embedded: %1 -->\n")
+            .arg(missingResources.join(QStringLiteral(", "))
+                .replace(QStringLiteral("--"), QStringLiteral("- -")));
         const int bodyEnd = html.lastIndexOf(QStringLiteral("</body>"), -1,
                                              Qt::CaseInsensitive);
         html.insert(bodyEnd >= 0 ? bodyEnd : html.size(), comment);
@@ -230,7 +214,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
 
     auto *toolbar = new QWidget(container);
     auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(8, 4, 5, 4);
+    toolbarLayout->setContentsMargins(10, 4, 10, 4);
 
     m_dockOwner = qobject_cast<QMainWindow *>(parent);
     auto *title = new QWidget(this);
@@ -303,7 +287,6 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     setRefreshMode(RefreshMode::Automatic);
     refreshLayout->addWidget(m_modeButton);
     toolbarLayout->addWidget(refreshGroup);
-    toolbarLayout->setContentsMargins(10, 4, 10, 4);
     toolbarLayout->setSpacing(4);
     toolbarLayout->addSpacing(8);
 
@@ -339,7 +322,6 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *searchButton = new QToolButton(toolbar);
     PreviewUi::setup(searchButton, PreviewUi::Symbol::Search, tr("在预览中查找（Ctrl+F）"));
     searchButton->setObjectName(QStringLiteral("NddMarkdownSearchOpen"));
-    searchButton->setToolTip(tr("在预览中查找（Ctrl+F）"));
     toolbarLayout->addWidget(searchButton);
     connect(searchButton, &QToolButton::clicked, m_search, &PreviewSearch::openSearch);
     connect(m_search, &PreviewSearch::navigateRequested,
@@ -421,7 +403,6 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *settings = new QToolButton(toolbar);
     PreviewUi::setup(settings, PreviewUi::Symbol::Settings, tr("预览设置"));
     settings->setObjectName(QStringLiteral("NddMarkdownOutlineSettings"));
-    settings->setAccessibleName(tr("预览设置"));
     settings->setPopupMode(QToolButton::InstantPopup);
     auto *settingsMenu = new QMenu(settings);
     settingsMenu->addSection(tr("大纲"));
@@ -571,44 +552,23 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
 
 MarkdownPreviewDock::~MarkdownPreviewDock()
 {
-    m_isDestroying = true;
+    disconnect(m_nativePreviewDestroyConnection);
     delete m_codeTools;
     m_codeTools = nullptr;
     delete m_search;
     m_search = nullptr;
     m_headingTimer->stop();
     disconnect(m_headingScrollConnection);
-    if (m_layoutSyncTimer) {
-        m_layoutSyncTimer->stop();
-    }
-    if (m_themeStyleTimer) {
-        m_themeStyleTimer->stop();
-    }
-    if (m_nativeScrollConnection) {
-        disconnect(m_nativeScrollConnection);
-    }
-    if (m_nativeScrollRangeConnection) {
-        disconnect(m_nativeScrollRangeConnection);
-    }
+    m_layoutSyncTimer->stop();
+    m_themeStyleTimer->stop();
+    disconnect(m_nativeScrollConnection);
+    disconnect(m_nativeScrollRangeConnection);
     disconnect(m_nativeHorizontalActionConnection);
-    m_nativeHorizontalActionConnection = QMetaObject::Connection();
-    m_nativeScrollConnection = QMetaObject::Connection();
-    m_nativeScrollRangeConnection = QMetaObject::Connection();
-    disconnectNativePreviews();
-    m_nativePreview = nullptr;
-    m_nativeTextEdit = nullptr;
-    m_previewEditor = nullptr;
-    m_nativePreviewEditor = nullptr;
-    m_preservedScrollEditor = nullptr;
-    m_previewContentVersion = 0;
-    m_preservedScrollVersion = 0;
-    m_hasPreservedScrollRatio = false;
-    m_currentNativePreviewObject = nullptr;
 }
 
 void MarkdownPreviewDock::setUrlOpener(UrlOpener opener)
 {
-    m_urlOpener = opener ? std::move(opener) : UrlOpener();
+    m_urlOpener = std::move(opener);
 }
 
 bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
@@ -647,9 +607,11 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_nativeTextEdit->verticalScrollBar()->installEventFilter(this);
         m_nativeTextEdit->horizontalScrollBar()->installEventFilter(this);
         m_nativeTextEdit->installEventFilter(this);
-        m_currentNativePreviewObject = previewWindow;
         connectNativeScrollBar(textEdit->verticalScrollBar());
-        trackNativePreview(previewWindow);
+        disconnect(m_nativePreviewDestroyConnection);
+        m_nativePreviewDestroyConnection = connect(
+            previewWindow, &QObject::destroyed,
+            this, &MarkdownPreviewDock::handleNativePreviewDestroyed);
     }
 
     if (m_hasPreservedScrollRatio && m_preservedScrollEditor != editor) {
@@ -720,92 +682,18 @@ QByteArray MarkdownPreviewDock::htmlSnapshotFor(
     return portableHtmlSnapshot(m_nativeTextEdit->document(), this);
 }
 
-void MarkdownPreviewDock::trackNativePreview(QWidget *previewWindow)
+void MarkdownPreviewDock::handleNativePreviewDestroyed()
 {
-    if (!previewWindow || m_nativePreviewDestroyConnections.contains(previewWindow)) {
-        return;
-    }
-
-    const QMetaObject::Connection connection = connect(
-        previewWindow, &QObject::destroyed, this,
-        [this](QObject *previewObject) {
-            handleNativePreviewDestroyed(previewObject);
-        });
-    m_nativePreviewDestroyConnections.insert(previewWindow, connection);
-}
-
-void MarkdownPreviewDock::handleNativePreviewDestroyed(QObject *previewObject)
-{
-    m_nativePreviewDestroyConnections.remove(previewObject);
-    if (m_isDestroying || m_currentNativePreviewObject != previewObject) {
-        return;
-    }
-
-    if (m_nativeScrollConnection) {
-        disconnect(m_nativeScrollConnection);
-    }
-    if (m_nativeScrollRangeConnection) {
-        disconnect(m_nativeScrollRangeConnection);
-    }
+    disconnect(m_nativeScrollConnection);
+    disconnect(m_nativeScrollRangeConnection);
     disconnect(m_nativeHorizontalActionConnection);
-    m_nativeHorizontalActionConnection = QMetaObject::Connection();
-    m_nativeScrollConnection = QMetaObject::Connection();
-    m_nativeScrollRangeConnection = QMetaObject::Connection();
-    m_codeTools->clearSnapshot();
-    m_search->setSnapshot(nullptr, nullptr, 0);
     m_nativePreview = nullptr;
     m_nativeTextEdit = nullptr;
-    m_previewEditor = nullptr;
     m_nativePreviewEditor = nullptr;
-    m_preservedScrollEditor = nullptr;
-    m_previewContentVersion = 0;
-    m_preservedScrollVersion = 0;
-    m_hasPreservedScrollRatio = false;
-    m_currentNativePreviewObject = nullptr;
-    releaseNavigationTarget();
-    m_outline->clearSnapshot();
-    m_pressedLink = QUrl();
-    if (m_layoutSyncTimer) {
-        m_layoutSyncTimer->stop();
-    }
-    if (m_browser) {
-        m_browser->show();
-    }
+    invalidatePreview();
+    m_layoutSyncTimer->stop();
+    m_browser->show();
     emit displayedPreviewDestroyed();
-}
-
-void MarkdownPreviewDock::disconnectNativePreviews()
-{
-    const QList<QMetaObject::Connection> connections =
-        m_nativePreviewDestroyConnections.values();
-    for (const QMetaObject::Connection &connection : connections) {
-        disconnect(connection);
-    }
-    m_nativePreviewDestroyConnections.clear();
-}
-
-void MarkdownPreviewDock::renderMarkdown(const QString &markdown,
-                                         const QString &filePath)
-{
-    Diagnostics::write(this, QStringLiteral("renderMarkdown entered"));
-    const double previousRatio = scrollRatio();
-    m_currentFilePath = filePath;
-
-    QTextDocument *document = m_browser->document();
-    Diagnostics::write(this, QStringLiteral("setting document base URL"));
-    document->setBaseUrl(baseUrlForFile(filePath));
-    Diagnostics::write(this, QStringLiteral("setting document style sheet"));
-    document->setDefaultStyleSheet(loadStyleSheet());
-    Diagnostics::write(this, QStringLiteral("calling QTextDocument::setMarkdown"));
-    document->setMarkdown(markdown, QTextDocument::MarkdownDialectGitHub);
-    applyDocumentStyle(m_browser);
-    Diagnostics::write(this, QStringLiteral("QTextDocument::setMarkdown returned"));
-
-    if (!m_syncButton->isChecked()) {
-        QTimer::singleShot(0, this, [this, previousRatio]() {
-            scrollToRatio(previousRatio);
-        });
-    }
 }
 
 void MarkdownPreviewDock::showMessage(const QString &title,
@@ -922,8 +810,7 @@ bool MarkdownPreviewDock::nativeScrollRatioFor(QWidget *editor,
         return false;
     }
 
-    *ratio = static_cast<double>(bar->value() - bar->minimum()) /
-        static_cast<double>(bar->maximum() - bar->minimum());
+    *ratio = barRatio(bar);
     return true;
 }
 
@@ -1188,20 +1075,13 @@ bool MarkdownPreviewDock::handleNativeWheel(QObject *watched, QEvent *event)
     return true;
 }
 
-void MarkdownPreviewDock::scheduleThemeStyleRefresh()
-{
-    if (m_themeStyleTimer) {
-        m_themeStyleTimer->start();
-    }
-}
-
 void MarkdownPreviewDock::changeEvent(QEvent *event)
 {
     QDockWidget::changeEvent(event);
-    if (!m_updatingChrome && event && (event->type() == QEvent::PaletteChange ||
+    if (!m_updatingChrome && m_themeStyleTimer && event && (event->type() == QEvent::PaletteChange ||
                   event->type() == QEvent::ApplicationPaletteChange ||
                   event->type() == QEvent::StyleChange)) {
-        scheduleThemeStyleRefresh();
+        m_themeStyleTimer->start();
     }
 }
 
@@ -1224,14 +1104,7 @@ void MarkdownPreviewDock::scrollToRatio(double ratio)
 
 double MarkdownPreviewDock::scrollRatio() const
 {
-    QAbstractScrollArea *area = activeScrollArea();
-    const QScrollBar *bar = area ? area->verticalScrollBar() : nullptr;
-    if (!bar || bar->maximum() <= bar->minimum()) {
-        return 0.0;
-    }
-
-    return static_cast<double>(bar->value() - bar->minimum()) /
-           static_cast<double>(bar->maximum() - bar->minimum());
+    return barRatio(activeScrollArea()->verticalScrollBar());
 }
 
 bool MarkdownPreviewDock::saveHtmlSnapshot(QWidget *dialogParent,
@@ -1419,10 +1292,7 @@ void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
         return;
     }
 
-    const double ratio =
-        static_cast<double>(scrollBar->value() - scrollBar->minimum()) /
-        static_cast<double>(scrollBar->maximum() - scrollBar->minimum());
-    emit previewScrollRatioChanged(ratio);
+    emit previewScrollRatioChanged(barRatio(scrollBar));
 }
 
 void MarkdownPreviewDock::openLink(const QUrl &url)
@@ -1475,10 +1345,10 @@ bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
     if (m_handlingNativeWheel) {
         return QDockWidget::eventFilter(watched, event);
     }
-    if (!m_updatingChrome && event && (event->type() == QEvent::PaletteChange ||
+    if (!m_updatingChrome && m_themeStyleTimer && event && (event->type() == QEvent::PaletteChange ||
                   event->type() == QEvent::ApplicationPaletteChange ||
                   event->type() == QEvent::StyleChange)) {
-        scheduleThemeStyleRefresh();
+        m_themeStyleTimer->start();
     }
     if (event && m_nativeTextEdit &&
         (watched == m_nativeTextEdit || watched == m_nativeTextEdit->viewport() ||
@@ -1604,11 +1474,6 @@ QUrl MarkdownPreviewDock::baseUrlForFile(const QString &filePath) const
         directory += QDir::separator();
     }
     return QUrl::fromLocalFile(directory);
-}
-
-QVector<HeadingRecord> MarkdownPreviewDock::headings() const
-{
-    return m_outline->headings();
 }
 
 void MarkdownPreviewDock::setHeadingSnapshot(const QVector<HeadingRecord> &headings,

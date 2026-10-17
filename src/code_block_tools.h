@@ -34,7 +34,7 @@ public:
     void setClipboardWriter(ClipboardWriter writer);
     void setSnapshotValidator(std::function<bool(QWidget *, quint64)> validator) { m_validator = std::move(validator); }
     bool copyBlock(int ordinal);
-    QVector<CodeBlockRecord> records() const { return m_records; }
+    const QVector<CodeBlockRecord> &records() const { return m_records; }
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

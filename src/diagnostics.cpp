@@ -24,7 +24,6 @@ struct State {
     QString directory;
     qint64 maximumBytes = kDefaultMaximumBytes;
     int retainedFiles = kDefaultRetainedFiles;
-    Diagnostics::Level minimumLevel = Diagnostics::Level::Info;
     bool initialized = false;
     quint64 nextWindowId = 1;
 };
@@ -65,8 +64,6 @@ void rotate(State &value)
 QString levelName(Diagnostics::Level level)
 {
     switch (level) {
-    case Diagnostics::Level::Debug:
-        return QStringLiteral("debug");
     case Diagnostics::Level::Info:
         return QStringLiteral("info");
     case Diagnostics::Level::Warning:
@@ -174,9 +171,6 @@ void write(const QObject *context, const QString &message, Level level)
 {
     State &value = state();
     const QMutexLocker locker(&value.mutex);
-    if (static_cast<int>(level) < static_cast<int>(value.minimumLevel)) {
-        return;
-    }
     if (!ensureInitialized(value)) {
         return;
     }
@@ -203,11 +197,6 @@ void write(const QObject *context, const QString &message, Level level)
     }
     file.write(bytes);
     file.flush();
-}
-
-void write(const QString &message, Level level)
-{
-    write(nullptr, message, level);
 }
 
 void configureForTesting(const QString &directory, qint64 maximumBytes,

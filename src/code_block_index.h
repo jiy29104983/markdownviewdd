@@ -12,7 +12,6 @@ struct CodeBlockRecord
 {
     QPointer<QWidget> editor;
     quint64 version = 0;
-    int ordinal = 0;
     int position = -1; // Empty fences can have no rendered position in Qt 5.15.
     int endPosition = -1;
     QString language;

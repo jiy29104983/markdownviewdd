@@ -7,9 +7,6 @@
 #include <QAction>
 #include <QApplication>
 #include <QDir>
-#include <QElapsedTimer>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
 #include <QMainWindow>
 #include <QMenu>
@@ -22,7 +19,6 @@
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QtTest>
-#include <algorithm>
 #include <memory>
 
 namespace {
@@ -139,6 +135,7 @@ struct Fixture
     OutlineAdapter adapter{tabs};
     std::unique_ptr<PreviewController> controller;
     MarkdownPreviewDock *dock = nullptr;
+    HeadingOutline *outline = nullptr;
     QTextEdit *editor = nullptr;
     explicit Fixture(const QString &text = longSample())
     {
@@ -146,6 +143,7 @@ struct Fixture
         editor = add(text);
         controller.reset(new PreviewController(&window, &adapter));
         dock = window.findChild<MarkdownPreviewDock *>();
+        outline = dock->findChild<HeadingOutline *>();
         window.resize(1100, 650);
         window.show();
         dock->show();
@@ -161,7 +159,7 @@ struct Fixture
         return edit;
     }
     void refresh() { QMetaObject::invokeMethod(controller.get(), "renderNow", Qt::DirectConnection); }
-    void activate(int index) { dock->headingActivated(dock->headings().at(index)); }
+    void activate(int index) { outline->headingActivated(outline->headings().at(index)); }
     QTextEdit *preview() { return adapter.cache.value(tabs->currentWidget()).preview; }
     QTreeWidget *tree() { return dock->findChild<QTreeWidget *>(); }
 };
@@ -272,14 +270,14 @@ void HeadingOutlineTest::hierarchyAndIndependentSelection()
 void HeadingOutlineTest::twoSidedNavigationSurvivesLayoutAndPolling()
 {
     Fixture f;
-    QCOMPARE(f.dock->headings().size(), 12);
+    QCOMPARE(f.outline->headings().size(), 12);
     const int renders = f.adapter.renders;
     QMetaObject::invokeMethod(f.controller.get(), "setSyncScrolling", Q_ARG(bool, false));
     const QString source = f.editor->toPlainText();
     QTextCursor selected(f.editor->document());
     selected.setPosition(1); selected.setPosition(5, QTextCursor::KeepAnchor);
     f.editor->setTextCursor(selected);
-    const auto target = f.dock->headings().at(8);
+    const auto target = f.outline->headings().at(8);
     f.activate(8);
     QCOMPARE(f.adapter.navigations, 1);
     QCOMPARE(f.adapter.lastLine, 2 + 8 * 26);
@@ -344,15 +342,15 @@ void HeadingOutlineTest::layoutAndWindowIsolation()
     QCoreApplication::processEvents();
     const int renders = first.adapter.renders;
     first.activate(6);
-    const auto heading = first.dock->headings().at(6);
+    const auto heading = first.outline->headings().at(6);
     first.dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineRight"))->trigger();
     auto *splitter = first.dock->findChild<QSplitter *>();
-    QCOMPARE(splitter->indexOf(first.dock->findChild<HeadingOutline *>()), 1);
-    QCOMPARE(second.dock->findChild<QSplitter *>()->indexOf(second.dock->findChild<HeadingOutline *>()), 0);
+    QCOMPARE(splitter->indexOf(first.outline), 1);
+    QCOMPARE(second.dock->findChild<QSplitter *>()->indexOf(second.outline), 0);
     auto *visible = first.dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineVisible"));
     visible->setChecked(false);
-    QVERIFY(first.dock->findChild<HeadingOutline *>()->isHidden());
-    QVERIFY(!second.dock->findChild<HeadingOutline *>()->isHidden());
+    QVERIFY(first.outline->isHidden());
+    QVERIFY(!second.outline->isHidden());
     visible->setChecked(true);
     splitter->setSizes({350, 220});
     QTest::qWait(80);
@@ -367,15 +365,15 @@ void HeadingOutlineTest::snapshotsInvalidateAndRestoreExpansion()
     Fixture f(sample());
     f.controller->setRefreshMode(RefreshMode::Manual);
     f.tree()->topLevelItem(0)->setExpanded(false);
-    const auto old = f.dock->headings().first();
+    const auto old = f.outline->headings().first();
     QTextEdit *other = f.add(QStringLiteral("no headings"));
     f.tabs->setCurrentWidget(other);
     QMetaObject::invokeMethod(f.controller.get(), "pollEditor");
-    QVERIFY(f.dock->headings().isEmpty());
+    QVERIFY(f.outline->headings().isEmpty());
     f.dock->headingActivated(old);
     QCOMPARE(f.adapter.navigations, 0);
     f.refresh();
-    QVERIFY(f.dock->headings().isEmpty());
+    QVERIFY(f.outline->headings().isEmpty());
     QVERIFY(f.dock->findChild<QLabel *>(QStringLiteral("NddMarkdownOutlineStatus"))->text().contains(QStringLiteral("没有标题")));
     f.tabs->setCurrentWidget(f.editor);
     QMetaObject::invokeMethod(f.controller.get(), "pollEditor");
@@ -387,7 +385,7 @@ void HeadingOutlineTest::snapshotsInvalidateAndRestoreExpansion()
     delete f.editor;
     f.editor = nullptr;
     QCoreApplication::processEvents();
-    QVERIFY(f.dock->headings().isEmpty());
+    QVERIFY(f.outline->headings().isEmpty());
 }
 
 void HeadingOutlineTest::missingCapabilityAndReentrantNavigation()
@@ -403,7 +401,7 @@ void HeadingOutlineTest::missingCapabilityAndReentrantNavigation()
     f.adapter.duringNavigate = [&]() { f.tabs->setCurrentWidget(other); };
     f.activate(6);
     QCOMPARE(f.adapter.navigations, 0);
-    QVERIFY(f.dock->headings().isEmpty());
+    QVERIFY(f.outline->headings().isEmpty());
     f.tabs->setCurrentWidget(f.editor);
     QMetaObject::invokeMethod(f.controller.get(), "pollEditor");
     f.adapter.duringNavigate = [&]() { f.editor->append(QStringLiteral("modified")); };
@@ -418,7 +416,7 @@ void HeadingOutlineTest::sourceReadReentrancy()
     QTextEdit *other = f.add(QStringLiteral("# Other"));
     f.adapter.duringRead = [&]() { f.tabs->setCurrentWidget(other); };
     f.refresh();
-    QVERIFY(f.dock->headings().isEmpty());
+    QVERIFY(f.outline->headings().isEmpty());
     QCOMPARE(f.controller->previewStatus().activeEditor.data(), other);
 }
 
@@ -431,7 +429,7 @@ void HeadingOutlineTest::keyboardAndSectionHighlight()
     QTest::keyClick(tree, Qt::Key_Return);
     QCOMPARE(f.adapter.navigations, 1);
     auto *selected = tree->currentItem();
-    auto *outline = f.dock->findChild<HeadingOutline *>();
+    auto *outline = f.outline;
     f.preview()->verticalScrollBar()->triggerAction(QAbstractSlider::SliderToMinimum);
     QTRY_VERIFY(!f.dock->hasNavigationTarget());
     QTRY_COMPARE(outline->currentHeading(), -1);
@@ -466,7 +464,7 @@ void HeadingOutlineTest::nullSourceCapability()
     Fixture f;
     f.adapter.readable = false;
     f.refresh();
-    QVERIFY(!f.dock->headings().isEmpty());
+    QVERIFY(!f.outline->headings().isEmpty());
     f.activate(3);
     QCOMPARE(f.adapter.navigations, 0);
 }
@@ -477,25 +475,10 @@ void HeadingOutlineTest::fiveHundredHeadings()
     for (int i = 0; i < 500; ++i)
         text += QStringLiteral("## 标题 %1\n\n段落内容\n\n").arg(i);
     Fixture f(text);
-    QCOMPARE(f.dock->headings().size(), 500);
-    QList<double> indexTimes;
-    HeadingOutline measuredOutline;
-    for (int i = -1; i < 20; ++i) {
-        QElapsedTimer timer; timer.start();
-        auto records = renderedHeadings(f.preview()->document(), f.editor,
-                                        f.controller->previewStatus().displayedVersion);
-        QVERIFY(mapHeadingSource(&records, text));
-        measuredOutline.setSnapshot(records, f.editor,
-                                    f.controller->previewStatus().displayedVersion);
-        if (i >= 0) indexTimes.append(double(timer.nsecsElapsed()) / 1e6);
-    }
-    std::sort(indexTimes.begin(), indexTimes.end());
-    QList<double> times;
-    for (int i = -1; i < 20; ++i) {
-        QElapsedTimer timer; timer.start();
-        f.activate((i + 2) * 17 % 500);
+    QCOMPARE(f.outline->headings().size(), 500);
+    for (int i = 0; i < 21; ++i) {
+        f.activate(i * 23);
         QCoreApplication::processEvents();
-        if (i >= 0) times.append(double(timer.nsecsElapsed()) / 1e6);
     }
     const int renders = f.adapter.renders;
     for (int i = 0; i < 20; ++i) {
@@ -505,16 +488,9 @@ void HeadingOutlineTest::fiveHundredHeadings()
     QCOMPARE(f.adapter.renders, renders);
     QCOMPARE(f.adapter.reads, 1);
     QCOMPARE(f.adapter.navigations, 21);
-    std::sort(times.begin(), times.end());
-    QJsonObject metrics{{QStringLiteral("headings"), 500}, {QStringLiteral("samples"), 20},
-        {QStringLiteral("median_ms"), (times.at(9) + times.at(10)) / 2},
-        {QStringLiteral("p95_ms"), times.at(18)},
-        {QStringLiteral("index_median_ms"), (indexTimes.at(9) + indexTimes.at(10)) / 2},
-        {QStringLiteral("index_p95_ms"), indexTimes.at(18)}};
-    qInfo().noquote() << QJsonDocument(metrics).toJson(QJsonDocument::Compact);
     f.tree()->setCurrentItem(f.tree()->topLevelItem(6));
     f.activate(6);
-    QTRY_COMPARE(f.dock->findChild<HeadingOutline *>()->currentHeading(), 6);
+    QTRY_COMPARE(f.outline->currentHeading(), 6);
     QCOMPARE(f.tree()->topLevelItem(6)->text(1), QStringLiteral("●"));
     const QString directory = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
     if (!directory.isEmpty()) {
@@ -522,7 +498,7 @@ void HeadingOutlineTest::fiveHundredHeadings()
         QVERIFY(f.window.grab().save(QDir(directory).filePath(QStringLiteral("req003-outline-left.png"))));
         f.dock->findChild<QAction *>(QStringLiteral("NddMarkdownOutlineRight"))->trigger();
         QTest::qWait(100);
-        QTRY_COMPARE(f.dock->findChild<HeadingOutline *>()->currentHeading(), 6);
+        QTRY_COMPARE(f.outline->currentHeading(), 6);
         QCOMPARE(f.tree()->topLevelItem(6)->text(1), QStringLiteral("●"));
         QVERIFY(f.window.grab().save(QDir(directory).filePath(QStringLiteral("req003-outline-right.png"))));
     }
@@ -568,16 +544,16 @@ void HeadingOutlineTest::imageTableLayoutAndAllLevels()
             "![图片](missing-local-image.png)\n\n").repeated(20);
     }
     Fixture f(markdown);
-    QCOMPARE(f.dock->headings().size(), 6);
+    QCOMPARE(f.outline->headings().size(), 6);
     QFont font = f.preview()->font(); font.setPointSizeF(18.0);
     f.dock->setReadingFont(font, 1.3);
     for (int i = 0; i < 6; ++i) {
-        QCOMPARE(f.dock->headings().at(i).level, i + 1);
+        QCOMPARE(f.outline->headings().at(i).level, i + 1);
         f.activate(i);
         QCOMPARE(f.adapter.lastLine, i * 122);
         QTest::qWait(40);
         QTextCursor cursor(f.preview()->document());
-        cursor.setPosition(f.dock->headings().at(i).blockPosition);
+        cursor.setPosition(f.outline->headings().at(i).blockPosition);
         QVERIFY(f.preview()->cursorRect(cursor).top() >= -2);
         QVERIFY(f.preview()->cursorRect(cursor).top() < f.preview()->viewport()->height());
     }
@@ -590,7 +566,7 @@ void HeadingOutlineTest::renderReadModificationInvalidatesSnapshot()
     f.editor->setPlainText(QStringLiteral("# Completely different\n\nNew content"));
     f.adapter.duringRead = [&]() { f.editor->append(QStringLiteral("edit while reading")); };
     f.refresh();
-    QVERIFY(f.dock->headings().isEmpty());
+    QVERIFY(f.outline->headings().isEmpty());
     QCOMPARE(f.controller->previewStatus().displayedVersion, quint64(0));
 }
 
@@ -599,7 +575,7 @@ void HeadingOutlineTest::delayedSourceLayoutKeepsHeading()
 {
     Fixture f;
     f.activate(8);
-    const auto target = f.dock->headings().at(8);
+    const auto target = f.outline->headings().at(8);
     QFont font = f.editor->font(); font.setPointSize(19);
     f.editor->setFont(font);
     QTextCursor cursor(f.editor->document()->findBlockByNumber(target.sourceLine));
@@ -648,7 +624,7 @@ void HeadingOutlineTest::queuedLayoutCannotReplaceUserScroll()
     // Simulate a queued compatibility/layout write overtaking value delivery.
     bar->setValue(oldPosition);
     QTRY_COMPARE(bar->value(), bar->maximum());
-    QTRY_COMPARE(f.dock->findChild<HeadingOutline *>()->currentHeading(), 11);
+    QTRY_COMPARE(f.outline->currentHeading(), 11);
 }
 
 QTEST_MAIN(HeadingOutlineTest)

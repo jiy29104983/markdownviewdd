@@ -11,10 +11,8 @@
 #include <QTextDocument>
 #include <QTimer>
 #include <QToolButton>
-#include <QVBoxLayout>
 #include <QAbstractTextDocumentLayout>
 #include <QPainter>
-#include <QPainterPath>
 #include <QScrollBar>
 #include <QTextBlock>
 #include <QTextFrame>
@@ -331,7 +329,7 @@ void CodeBlockTools::updatePositions()
             colors.setColor(QPalette::WindowText, muted);
             label->setPalette(colors);
         }
-        header->setVisible(m_edit->isVisible() && top >= 0 && top < m_edit->viewport()->height());
+        header->show();
         header->raise();
     }
     updateSelection();
@@ -399,11 +397,7 @@ bool CodeBlockTools::copyBlock(int ordinal)
     m_feedbackValue = copied ? 1 : -1;
     updateSelection();
     if (ordinal < m_buttons.size() && m_buttons.at(ordinal)) {
-        auto *button = static_cast<CopyButton *>(m_buttons.at(ordinal).data());
-        button->feedback = copied ? 1 : -1;
-        button->setToolTip(feedback);
-        button->setAccessibleDescription(feedback);
-        button->update();
+        auto *button = m_buttons.at(ordinal).data();
         if (!copied || m_manual || m_stale)
             QToolTip::showText(button->mapToGlobal(QPoint(0, button->height())), feedback, button);
     } else if (m_edit) {

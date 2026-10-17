@@ -50,7 +50,7 @@ void DiagnosticsTest::rotatesAtConfiguredCapacity()
     Diagnostics::configureForTesting(directory.path(), 512, 2);
     Diagnostics::initialize();
     for (int index = 0; index < 40; ++index) {
-        Diagnostics::write(QStringLiteral("rotation-marker-%1-%2")
+        Diagnostics::write(nullptr, QStringLiteral("rotation-marker-%1-%2")
                                .arg(index)
                                .arg(QString(48, QLatin1Char('x'))));
     }
@@ -73,7 +73,7 @@ void DiagnosticsTest::unwritableLocationDoesNotCrash()
 
     Diagnostics::configureForTesting(regularFilePath, 512, 1);
     Diagnostics::initialize();
-    Diagnostics::write(QStringLiteral("silently ignored"), Diagnostics::Level::Error);
+    Diagnostics::write(nullptr, QStringLiteral("silently ignored"), Diagnostics::Level::Error);
     QVERIFY(QFileInfo(regularFilePath).isFile());
 }
 

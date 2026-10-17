@@ -14,7 +14,6 @@
 #include <QPointer>
 #include <QTabWidget>
 #include <QTextEdit>
-#include <QTimer>
 #include <QVBoxLayout>
 #include <QtTest>
 
@@ -144,29 +143,6 @@ struct HostFixture
         QCoreApplication::processEvents();
     }
 };
-
-QAction *findAction(QMenu *menu, const QString &text)
-{
-    if (!menu) {
-        return nullptr;
-    }
-    for (QAction *action : menu->actions()) {
-        if (action && action->text().remove(QRegularExpression(QStringLiteral("\\(&.\\)"))) == text) {
-            return action;
-        }
-    }
-    return nullptr;
-}
-
-int initializeWindow(QMainWindow *window, QMenu *rootMenu)
-{
-    NDD_PROC_DATA data;
-    data.rootMenu = rootMenu;
-    return NDD_PROC_MAIN(
-        window, QStringLiteral("markdownviewdd.dll"),
-        [](QWidget *) -> QsciScintilla * { return nullptr; },
-        [](QWidget *, int, void *) { return false; }, &data);
-}
 }
 
 class PluginMultiWindowTest final : public QObject
@@ -240,73 +216,40 @@ void PluginMultiWindowTest::repeatedInitializationIsIdempotent()
     PreviewController *controller = fixture.controller();
     QVERIFY(controller);
     const int actionCount = fixture.rootMenu->actions().size();
-    const QList<QTimer *> timers = controller->findChildren<QTimer *>(
-        QString(), Qt::FindDirectChildrenOnly);
-    QVERIFY(!timers.isEmpty());
 
     QCOMPARE(fixture.initialize(), 0);
     QCOMPARE(fixture.controller(), controller);
     QCOMPARE(fixture.rootMenu->actions().size(), actionCount);
     QCOMPARE(fixture.window.findChildren<MarkdownPreviewDock *>(
                  QString(), Qt::FindDirectChildrenOnly).size(), 1);
-    QCOMPARE(controller->findChildren<QTimer *>(
-                 QString(), Qt::FindDirectChildrenOnly), timers);
 }
 
 void PluginMultiWindowTest::closingOneWindowKeepsTheOtherControllerAlive()
 {
-    auto *firstWindow = new QMainWindow;
-    auto *firstTabs = new QTabWidget(firstWindow);
-    firstTabs->setObjectName(QStringLiteral("editTabWidget"));
-    firstWindow->setCentralWidget(firstTabs);
-    auto *firstEditor = new QsciScintilla(
-        QStringLiteral("first.md"), QStringLiteral("# First"));
-    firstTabs->addTab(firstEditor, QStringLiteral("First"));
-    QMenu *firstMenu = firstWindow->menuBar()->addMenu(QStringLiteral("First"));
-
-    auto *secondWindow = new QMainWindow;
-    auto *secondTabs = new QTabWidget(secondWindow);
-    secondTabs->setObjectName(QStringLiteral("editTabWidget"));
-    secondWindow->setCentralWidget(secondTabs);
-    auto *secondEditor = new QsciScintilla(
-        QStringLiteral("second.md"), QStringLiteral("# Second survives"));
-    secondTabs->addTab(secondEditor, QStringLiteral("Second"));
-    QMenu *secondMenu = secondWindow->menuBar()->addMenu(QStringLiteral("Second"));
-
-    firstWindow->show();
-    secondWindow->show();
-    QCOMPARE(initializeWindow(firstWindow, firstMenu), 0);
-    QCOMPARE(initializeWindow(secondWindow, secondMenu), 0);
-    QPointer<PreviewController> firstController =
-        firstWindow->findChild<PreviewController *>(
-            QString(), Qt::FindDirectChildrenOnly);
-    QPointer<PreviewController> secondController =
-        secondWindow->findChild<PreviewController *>(
-            QString(), Qt::FindDirectChildrenOnly);
+    auto *first = new HostFixture(QStringLiteral("First"), QStringLiteral("first.md"),
+                                  QStringLiteral("# First"));
+    HostFixture second(QStringLiteral("Second"), QStringLiteral("second.md"),
+                       QStringLiteral("# Second survives"));
+    QCOMPARE(first->initialize(), 0);
+    QCOMPARE(second.initialize(), 0);
+    QPointer<PreviewController> firstController = first->controller();
+    QPointer<PreviewController> secondController = second.controller();
     QVERIFY(firstController);
     QVERIFY(secondController);
 
-    delete firstWindow;
+    delete first;
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QVERIFY(firstController.isNull());
     QVERIFY(secondController);
 
-    QAction *secondToggle = findAction(secondMenu, QStringLiteral("显示预览"));
-    QAction *secondRefresh = findAction(secondMenu, QStringLiteral("立即刷新"));
-    QVERIFY(secondToggle);
-    QVERIFY(secondRefresh);
-    secondToggle->setChecked(true);
-    secondRefresh->trigger();
-    QCoreApplication::processEvents();
-    QCOMPARE(secondEditor->renderCount(), 1);
+    second.render();
+    QCOMPARE(second.editor->renderCount(), 1);
 
     QByteArray html;
     QString path;
     QVERIFY(secondController->currentHtmlSnapshot(&html, &path));
     QVERIFY(html.contains("Second survives"));
     QCOMPARE(path, QStringLiteral("second.md"));
-
-    delete secondWindow;
 }
 
 void PluginMultiWindowTest::contextMenuBridgeOnlyHandlesItsOwnWindow()

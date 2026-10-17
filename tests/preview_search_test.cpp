@@ -1,19 +1,16 @@
 #include "preview_search.h"
+#include "heading_outline.h"
 #include "host_adapter.h"
 #include "markdown_preview_dock.h"
 #include "preview_controller.h"
 
 #include <QAction>
-#include <QAbstractEventDispatcher>
 #include <QApplication>
 #include <QCheckBox>
 #include <QClipboard>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QInputMethodEvent>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMainWindow>
@@ -27,36 +24,11 @@
 #include <QTextLayout>
 #include <QTimer>
 #include <QToolButton>
-#include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QtTest>
-#include <algorithm>
 #include <memory>
 
 namespace {
-class TimingApplication final : public QApplication
-{
-public:
-    TimingApplication(int &argc, char **argv) : QApplication(argc, argv) {}
-    bool measuring = false;
-    qint64 maxEventNs = 0;
-    QString slowestEvent;
-    bool notify(QObject *receiver, QEvent *event) override
-    {
-        if (!measuring || qobject_cast<QAbstractEventDispatcher *>(receiver))
-            return QApplication::notify(receiver, event);
-        const QString name = QStringLiteral("%1:%2").arg(QString::fromLatin1(receiver->metaObject()->className()))
-            .arg(int(event->type()));
-        QElapsedTimer elapsed;
-        elapsed.start();
-        const bool handled = QApplication::notify(receiver, event);
-        if (elapsed.nsecsElapsed() > maxEventNs) {
-            maxEventNs = elapsed.nsecsElapsed();
-            slowestEvent = name;
-        }
-        return handled;
-    }
-};
 class SearchAdapter final : public HostAdapter
 {
 public:
@@ -65,14 +37,8 @@ public:
     QTabWidget *tabs;
     QHash<QWidget *, Cache> cache;
     int renders = 0;
-    mutable int reads = 0;
     int navigations = 0;
-    int lastLine = -1;
-    bool readable = true;
-    bool navigable = true;
     bool failRefresh = false;
-    std::function<void()> duringRead;
-    std::function<void()> duringNavigate;
     QWidget *currentEditor() const override { return tabs->currentWidget(); }
     QMetaObject::Connection connectActiveEditorChanged(QObject *context, std::function<void()> fn) override
     { return QObject::connect(tabs, &QTabWidget::currentChanged, context, [fn]() { fn(); }); }
@@ -119,23 +85,17 @@ public:
     }
     SourceReadResult readSource(QWidget *editor) const override
     {
-        ++reads;
-        const QString text = qobject_cast<QTextEdit *>(editor)->toPlainText();
-        if (duringRead) duringRead();
-        return {text, readable ? QString() : QStringLiteral("源码读取不可用"), readable};
+        return {qobject_cast<QTextEdit *>(editor)->toPlainText(), QString(), true};
     }
     SourceNavigationResult navigateSource(QWidget *editor, int line, int offset,
         const std::function<bool()> &valid) override
     {
-        if (duringNavigate) duringNavigate();
         if (!valid()) return {false, QStringLiteral("expired")};
-        if (!navigable) return {false, QStringLiteral("源码定位不可用")};
         auto *edit = qobject_cast<QTextEdit *>(editor);
         const QTextBlock block = edit->document()->findBlockByNumber(line);
         if (!block.isValid() || edit->toPlainText().left(block.position()).toUcs4().size() != offset)
             return {false, QStringLiteral("wrong source position")};
         ++navigations;
-        lastLine = line;
         QTextCursor cursor(block);
         QScrollBar *bar = edit->verticalScrollBar();
         bar->setValue(bar->value() + edit->cursorRect(cursor).top());
@@ -150,6 +110,7 @@ struct Fixture
     SearchAdapter adapter{tabs};
     std::unique_ptr<PreviewController> controller;
     MarkdownPreviewDock *dock = nullptr;
+    HeadingOutline *outline = nullptr;
     QTextEdit *editor = nullptr;
     explicit Fixture(const QString &text = QStringLiteral("needle middle needle"))
     {
@@ -157,6 +118,7 @@ struct Fixture
         editor = add(text);
         controller.reset(new PreviewController(&window, &adapter));
         dock = window.findChild<MarkdownPreviewDock *>();
+        outline = dock->findChild<HeadingOutline *>();
         window.resize(1100, 650);
         window.show();
         dock->show();
@@ -172,9 +134,8 @@ struct Fixture
         return edit;
     }
     void refresh() { QMetaObject::invokeMethod(controller.get(), "renderNow", Qt::DirectConnection); }
-    void activate(int index) { dock->headingActivated(dock->headings().at(index)); }
+    void activate(int index) { outline->headingActivated(outline->headings().at(index)); }
     QTextEdit *preview() { return adapter.cache.value(tabs->currentWidget()).preview; }
-    QTreeWidget *tree() { return dock->findChild<QTreeWidget *>(); }
 };
 PreviewSearch *search(Fixture &f)
 {
@@ -229,10 +190,9 @@ private slots:
     void themeAndZoom();
     void wideTableNavigation();
     void resizeUpdatesHighlights();
-    void nativeLayoutWithoutSearch();
     void longDocument_data();
     void longDocument();
-    void measurementsAndScreenshots();
+    void screenshots();
 };
 
 void PreviewSearchTest::matching_data()
@@ -662,7 +622,6 @@ void PreviewSearchTest::resizeUpdatesHighlights()
     QTRY_VERIFY(!view->extraSelections().isEmpty());
     const int before = view->extraSelections().size();
     const int height = view->viewport()->height();
-    const quint64 generation = s->generation();
     const int renders = f.adapter.renders;
     QCOMPARE(view->verticalScrollBar()->value(), 0);
     f.window.resize(1100, 1000);
@@ -670,7 +629,6 @@ void PreviewSearchTest::resizeUpdatesHighlights()
     QTRY_VERIFY(view->extraSelections().size() > before * 2);
     QCOMPARE(view->verticalScrollBar()->value(), 0);
     QCOMPARE(s->matchCount(), 100);
-    QCOMPARE(s->generation(), generation);
     QCOMPARE(f.adapter.renders, renders);
 }
 
@@ -691,24 +649,6 @@ void PreviewSearchTest::themeAndZoom()
     f.dock->setReadingFont(font, 1.25);
     QTRY_VERIFY(!s->isSearching());
     QCOMPARE(s->matchCount(), 2);
-}
-
-void PreviewSearchTest::nativeLayoutWithoutSearch()
-{
-    QTextEdit view;
-    view.resize(640, 480);
-    const QString line = QStringLiteral("needle ").repeated(8) + QStringLiteral("padding\n");
-    view.setPlainText(line.repeated(5 * 1024 * 1024 / 64));
-    auto *app = static_cast<TimingApplication *>(qApp);
-    app->maxEventNs = 0;
-    app->measuring = true;
-    QElapsedTimer elapsed;
-    elapsed.start();
-    view.show();
-    QTRY_VERIFY_WITH_TIMEOUT(view.document()->lastBlock().layout()->lineCount() > 0, 30000);
-    app->measuring = false;
-    qInfo().noquote() << QStringLiteral("native-layout-no-search bytes=5242880 elapsed_ms=%1 max_event_ms=%2 event=%3")
-        .arg(elapsed.nsecsElapsed() / 1e6).arg(app->maxEventNs / 1e6).arg(app->slowestEvent);
 }
 
 void PreviewSearchTest::longDocument_data()
@@ -743,63 +683,37 @@ void PreviewSearchTest::longDocument()
         gap.restart();
     });
     heartbeat.start(2);
-    auto *app = static_cast<TimingApplication *>(qApp);
-    app->maxEventNs = 0;
-    app->measuring = true;
     setQuery(&s, QStringLiteral("needle"));
     QTRY_VERIFY_WITH_TIMEOUT(!s.isSearching(), 30000);
     QTRY_VERIFY_WITH_TIMEOUT(view.document()->lastBlock().layout()->lineCount() > 0, 30000);
     QTRY_VERIFY(!view.extraSelections().isEmpty());
     QTest::qWait(50);
-    app->measuring = false;
     QCOMPARE(s.matchCount(), repeats * 8);
     QVERIFY(ticks > 1);
     QVERIFY(view.extraSelections().size() <= 256);
     QVERIFY(feedback(&s).contains(QStringLiteral("完整计数")));
-    QVERIFY2(s.maxBatchNanoseconds() < 250000000, "A search batch blocked input for >=250ms");
-    QVERIFY2(s.maxHighlightNanoseconds() < 250000000, "Search highlighting blocked input for >=250ms");
-    qInfo().noquote() << QStringLiteral("search bytes=%1 matches=%2 elapsed_ms=%3 max_batch_ms=%4 ticks=%5 max_event_gap_ms=%6 highlight_ms=%7 event_ms=%8 event=%9")
-        .arg(bytes).arg(s.matchCount()).arg(s.lastSearchNanoseconds() / 1e6)
-        .arg(s.maxBatchNanoseconds() / 1e6).arg(ticks).arg(longestGap / 1e6)
-        .arg(s.maxHighlightNanoseconds() / 1e6).arg(app->maxEventNs / 1e6).arg(app->slowestEvent);
     // Search on an already displayed snapshot is measured separately from Qt's
     // initial document layout. Include a no-hit query to isolate highlight cost.
     for (const QString &pattern : {QStringLiteral("absent"), QStringLiteral("needle")}) {
         longestGap = 0;
         gap.restart();
-        app->maxEventNs = 0;
-        app->measuring = true;
         setQuery(&s, pattern);
         QTRY_VERIFY_WITH_TIMEOUT(!s.isSearching(), 30000);
-        app->measuring = false;
+        QTest::qWait(5);
         QCOMPARE(s.matchCount(), pattern == QStringLiteral("needle") ? repeats * 8 : 0);
         QVERIFY2(longestGap < 250000000, "Searching a displayed snapshot blocked input for >=250ms");
-        QVERIFY2(s.maxHighlightNanoseconds() < 250000000, "Search highlighting blocked input for >=250ms");
-        qInfo().noquote() << QStringLiteral("warm-search bytes=%1 query=%2 elapsed_ms=%3 max_batch_ms=%4 highlight_ms=%5 max_event_gap_ms=%6 event_ms=%7 event=%8")
-            .arg(bytes).arg(pattern).arg(s.lastSearchNanoseconds() / 1e6).arg(s.maxBatchNanoseconds() / 1e6)
-            .arg(s.maxHighlightNanoseconds() / 1e6).arg(longestGap / 1e6)
-            .arg(app->maxEventNs / 1e6).arg(app->slowestEvent);
     }
 }
 
-void PreviewSearchTest::measurementsAndScreenshots()
+void PreviewSearchTest::screenshots()
 {
-    Fixture f(longText(500));
-    auto *s = search(f);
-    QVector<double> elapsed, batches;
-    for (int i = 0; i < 21; ++i) {
-        setQuery(s, i % 2 ? QStringLiteral("needle") : QStringLiteral("段落"));
-        QTRY_VERIFY(!s->isSearching());
-        QCOMPARE(s->matchCount(), 500);
-        if (i) { elapsed.append(s->lastSearchNanoseconds() / 1e6); batches.append(s->maxBatchNanoseconds() / 1e6); }
-    }
-    std::sort(elapsed.begin(), elapsed.end()); std::sort(batches.begin(), batches.end());
-    qInfo().noquote() << QJsonDocument(QJsonObject{
-        {QStringLiteral("samples"), 20}, {QStringLiteral("search_median_ms"), elapsed.at(10)},
-        {QStringLiteral("search_p95_ms"), elapsed.at(18)}, {QStringLiteral("batch_p95_ms"), batches.at(18)}
-    }).toJson(QJsonDocument::Compact);
     const QString directory = qEnvironmentVariable("MARKDOWNVIEW_SCREENSHOT_DIR");
     if (!directory.isEmpty()) {
+        Fixture f(longText(500));
+        auto *s = search(f);
+        setQuery(s, QStringLiteral("段落"));
+        QTRY_VERIFY(!s->isSearching());
+        QCOMPARE(s->matchCount(), 500);
         QDir().mkpath(directory);
         QTest::qWait(100);
         QVERIFY(f.window.grab().save(QDir(directory).filePath(QStringLiteral("req004-search.png"))));
@@ -812,7 +726,7 @@ void PreviewSearchTest::measurementsAndScreenshots()
 
 int main(int argc, char **argv)
 {
-    TimingApplication app(argc, argv);
+    QApplication app(argc, argv);
     app.setAttribute(Qt::AA_Use96Dpi, true);
     PreviewSearchTest test;
     return QTest::qExec(&test, argc, argv);

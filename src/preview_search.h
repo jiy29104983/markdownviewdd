@@ -36,14 +36,9 @@ public:
     int matchCount() const { return m_matches.size(); }
     int currentIndex() const { return m_current; }
     int currentPosition() const;
-    quint64 generation() const { return m_generation; }
-    qint64 lastSearchNanoseconds() const { return m_lastSearchNs; }
-    qint64 maxBatchNanoseconds() const { return m_maxBatchNs; }
-    qint64 maxHighlightNanoseconds() const { return m_maxHighlightNs; }
 
 signals:
     void navigateRequested(QWidget *editor, quint64 version, int position, int length);
-    void searchFinished();
     void closed();
 
 protected:
@@ -94,11 +89,7 @@ private:
     int m_bestAnchor = -1;
     int m_bestDistance = 0;
     QString m_notice;
-    QElapsedTimer m_elapsed;
     QElapsedTimer m_paintElapsed;
-    qint64 m_lastSearchNs = 0;
-    qint64 m_maxBatchNs = 0;
-    qint64 m_maxHighlightNs = 0;
     quint64 m_highlightGeneration = 0;
     int m_highlightBegin = -1;
     int m_highlightEnd = -1;

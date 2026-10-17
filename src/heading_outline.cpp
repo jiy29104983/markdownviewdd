@@ -34,22 +34,15 @@ HeadingOutline::HeadingOutline(QWidget *parent) : QWidget(parent)
     m_tree->header()->setSectionResizeMode(1, QHeaderView::Fixed);
     m_tree->header()->resizeSection(1, 26);
     layout->addWidget(m_tree, 1);
-    // itemActivated may also be emitted by a mouse double-click. Mouse clicks
-    // activate here; keyboard Enter is handled by the tree's activation signal.
-    connect(m_tree, &QTreeWidget::itemClicked, this, [this](QTreeWidgetItem *item, int) {
+    const auto activate = [this](QTreeWidgetItem *item, int) {
         const int index = item->data(0, Qt::UserRole).toInt();
         if (index >= 0 && index < m_headings.size()) {
             const HeadingRecord target = m_headings.at(index);
             emit headingActivated(target);
         }
-    });
-    connect(m_tree, &QTreeWidget::itemActivated, this, [this](QTreeWidgetItem *item, int) {
-        const int index = item->data(0, Qt::UserRole).toInt();
-        if (index >= 0 && index < m_headings.size()) {
-            const HeadingRecord target = m_headings.at(index);
-            emit headingActivated(target);
-        }
-    });
+    };
+    connect(m_tree, &QTreeWidget::itemClicked, this, activate);
+    connect(m_tree, &QTreeWidget::itemActivated, this, activate);
     connect(m_tree, &QTreeWidget::itemExpanded, this, [this]() { updateMarker(); });
     connect(m_tree, &QTreeWidget::itemCollapsed, this, [this]() { updateMarker(); });
 }
@@ -70,7 +63,6 @@ void HeadingOutline::clearSnapshot()
 {
     saveExpansion();
     m_editor = nullptr;
-    m_version = 0;
     m_currentHeading = -1;
     m_headings.clear();
     m_items.clear();
@@ -98,7 +90,6 @@ void HeadingOutline::setSnapshot(const QVector<HeadingRecord> &headings,
         });
     }
     m_editor = editor;
-    m_version = version;
     m_headings = headings;
     const auto states = m_expansion.value(editor);
     const QSignalBlocker rebuilding(m_tree);
@@ -129,7 +120,7 @@ void HeadingOutline::setSnapshot(const QVector<HeadingRecord> &headings,
 
 void HeadingOutline::setFreshness(bool stale)
 {
-    if (!m_editor || !m_version) {
+    if (!m_editor) {
         m_state->setText(tr("尚无可用预览"));
     } else if (stale) {
         m_state->setText(tr("基于当前预览，正文待刷新"));
