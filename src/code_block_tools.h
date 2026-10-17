@@ -61,8 +61,7 @@ private:
     quint64 m_version = 0;
     quint64 m_generation = 0;
     bool m_formatting = false;
-    bool m_stale = false;
-    bool m_manual = false;
+    bool m_showSnapshotNotice = false;
     ClipboardWriter m_writer;
     std::function<bool(QWidget *, quint64)> m_validator;
 };

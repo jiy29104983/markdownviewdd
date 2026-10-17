@@ -185,11 +185,6 @@ public:
     {
         return QMetaObject::Connection();
     }
-    ScrollConnections connectEditorScrollChanged(
-        QWidget *, QObject *, std::function<void()>) override
-    {
-        return ScrollConnections();
-    }
     QString filePath(QWidget *) const override
     {
         return QStringLiteral("/virtual/injected.md");

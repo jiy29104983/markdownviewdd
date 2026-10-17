@@ -123,7 +123,7 @@ PreviewController::PreviewController(QWidget *notepad, HostAdapter *hostAdapter)
         // Qt estimates the scrollbar range while a large rich-text document
         // is being laid out.  Reapply the ratio when that estimate changes so
         // the preview cannot remain at an obsolete blank offset.
-        m_hasLastEditorScrollState = false;
+        m_lastScrollEditor = nullptr;
         updateSynchronizedScroll();
     });
     connect(m_dock, &QDockWidget::visibilityChanged, this, [this](bool visible) {
@@ -278,7 +278,7 @@ bool PreviewController::eventFilter(QObject *watched, QEvent *event)
             (event->type() == QEvent::MouseButtonPress && qobject_cast<QScrollBar *>(input)))) {
             ++m_navigationGeneration;
             m_dock->releaseNavigationTarget();
-            m_hasLastEditorScrollState = false;
+            m_lastScrollEditor = nullptr;
             QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
         }
     }
@@ -697,7 +697,7 @@ bool PreviewController::renderCurrentDocument(bool allowHiddenDock,
         m_dock->setCodeSnapshot(entry->codeBlocks, renderEditor, renderVersion);
     }
     m_hostAdapter->setPreviewCurrent(renderEditor.data(), true);
-    m_hasLastEditorScrollState = false;
+    m_lastScrollEditor = nullptr;
     if (m_syncScrolling) {
         QTimer::singleShot(0, this, &PreviewController::updateSynchronizedScroll);
     } else if (preserveScroll) {
@@ -775,7 +775,7 @@ void PreviewController::setSyncScrolling(bool enabled)
     if (m_dock) {
         m_dock->setSyncScrolling(enabled);
     }
-    m_hasLastEditorScrollState = false;
+    m_lastScrollEditor = nullptr;
     if (enabled) {
         updateSynchronizedScroll();
     }
@@ -812,7 +812,6 @@ void PreviewController::scrollEditorToRatio(double ratio)
     m_lastEditorScrollMinimum = editorBar->minimum();
     m_lastEditorScrollMaximum = editorBar->maximum();
     m_lastEditorScrollValue = editorBar->value();
-    m_hasLastEditorScrollState = true;
 }
 
 bool PreviewController::currentHtmlSnapshot(QByteArray *html,
@@ -904,7 +903,6 @@ void PreviewController::attachEditor(QWidget *editor)
         m_dock->invalidatePreview();
     }
     m_lastScrollEditor = nullptr;
-    m_hasLastEditorScrollState = false;
     m_lastRenderDurationMs = entry ? entry->lastFullRenderDurationMs : 0;
     m_lastHostError = entry ? entry->error : QString();
     updateLargeDocumentPolicy(m_lastRenderDurationMs);
@@ -912,9 +910,10 @@ void PreviewController::attachEditor(QWidget *editor)
     if (m_editor) {
         Diagnostics::write(this, QStringLiteral("attaching editor class=%1")
                                .arg(QString::fromLatin1(m_editor->metaObject()->className())));
-        const HostAdapter::ScrollConnections scrollConnections =
-            m_hostAdapter->connectEditorScrollChanged(
-            m_editor.data(), this, [this]() {
+        auto *area = qobject_cast<QAbstractScrollArea *>(m_editor.data());
+        QScrollBar *bar = area ? area->verticalScrollBar() : nullptr;
+        if (bar) {
+            const auto onScrollChanged = [this]() {
                 if (!m_syncingEditorScroll) {
                     if (m_dock && m_dock->hasNavigationTarget() && isPreviewCurrent() &&
                         m_sourceNavigationTarget.editor == m_editor &&
@@ -924,9 +923,12 @@ void PreviewController::attachEditor(QWidget *editor)
                         updateSynchronizedScroll();
                     }
                 }
-            });
-        m_editorScrollValueConnection = scrollConnections.valueChanged;
-        m_editorScrollRangeConnection = scrollConnections.rangeChanged;
+            };
+            m_editorScrollValueConnection = connect(
+                bar, &QScrollBar::valueChanged, this, onScrollChanged);
+            m_editorScrollRangeConnection = connect(
+                bar, &QScrollBar::rangeChanged, this, onScrollChanged);
+        }
         if (m_hostAdapter->disconnectImmediateRefresh(m_editor.data())) {
             Diagnostics::write(this,
                 QStringLiteral("existing host immediate refresh disconnected on attach"));
@@ -1331,7 +1333,7 @@ void PreviewController::updateSynchronizedScroll()
     const int scrollMinimum = editorBar->minimum();
     const int scrollMaximum = editorBar->maximum();
     const int scrollValue = editorBar->value();
-    if (m_hasLastEditorScrollState && m_lastScrollEditor == m_editor &&
+    if (m_lastScrollEditor == m_editor &&
         scrollMinimum == m_lastEditorScrollMinimum &&
         scrollMaximum == m_lastEditorScrollMaximum &&
         scrollValue == m_lastEditorScrollValue) {
@@ -1342,7 +1344,6 @@ void PreviewController::updateSynchronizedScroll()
     m_lastEditorScrollMinimum = scrollMinimum;
     m_lastEditorScrollMaximum = scrollMaximum;
     m_lastEditorScrollValue = scrollValue;
-    m_hasLastEditorScrollState = true;
     const double ratio = static_cast<double>(scrollValue - editorBar->minimum()) /
         static_cast<double>(editorBar->maximum() - editorBar->minimum());
     m_dock->scrollToRatio(ratio);

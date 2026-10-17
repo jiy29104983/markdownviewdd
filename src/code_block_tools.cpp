@@ -195,7 +195,7 @@ void CodeBlockTools::setSnapshot(QTextEdit *edit, const QVector<CodeBlockRecord>
 
 QString CodeBlockTools::snapshotHint() const
 {
-    return m_manual || m_stale ? tr("复制当前预览内容") : tr("复制完整代码，保留缩进和换行");
+    return m_showSnapshotNotice ? tr("复制当前预览内容") : tr("复制完整代码，保留缩进和换行");
 }
 
 void CodeBlockTools::setStatus(const PreviewStatus &status)
@@ -205,12 +205,11 @@ void CodeBlockTools::setStatus(const PreviewStatus &status)
         clearSnapshot();
         return;
     }
-    const bool manual = status.mode == RefreshMode::Manual;
-    const bool stale = status.contentVersion != status.displayedVersion;
-    if (m_manual == manual && m_stale == stale)
+    const bool showSnapshotNotice = status.mode == RefreshMode::Manual ||
+        status.contentVersion != status.displayedVersion;
+    if (m_showSnapshotNotice == showSnapshotNotice)
         return;
-    m_manual = manual;
-    m_stale = stale;
+    m_showSnapshotNotice = showSnapshotNotice;
     if (m_editor && !m_feedbackTimer->isActive())
         updateSelection();
 }
@@ -390,7 +389,7 @@ bool CodeBlockTools::copyBlock(int ordinal)
     if (!guard || generation != m_generation)
         return copied;
     const QString feedback = copied
-        ? ((m_manual || m_stale) ? tr("已复制当前预览内容") : tr("已复制完整代码块"))
+        ? (m_showSnapshotNotice ? tr("已复制当前预览内容") : tr("已复制完整代码块"))
         : tr("复制失败：剪贴板未接受代码内容。");
     m_feedbackOrdinal = ordinal;
     m_feedbackText = feedback;
@@ -398,7 +397,7 @@ bool CodeBlockTools::copyBlock(int ordinal)
     updateSelection();
     if (ordinal < m_buttons.size() && m_buttons.at(ordinal)) {
         auto *button = m_buttons.at(ordinal).data();
-        if (!copied || m_manual || m_stale)
+        if (!copied || m_showSnapshotNotice)
             QToolTip::showText(button->mapToGlobal(QPoint(0, button->height())), feedback, button);
     } else if (m_edit) {
         QToolTip::showText(m_edit->mapToGlobal(QPoint(12, 12)), feedback, m_edit);

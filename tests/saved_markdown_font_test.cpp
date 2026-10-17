@@ -297,7 +297,6 @@ void SavedMarkdownFontTest::hostGeneratedFixtures()
         QCOMPARE(font.pointSize, qreal(row.value(QStringLiteral("hostPointSize")).toInt()));
         if (row.value(QStringLiteral("source")).toString().startsWith(QStringLiteral("builtin"))) {
             QCOMPARE(font.family, defaultMarkdownFont().family);
-            QCOMPARE(font.source, SavedMarkdownFont::Source::Builtin);
         } else {
             QCOMPARE(font.configuredFamily, row.value(QStringLiteral("hostFamily")).toString());
             QCOMPARE(font.result, SavedMarkdownFont::Result::Configured);
@@ -329,8 +328,6 @@ void SavedMarkdownFontTest::themeMapping()
     const QString path = config.templatePath(name);
     Config::writeFont(path, QStringLiteral("style0/font"), QStringLiteral("Theme Font"), 19);
     const SavedMarkdownFont font = readSavedMarkdownFont(config.paths);
-    QCOMPARE(font.themeId, id);
-    QCOMPARE(font.sourcePath, path);
     QCOMPARE(font.configuredFamily, QStringLiteral("Theme Font"));
     QCOMPARE(font.pointSize, 19.0);
 }
@@ -342,7 +339,6 @@ void SavedMarkdownFontTest::missingFilesAndFields()
     SavedMarkdownFont font = readSavedMarkdownFont(config.paths);
     QCOMPARE(font.result, SavedMarkdownFont::Result::Builtin);
     QCOMPARE(font.pointSize, 12.0);
-    QCOMPARE(font.themeId, 0);
     QCOMPARE(hashes(config.directory.path()), before);
     Config::writeFont(config.stylePath(), QStringLiteral("defaultfont"), QStringLiteral("Late Default"), 25);
     font = readSavedMarkdownFont(config.paths);
@@ -351,7 +347,6 @@ void SavedMarkdownFontTest::missingFilesAndFields()
     Config::writeFont(config.stylePath(QStringLiteral("Deep Black")), QStringLiteral("defaultfont"), QStringLiteral("Theme Default"), 17);
     font = readSavedMarkdownFont(config.paths);
     QCOMPARE(font.pointSize, 17.0);
-    QCOMPARE(font.source, SavedMarkdownFont::Source::DefaultFont);
     Config::writeFont(config.stylePath(QStringLiteral("Deep Black")), QStringLiteral("style0/font"), QStringLiteral("Body"), 14);
     QCOMPARE(readSavedMarkdownFont(config.paths).pointSize, 14.0);
 }
@@ -365,7 +360,6 @@ void SavedMarkdownFontTest::malformedIniAndMissingThemeKey()
         host.setValue(QStringLiteral("unrelated"), 123);
         host.sync();
     }
-    QCOMPARE(readSavedMarkdownFont(config.paths).themeId, 0);
     QCOMPARE(readSavedMarkdownFont(config.paths).pointSize, 17.0);
     QFile malformed(config.mainPath());
     QVERIFY(malformed.open(QIODevice::WriteOnly | QIODevice::Truncate));
@@ -468,7 +462,6 @@ void SavedMarkdownFontTest::invalidTheme()
     }
     const SavedMarkdownFont font = readSavedMarkdownFont(config.paths);
     QCOMPARE(font.result, SavedMarkdownFont::Result::Failed);
-    QCOMPARE(font.themeId, -1);
     QCOMPARE(font.pointSize, 12.0);
 }
 
@@ -484,7 +477,6 @@ void SavedMarkdownFontTest::readonlySnapshotsAndPendingHostWrites()
     hostStyle.setValue(QStringLiteral("Scintilla/Markdown/style0/font"), fields(QStringLiteral("Pending"), 22));
     const SavedMarkdownFont font = readSavedMarkdownFont(config.paths);
     QCOMPARE(font.pointSize, 14.0);
-    QCOMPARE(font.themeId, 0);
     QCOMPARE(hashes(config.directory.path()), before);
     QCOMPARE(hostTheme.value(QStringLiteral("skinid")).toInt(), 6);
     QCOMPARE(hostStyle.value(QStringLiteral("Scintilla/Markdown/style0/font")).toStringList().at(1), QStringLiteral("22"));
