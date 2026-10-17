@@ -43,12 +43,6 @@ public:
     QWidget *currentEditor() const override { return tabs->currentWidget(); }
     QMetaObject::Connection connectActiveEditorChanged(QObject *context, std::function<void()> fn) override
     { return QObject::connect(tabs, &QTabWidget::currentChanged, context, [fn]() { fn(); }); }
-    ScrollConnections connectEditorScrollChanged(QWidget *editor, QObject *context, std::function<void()> fn) override
-    {
-        auto *bar = qobject_cast<QTextEdit *>(editor)->verticalScrollBar();
-        return {QObject::connect(bar, &QScrollBar::valueChanged, context, [fn]() { fn(); }),
-                QObject::connect(bar, &QScrollBar::rangeChanged, context, [fn]() { fn(); })};
-    }
     QString filePath(QWidget *editor) const override { return editor->property("filePath").toString(); }
     bool isFilePathChangeEvent(QEvent *event) const override { return event->type() == QEvent::DynamicPropertyChange; }
     bool isEditorContextMenu(QMenu *, QWidget *) const override { return false; }

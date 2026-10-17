@@ -361,16 +361,16 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_errorLabel->setWordWrap(true);
     m_errorLabel->setTextFormat(Qt::PlainText);
     errorLayout->addWidget(m_errorLabel, 1);
-    m_retryButton = new QToolButton(m_errorRow);
-    m_retryButton->setObjectName(QStringLiteral("NddMarkdownRetryButton"));
-    m_retryButton->setText(tr("重试"));
-    m_retryButton->setFocusPolicy(Qt::StrongFocus);
-    errorLayout->addWidget(m_retryButton);
-    m_detailsButton = new QToolButton(m_errorRow);
-    m_detailsButton->setText(tr("详情"));
-    m_detailsButton->setFocusPolicy(Qt::StrongFocus);
-    m_detailsButton->setObjectName(QStringLiteral("NddMarkdownStatusDetails"));
-    errorLayout->addWidget(m_detailsButton);
+    auto *retryButton = new QToolButton(m_errorRow);
+    retryButton->setObjectName(QStringLiteral("NddMarkdownRetryButton"));
+    retryButton->setText(tr("重试"));
+    retryButton->setFocusPolicy(Qt::StrongFocus);
+    errorLayout->addWidget(retryButton);
+    auto *detailsButton = new QToolButton(m_errorRow);
+    detailsButton->setText(tr("详情"));
+    detailsButton->setFocusPolicy(Qt::StrongFocus);
+    detailsButton->setObjectName(QStringLiteral("NddMarkdownStatusDetails"));
+    errorLayout->addWidget(detailsButton);
     m_errorRow->hide();
     layout->addWidget(m_errorRow);
     m_feedbackLabel = new QLabel(container);
@@ -466,14 +466,14 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     settings->setMenu(settingsMenu);
     toolbarLayout->addWidget(settings);
     auto *documentDetails = settingsMenu->addAction(tr("文档与状态详情"));
-    connect(documentDetails, &QAction::triggered, m_detailsButton, &QToolButton::click);
+    connect(documentDetails, &QAction::triggered, detailsButton, &QToolButton::click);
     setWidget(container);
     m_chromeWidgets = {title, toolbar, m_search, m_errorRow, statusRow};
     updateChrome();
 
-    connect(m_retryButton, &QToolButton::clicked,
+    connect(retryButton, &QToolButton::clicked,
             this, &MarkdownPreviewDock::refreshRequested);
-    connect(m_detailsButton, &QToolButton::clicked, this, [this]() {
+    connect(detailsButton, &QToolButton::clicked, this, [this]() {
         const QString details = m_documentDetails + QStringLiteral("\n") + m_statusDetails;
         auto *dialog = new QDialog(this);
         dialog->setObjectName(QStringLiteral("NddMarkdownDetailsDialog"));
@@ -741,7 +741,6 @@ void MarkdownPreviewDock::setRefreshStatus(const QString &status,
     m_statusDetails = details;
     m_errorLabel->setText(status.section(QChar(0xff1a), 0, 0));
     m_errorRow->setVisible(failed);
-    m_retryButton->setVisible(failed);
 }
 
 void MarkdownPreviewDock::setRefreshMode(RefreshMode mode)
@@ -1253,12 +1252,7 @@ void MarkdownPreviewDock::restorePreservedScrollRatio()
         return;
     }
 
-    QScrollBar *bar = m_nativeTextEdit->verticalScrollBar();
-    if (!bar || bar->maximum() <= bar->minimum()) {
-        return;
-    }
-
-    setBarRatio(bar, m_preservedScrollRatio);
+    setBarRatio(m_nativeTextEdit->verticalScrollBar(), m_preservedScrollRatio);
 }
 
 void MarkdownPreviewDock::cancelPreservedScroll()

@@ -14,14 +14,10 @@ struct SavedFontPaths
 struct SavedMarkdownFont
 {
     enum class Result { Builtin, Configured, Failed };
-    enum class Source { Builtin, Style0, DefaultFont };
 
     QString family;
     qreal pointSize = 12.0;
-    int themeId = 0;
-    Source source = Source::Builtin;
     Result result = Result::Builtin;
-    QString sourcePath;
     QString configuredFamily;
     QString reason;
     bool familyFallback = false;

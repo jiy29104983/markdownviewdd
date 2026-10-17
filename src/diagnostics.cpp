@@ -16,14 +16,13 @@
 
 namespace {
 constexpr qint64 kDefaultMaximumBytes = 1024 * 1024;
-constexpr int kDefaultRetainedFiles = 3;
+constexpr int kRetainedFiles = 3;
 const char kWindowIdProperty[] = "markdownviewDiagnosticWindowId";
 
 struct State {
     QMutex mutex;
     QString directory;
     qint64 maximumBytes = kDefaultMaximumBytes;
-    int retainedFiles = kDefaultRetainedFiles;
     bool initialized = false;
     quint64 nextWindowId = 1;
 };
@@ -47,13 +46,8 @@ QString filePath(const State &value, int generation = 0)
 
 void rotate(State &value)
 {
-    if (value.retainedFiles <= 0) {
-        QFile::remove(filePath(value));
-        return;
-    }
-
-    QFile::remove(filePath(value, value.retainedFiles));
-    for (int generation = value.retainedFiles - 1; generation >= 1;
+    QFile::remove(filePath(value, kRetainedFiles));
+    for (int generation = kRetainedFiles - 1; generation >= 1;
          --generation) {
         QFile::rename(filePath(value, generation),
                       filePath(value, generation + 1));
@@ -192,14 +186,12 @@ void write(const QObject *context, const QString &message, Level level)
     file.flush();
 }
 
-void configureForTesting(const QString &directory, qint64 maximumBytes,
-                         int retainedFiles)
+void configureForTesting(const QString &directory, qint64 maximumBytes)
 {
     State &value = state();
     const QMutexLocker locker(&value.mutex);
     value.directory = directory;
     value.maximumBytes = maximumBytes;
-    value.retainedFiles = retainedFiles;
     value.initialized = false;
     value.nextWindowId = 1;
 }

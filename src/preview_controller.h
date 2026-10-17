@@ -136,7 +136,6 @@ private:
     int m_lastEditorScrollMinimum = 0;
     int m_lastEditorScrollMaximum = 0;
     int m_lastEditorScrollValue = 0;
-    bool m_hasLastEditorScrollState = false;
     bool m_syncingEditorScroll = false;
     quint64 m_navigationGeneration = 0;
     QMetaObject::Connection m_activeEditorConnection;

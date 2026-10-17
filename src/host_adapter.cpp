@@ -9,8 +9,6 @@
 #include <QMetaObject>
 #include <QPointer>
 #include <QStatusBar>
-#include <QAbstractScrollArea>
-#include <QScrollBar>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QToolBar>
@@ -78,25 +76,6 @@ public:
         return QObject::connect(
             tabs, &QTabWidget::currentChanged, context,
             [callback](int) { callback(); });
-    }
-
-    ScrollConnections connectEditorScrollChanged(
-        QWidget *editor, QObject *context,
-        std::function<void()> callback) override
-    {
-        ScrollConnections connections;
-        QAbstractScrollArea *area = qobject_cast<QAbstractScrollArea *>(editor);
-        QScrollBar *bar = area ? area->verticalScrollBar() : nullptr;
-        if (!bar || !context || !callback) {
-            return connections;
-        }
-        connections.valueChanged = QObject::connect(
-            bar, &QAbstractSlider::valueChanged, context,
-            [callback](int) { callback(); });
-        connections.rangeChanged = QObject::connect(
-            bar, &QAbstractSlider::rangeChanged, context,
-            [callback](int, int) { callback(); });
-        return connections;
     }
 
     QString filePath(QWidget *editor) const override

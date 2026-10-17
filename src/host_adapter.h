@@ -18,12 +18,6 @@ class QWidget;
 class HostAdapter
 {
 public:
-    struct ScrollConnections
-    {
-        QMetaObject::Connection valueChanged;
-        QMetaObject::Connection rangeChanged;
-    };
-
     struct PreviewResult
     {
         QWidget *window = nullptr;
@@ -53,9 +47,6 @@ public:
     virtual QWidget *currentEditor() const = 0;
     virtual QMetaObject::Connection connectActiveEditorChanged(
         QObject *context, std::function<void()> callback) = 0;
-    virtual ScrollConnections connectEditorScrollChanged(
-        QWidget *editor, QObject *context,
-        std::function<void()> callback) = 0;
     virtual QString filePath(QWidget *editor) const = 0;
     virtual bool isFilePathChangeEvent(QEvent *event) const = 0;
     virtual bool isEditorContextMenu(QMenu *menu, QWidget *editor) const = 0;

@@ -22,7 +22,7 @@ void DiagnosticsTest::initializationIsIdempotentAndWindowsAreDistinct()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    Diagnostics::configureForTesting(directory.path(), 1024 * 1024, 3);
+    Diagnostics::configureForTesting(directory.path(), 1024 * 1024);
     Diagnostics::initialize();
 
     QWidget firstWindow;
@@ -47,7 +47,7 @@ void DiagnosticsTest::rotatesAtConfiguredCapacity()
 {
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
-    Diagnostics::configureForTesting(directory.path(), 512, 2);
+    Diagnostics::configureForTesting(directory.path(), 512);
     Diagnostics::initialize();
     for (int index = 0; index < 40; ++index) {
         Diagnostics::write(nullptr, QStringLiteral("rotation-marker-%1-%2")
@@ -57,9 +57,11 @@ void DiagnosticsTest::rotatesAtConfiguredCapacity()
 
     const QString path = Diagnostics::logFilePath();
     QVERIFY(QFileInfo::exists(path));
-    QVERIFY(QFileInfo::exists(path + QStringLiteral(".1")));
+    for (int generation = 1; generation <= 3; ++generation) {
+        QVERIFY(QFileInfo::exists(path + QStringLiteral(".%1").arg(generation)));
+    }
     QVERIFY(QFileInfo(path).size() <= 512);
-    QVERIFY(!QFileInfo::exists(path + QStringLiteral(".3")));
+    QVERIFY(!QFileInfo::exists(path + QStringLiteral(".4")));
 }
 
 void DiagnosticsTest::unwritableLocationDoesNotCrash()
@@ -71,7 +73,7 @@ void DiagnosticsTest::unwritableLocationDoesNotCrash()
     QVERIFY(regularFile.open(QIODevice::WriteOnly));
     regularFile.close();
 
-    Diagnostics::configureForTesting(regularFilePath, 512, 1);
+    Diagnostics::configureForTesting(regularFilePath, 512);
     Diagnostics::initialize();
     Diagnostics::write(nullptr, QStringLiteral("silently ignored"), Diagnostics::Level::Error);
     QVERIFY(QFileInfo(regularFilePath).isFile());

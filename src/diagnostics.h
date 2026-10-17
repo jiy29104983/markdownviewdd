@@ -19,7 +19,6 @@ void write(const QObject *context, const QString &message,
            Level level = Level::Info);
 
 // Intended for the isolated diagnostics test executable only.
-void configureForTesting(const QString &directory, qint64 maximumBytes,
-                         int retainedFiles);
+void configureForTesting(const QString &directory, qint64 maximumBytes);
 
 } // namespace Diagnostics

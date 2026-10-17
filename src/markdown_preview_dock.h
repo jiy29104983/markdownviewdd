@@ -160,8 +160,6 @@ private:
     QLabel *m_errorLabel = nullptr;
     void updateChrome();
     void updateResponsiveLayout();
-    QToolButton *m_retryButton = nullptr;
-    QToolButton *m_detailsButton = nullptr;
     QString m_statusDetails;
     bool m_previewIsCurrent = false;
     QToolButton *m_syncButton = nullptr;

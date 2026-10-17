@@ -138,54 +138,52 @@ SavedMarkdownFont readSavedMarkdownFont(const SavedFontPaths &paths)
     SavedMarkdownFont font = defaultMarkdownFont();
     const auto fail = [&font](const QString &reason) {
         font.result = SavedMarkdownFont::Result::Failed;
-        font.source = SavedMarkdownFont::Source::Builtin;
         font.reason = reason;
         return font;
     };
     const QDir root(paths.userConfigRoot.isEmpty() ? userConfigRoot() : paths.userConfigRoot);
     const QString generalPath = root.filePath(QStringLiteral("notepad/nddsets.ini"));
     Snapshot general(paths.snapshotDirectory);
+    int themeId = 0;
     if (QFileInfo::exists(generalPath)) {
         if (!general.load(generalPath, true)) {
             return fail(QStringLiteral("main-config-read-failed"));
         }
         bool valid = false;
-        font.themeId = general.settings->value(QStringLiteral("skinid"), 0).toString().toInt(&valid);
-        if (!valid || font.themeId < 0 || font.themeId >= kThemes.size() ||
+        themeId = general.settings->value(QStringLiteral("skinid"), 0).toString().toInt(&valid);
+        if (!valid || themeId < 0 || themeId >= kThemes.size() ||
             general.settings->status() != QSettings::NoError) {
-            font.themeId = -1;
             return fail(QStringLiteral("invalid-saved-theme"));
         }
     }
 
-    const QString theme = kThemes.at(font.themeId);
+    const QString theme = kThemes.at(themeId);
     const QString userPath = root.filePath(
         QStringLiteral("notepad/userstyle/%1/markdown.ini").arg(theme));
     const QDir application(paths.applicationDirectory.isEmpty()
         ? QCoreApplication::applicationDirPath() : paths.applicationDirectory);
     const QString templatePath = application.filePath(
         QStringLiteral("themes/%1/markdown.ini").arg(theme));
+    QString sourcePath;
     if (QFileInfo::exists(userPath)) {
-        font.sourcePath = userPath;
+        sourcePath = userPath;
     } else if (QFileInfo::exists(templatePath)) {
-        font.sourcePath = templatePath;
+        sourcePath = templatePath;
     } else {
         return font;
     }
 
     Snapshot selected(paths.snapshotDirectory);
-    if (!selected.load(font.sourcePath)) {
+    if (!selected.load(sourcePath)) {
         return fail(QStringLiteral("markdown-config-read-failed"));
     }
     QSettings &settings = *selected.settings;
     QString key = QStringLiteral("Scintilla/Markdown/style0/font");
-    SavedMarkdownFont::Source source = SavedMarkdownFont::Source::Style0;
     if (!settings.contains(key)) {
         // Default initializes style0 before loading defaultfont. Other themes
         // load defaultfont first. Do not merge missing fields from a template.
-        key = font.themeId == 0 ? QString()
+        key = themeId == 0 ? QString()
             : QStringLiteral("Scintilla/Markdown/defaultfont");
-        source = SavedMarkdownFont::Source::DefaultFont;
     }
     if (key.isEmpty() || !settings.contains(key)) {
         return settings.status() == QSettings::NoError ? font
@@ -199,7 +197,6 @@ SavedMarkdownFont readSavedMarkdownFont(const SavedFontPaths &paths)
     }
     font.configuredFamily = family;
     font.pointSize = points;
-    font.source = source;
     font.result = SavedMarkdownFont::Result::Configured;
     font.familyFallback = !familyAvailable(family);
     if (!font.familyFallback) {
