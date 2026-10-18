@@ -13,7 +13,7 @@ class DiagnosticsTest final : public QObject
 
 private slots:
     void initializationIsIdempotentAndWindowsAreDistinct();
-    void rotatesAtConfiguredCapacity();
+    void rotatesAtConfiguredCapacityAndRetainsThreeGenerations();
     void unwritableLocationDoesNotCrash();
     void pathIdentityDoesNotExposeParentDirectory();
 };
@@ -43,8 +43,10 @@ void DiagnosticsTest::initializationIsIdempotentAndWindowsAreDistinct()
     QVERIFY(content.contains("window-2"));
 }
 
-void DiagnosticsTest::rotatesAtConfiguredCapacity()
+void DiagnosticsTest::rotatesAtConfiguredCapacityAndRetainsThreeGenerations()
 {
+    // Only the byte capacity is configurable; the log retains three generations.
+    constexpr int kRetainedGenerations = 3;
     QTemporaryDir directory;
     QVERIFY(directory.isValid());
     Diagnostics::configureForTesting(directory.path(), 512);
@@ -57,11 +59,12 @@ void DiagnosticsTest::rotatesAtConfiguredCapacity()
 
     const QString path = Diagnostics::logFilePath();
     QVERIFY(QFileInfo::exists(path));
-    for (int generation = 1; generation <= 3; ++generation) {
+    for (int generation = 1; generation <= kRetainedGenerations; ++generation) {
         QVERIFY(QFileInfo::exists(path + QStringLiteral(".%1").arg(generation)));
     }
     QVERIFY(QFileInfo(path).size() <= 512);
-    QVERIFY(!QFileInfo::exists(path + QStringLiteral(".4")));
+    QVERIFY(!QFileInfo::exists(
+        path + QStringLiteral(".%1").arg(kRetainedGenerations + 1)));
 }
 
 void DiagnosticsTest::unwritableLocationDoesNotCrash()
