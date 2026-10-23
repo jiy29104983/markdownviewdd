@@ -22,6 +22,44 @@
 #include <memory>
 
 namespace {
+class CodeHeaderWidget final : public QWidget
+{
+public:
+    explicit CodeHeaderWidget(QWidget *parent) : QWidget(parent)
+    {
+        setObjectName(QStringLiteral("NddMarkdownCodeHeader"));
+        setAttribute(Qt::WA_StyledBackground, false);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QPalette pal = palette();
+        const bool dark = PreviewUi::isDark(pal);
+        const QColor bg = PreviewUi::mix(pal.color(QPalette::AlternateBase),
+                                         pal.color(QPalette::Text),
+                                         dark ? 0.06 : 0.04);
+        const QColor border = PreviewUi::subtleBorder(pal);
+
+        const QRectF bounds(0.5, 0.5, width() - 1.0, height() - 1.0);
+        QPainterPath path;
+        const qreal r = 5.0;
+        path.moveTo(bounds.left(), bounds.bottom());
+        path.lineTo(bounds.left(), bounds.top() + r);
+        path.quadTo(bounds.left(), bounds.top(), bounds.left() + r, bounds.top());
+        path.lineTo(bounds.right() - r, bounds.top());
+        path.quadTo(bounds.right(), bounds.top(), bounds.right(), bounds.top() + r);
+        path.lineTo(bounds.right(), bounds.bottom());
+        path.closeSubpath();
+
+        painter.setPen(QPen(border, 1.0));
+        painter.setBrush(bg);
+        painter.drawPath(path);
+    }
+};
+
 class CopyButton final : public QToolButton
 {
 public:
@@ -38,12 +76,16 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing);
-        if (underMouse() || hasFocus()) {
-            QColor hover = palette().color(QPalette::Highlight);
-            hover.setAlpha(28);
+        if (underMouse() || hasFocus() || feedback != 0) {
+            QColor hover = feedback == 1
+                ? QColor(46, 160, 67)
+                : feedback == -1
+                    ? QColor(218, 54, 51)
+                    : palette().color(QPalette::Highlight);
+            hover.setAlpha(underMouse() || hasFocus() ? 36 : 22);
             painter.setPen(Qt::NoPen);
             painter.setBrush(hover);
-            painter.drawRoundedRect(QRectF(0.5, 0.5, 23, 23), 4, 4);
+            painter.drawRoundedRect(QRectF(1.0, 1.0, 22.0, 22.0), 4.0, 4.0);
         }
         PreviewUi::icon(feedback == 1 ? PreviewUi::Symbol::Success : feedback == -1
             ? PreviewUi::Symbol::Error : PreviewUi::Symbol::Copy, this).paint(
@@ -51,7 +93,8 @@ protected:
                 isEnabled() ? QIcon::Normal : QIcon::Disabled);
         if (hasFocus()) {
             painter.setPen(QPen(palette().color(QPalette::Highlight), 1, Qt::DotLine));
-            painter.drawRoundedRect(QRectF(1, 1, 22, 22), 3, 3);
+            painter.setBrush(Qt::NoBrush);
+            painter.drawRoundedRect(QRectF(1.0, 1.0, 22.0, 22.0), 3.5, 3.5);
         }
     }
 };
@@ -218,12 +261,10 @@ void CodeBlockTools::createHeader(int i)
 {
     const auto &record = m_records.at(i);
     const quint64 generation = m_generation;
-    auto *header = new QWidget(m_edit->viewport());
-    header->setObjectName(QStringLiteral("NddMarkdownCodeHeader"));
-    header->setAutoFillBackground(true);
-    header->setBackgroundRole(QPalette::AlternateBase);
+    auto *header = new CodeHeaderWidget(m_edit->viewport());
     auto *row = new QHBoxLayout(header);
-    row->setContentsMargins(4, 0, 2, 0);
+    row->setContentsMargins(8, 0, 3, 0);
+    row->setSpacing(4);
     const QString language = record.language.isEmpty() ? tr("文本") : record.language;
     auto *label = new QLabel(language, header);
     label->setObjectName(QStringLiteral("NddMarkdownCodeLanguage"));
@@ -322,12 +363,14 @@ void CodeBlockTools::updatePositions()
             QFont font = this->font();
             if (font.pointSizeF() > 0)
                 font.setPointSizeF(qMax(8.0, font.pointSizeF() - 1.0));
+            font.setWeight(QFont::Medium);
             label->setFont(font);
             QColor muted = colors.color(QPalette::Text);
-            muted.setAlpha(155);
+            muted.setAlpha(165);
             colors.setColor(QPalette::WindowText, muted);
             label->setPalette(colors);
         }
+        header->update();
         header->show();
         header->raise();
     }

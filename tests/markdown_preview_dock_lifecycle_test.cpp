@@ -14,6 +14,7 @@
 #include <QFile>
 #include <QImage>
 #include <QLabel>
+#include <QMenu>
 #include <QMouseEvent>
 #include <QPointer>
 #include <QPalette>
@@ -23,6 +24,7 @@
 #include <QTextCursor>
 #include <QTextEdit>
 #include <QTemporaryDir>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
 #include <QtTest>
@@ -46,6 +48,9 @@ class MarkdownPreviewDockLifecycleTest final : public QObject
 
 private slots:
     void redesignedChromeRetainsState();
+    void viewportDecorationsStayAlignedWhileScrolling();
+    void largePreviewPaintsVisibleDecorationsImmediately();
+    void compactOutlinePopupSurvivesOwnerDestruction();
     void currentPreviewDestructionRestoresFallback();
     void hiddenPreviewDestructionKeepsCurrentPreview();
     void dockDestructionDisconnectsAllPreviewCallbacks();
@@ -168,6 +173,102 @@ void MarkdownPreviewDockLifecycleTest::redesignedChromeRetainsState()
         guarded->setFloating(true);
     }
     QVERIFY(guarded.isNull());
+}
+
+void MarkdownPreviewDockLifecycleTest::viewportDecorationsStayAlignedWhileScrolling()
+{
+    MarkdownPreviewDock dock;
+    QWidget editor;
+    auto *preview = createNativePreview();
+    auto *text = preview->findChild<QTextEdit *>();
+    text->setLineWrapMode(QTextEdit::NoWrap);
+    text->setMarkdown((QStringLiteral("# Heading\n\n> Quote\n\n") +
+                       QStringLiteral("Wide paragraph ").repeated(60) +
+                       QStringLiteral("\n\n")).repeated(60));
+    dock.resize(680, 430);
+    dock.show();
+    dock.setSyncScrolling(false);
+    QVERIFY(dock.adoptNativePreview(preview, text, QStringLiteral("decorations.md"), &editor, 1));
+    auto *decorator = text->viewport()->findChild<QWidget *>(
+        QStringLiteral("NddMarkdownViewportDecorator"));
+    QVERIFY(decorator);
+    QVERIFY(decorator->testAttribute(Qt::WA_TransparentForMouseEvents));
+    auto *vertical = text->verticalScrollBar();
+    auto *horizontal = text->horizontalScrollBar();
+    QTRY_VERIFY(vertical->maximum() > text->viewport()->height());
+    QTRY_VERIFY(horizontal->maximum() > 100);
+    QCOMPARE(decorator->geometry(), text->viewport()->rect());
+
+    // QTextEdit scrolls viewport children too. The decoration must keep its
+    // viewport origin even when scrolling further than a complete screen.
+    vertical->setValue(text->viewport()->height() + 50);
+    QCOMPARE(decorator->geometry(), text->viewport()->rect());
+    horizontal->setValue(100);
+    QCOMPARE(decorator->geometry(), text->viewport()->rect());
+    QCoreApplication::processEvents();
+    QCOMPARE(decorator->geometry(), text->viewport()->rect());
+    vertical->setValue(0);
+    horizontal->setValue(0);
+    QCOMPARE(decorator->geometry(), text->viewport()->rect());
+    dock.resize(780, 530);
+    QTRY_COMPARE(decorator->geometry(), text->viewport()->rect());
+}
+
+void MarkdownPreviewDockLifecycleTest::largePreviewPaintsVisibleDecorationsImmediately()
+{
+    MarkdownPreviewDock dock;
+    QWidget editor;
+    auto *preview = createNativePreview();
+    auto *text = preview->findChild<QTextEdit *>();
+    text->setMarkdown(QStringLiteral("# Visible heading\n\n> Visible quote\n\n") +
+        QStringLiteral("A paragraph in a large document.\n\n").repeated(10000));
+    dock.resize(680, 430);
+    dock.show();
+    dock.setSyncScrolling(false);
+    QVERIFY(dock.adoptNativePreview(preview, text, QStringLiteral("large.md"), &editor, 1));
+    auto *decorator = text->viewport()->findChild<QWidget *>(
+        QStringLiteral("NddMarkdownViewportDecorator"));
+    QVERIFY(decorator);
+
+    // Paint the visible page before processing the timers that finish laying
+    // out the document. Decorations must not depend on the last block's layout.
+    text->cursorRect(QTextCursor(text->document()->begin()));
+    QImage image(decorator->size(), QImage::Format_ARGB32_Premultiplied);
+    QVERIFY(!image.isNull());
+    image.fill(Qt::transparent);
+    decorator->render(&image, QPoint(), QRegion(), QWidget::RenderFlags());
+    bool painted = false;
+    for (int y = 0; y < image.height() && !painted; ++y) {
+        const auto *pixels = reinterpret_cast<const QRgb *>(image.constScanLine(y));
+        for (int x = 0; x < image.width(); ++x) {
+            if (qAlpha(pixels[x]) > 0) {
+                painted = true;
+                break;
+            }
+        }
+    }
+    QVERIFY2(painted, "Visible heading and quote decorations must paint before the document tail is ready");
+}
+
+void MarkdownPreviewDockLifecycleTest::compactOutlinePopupSurvivesOwnerDestruction()
+{
+    QPointer<QMainWindow> owner = new QMainWindow;
+    auto *dock = new MarkdownPreviewDock(owner);
+    owner->addDockWidget(Qt::RightDockWidgetArea, dock);
+    owner->show();
+    dock->setFloating(true);
+    dock->resize(360, 450);
+    QTRY_VERIFY(dock->findChild<HeadingOutline *>()->isHidden());
+    auto *button = dock->findChild<QToolButton *>(QStringLiteral("NddMarkdownOutlineToggle"));
+    QVERIFY(button);
+    QTimer::singleShot(50, [owner]() { delete owner.data(); });
+    button->click();
+    QPointer<QMenu> popup = qobject_cast<QMenu *>(QApplication::activePopupWidget());
+    QVERIFY(popup);
+    QVERIFY(popup->isVisible());
+    QTRY_VERIFY(owner.isNull());
+    QVERIFY(popup.isNull());
+    QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
 }
 
 void MarkdownPreviewDockLifecycleTest::currentPreviewDestructionRestoresFallback()

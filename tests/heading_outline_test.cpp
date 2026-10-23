@@ -15,6 +15,7 @@
 #include <QTabWidget>
 #include <QTextBlock>
 #include <QTextEdit>
+#include <QToolButton>
 #include <QTreeWidget>
 #include <QVBoxLayout>
 #include <QtTest>
@@ -170,6 +171,9 @@ private slots:
     void imageTableLayoutAndAllLevels();
     void renderReadModificationInvalidatesSnapshot();
     void hierarchyAndIndependentSelection();
+    void popupPreservesLiteralTitlesAndSnapshot();
+    void popupRejectsReplacedSnapshots();
+    void expandCollapsePreservesReadingState();
     void twoSidedNavigationSurvivesLayoutAndPolling();
     void staleSnapshotOnlyNavigatesPreview();
     void layoutAndWindowIsolation();
@@ -256,6 +260,121 @@ void HeadingOutlineTest::hierarchyAndIndependentSelection()
     QCOMPARE(outline.currentHeading(), 3);
     parent->setExpanded(true);
     QCOMPARE(child->text(1), QStringLiteral("●"));
+}
+
+void HeadingOutlineTest::popupPreservesLiteralTitlesAndSnapshot()
+{
+    HeadingOutline outline;
+    QMenu menu;
+    outline.populatePopupMenu(&menu);
+    QCOMPARE(menu.actions().size(), 1);
+    QVERIFY(!menu.actions().first()->isEnabled());
+
+    QWidget editor;
+    QTextDocument document;
+    document.setMarkdown(QStringLiteral("# AT&T\n\n## A && B\n"));
+    const auto records = renderedHeadings(&document, &editor, 7);
+    QCOMPARE(records.size(), 2);
+    outline.setSnapshot(records, &editor, 7);
+    outline.setCurrentBlock(records.at(1).blockPosition);
+    outline.populatePopupMenu(&menu);
+    QCOMPARE(menu.actions().size(), 2);
+    QCOMPARE(menu.actions().at(0)->text(), QStringLiteral("AT&&T"));
+    QCOMPARE(menu.actions().at(1)->text(), QStringLiteral("  A &&&& B"));
+    QVERIFY(!menu.actions().at(0)->isChecked());
+    QVERIFY(menu.actions().at(1)->isChecked());
+    int activations = 0;
+    HeadingRecord activated;
+    connect(&outline, &HeadingOutline::headingActivated, &outline,
+            [&activations, &activated](const HeadingRecord &heading) {
+        ++activations;
+        activated = heading;
+    });
+    menu.actions().at(1)->trigger();
+    QCOMPARE(activations, 1);
+    QCOMPARE(activated.text, QStringLiteral("A && B"));
+    QCOMPARE(activated.editor.data(), &editor);
+    QCOMPARE(activated.version, quint64(7));
+    QCOMPARE(activated.blockPosition, records.at(1).blockPosition);
+
+    outline.clearSnapshot();
+    outline.populatePopupMenu(&menu);
+    QCOMPARE(menu.actions().size(), 1);
+    QVERIFY(!menu.actions().first()->isEnabled());
+    outline.setSnapshot({}, &editor, 8);
+    outline.populatePopupMenu(&menu);
+    QCOMPARE(menu.actions().first()->text(), QStringLiteral("当前文档没有标题"));
+}
+
+void HeadingOutlineTest::popupRejectsReplacedSnapshots()
+{
+    Fixture f;
+    QMenu menu;
+    f.outline->populatePopupMenu(&menu);
+    QAction *oldAction = menu.actions().last();
+    f.editor->setPlainText(longSample().replace(QStringLiteral("章节"), QStringLiteral("更新")));
+    f.refresh();
+    QCoreApplication::processEvents();
+    const int refreshedPosition = f.preview()->verticalScrollBar()->value();
+    oldAction->trigger();
+    QCOMPARE(f.adapter.navigations, 0);
+    QCOMPARE(f.preview()->verticalScrollBar()->value(), refreshedPosition);
+
+    f.outline->populatePopupMenu(&menu);
+    oldAction = menu.actions().last();
+    QTextEdit *other = f.add(longSample().replace(QStringLiteral("章节"), QStringLiteral("另一个文档")));
+    f.tabs->setCurrentWidget(other);
+    f.refresh();
+    QCoreApplication::processEvents();
+    const int switchedPosition = f.preview()->verticalScrollBar()->value();
+    oldAction->trigger();
+    QCOMPARE(f.adapter.navigations, 0);
+    QCOMPARE(f.preview()->verticalScrollBar()->value(), switchedPosition);
+}
+
+void HeadingOutlineTest::expandCollapsePreservesReadingState()
+{
+    HeadingOutline outline;
+    QWidget editor;
+    QTextDocument document;
+    document.setMarkdown(QStringLiteral("# Parent\n\n## Child\n\n### Current\n\n# Selected\n"));
+    const auto records = renderedHeadings(&document, &editor, 1);
+    outline.setSnapshot(records, &editor, 1);
+    auto *tree = outline.findChild<QTreeWidget *>();
+    auto *button = outline.findChild<QToolButton *>(QStringLiteral("NddMarkdownOutlineExpandToggle"));
+    QVERIFY(button);
+    QVERIFY(!button->isHidden());
+    auto *parent = tree->topLevelItem(0);
+    auto *child = parent->child(0);
+    auto *selected = tree->topLevelItem(1);
+    tree->setCurrentItem(selected);
+    outline.setCurrentBlock(records.at(2).blockPosition);
+
+    button->click();
+    QVERIFY(!parent->isExpanded());
+    QVERIFY(!child->isExpanded());
+    QCOMPARE(tree->currentItem(), selected);
+    QCOMPARE(outline.currentHeading(), 2);
+    QCOMPARE(parent->text(1), QStringLiteral("◌"));
+    QCOMPARE(button->accessibleName(), QStringLiteral("展开全部章节"));
+    outline.setSnapshot(records, &editor, 1);
+    parent = tree->topLevelItem(0);
+    child = parent->child(0);
+    QVERIFY(!parent->isExpanded());
+    QVERIFY(!child->isExpanded());
+    outline.setCurrentBlock(records.at(2).blockPosition);
+    selected = tree->topLevelItem(1);
+    tree->setCurrentItem(selected);
+
+    button->click();
+    QVERIFY(parent->isExpanded());
+    QVERIFY(child->isExpanded());
+    QCOMPARE(tree->currentItem(), selected);
+    QCOMPARE(outline.currentHeading(), 2);
+    QCOMPARE(child->child(0)->text(1), QStringLiteral("●"));
+    QCOMPARE(button->accessibleName(), QStringLiteral("折叠全部章节"));
+    outline.clearSnapshot();
+    QVERIFY(button->isHidden());
 }
 
 void HeadingOutlineTest::twoSidedNavigationSurvivesLayoutAndPolling()

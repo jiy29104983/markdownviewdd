@@ -6,7 +6,7 @@
 #include <QClipboard>
 #include <QContextMenuEvent>
 #include <QDropEvent>
-#include <QHBoxLayout>
+#include <QGridLayout>
 #include <QInputMethodEvent>
 #include <QKeyEvent>
 #include <QLabel>
@@ -120,43 +120,58 @@ PreviewSearch::PreviewSearch(QWidget *parent) : QWidget(parent)
 {
     setObjectName(QStringLiteral("NddMarkdownSearch"));
     auto *layout = new QVBoxLayout(this);
-    layout->setContentsMargins(8, 4, 8, 4);
-    auto *row = new QHBoxLayout;
+    layout->setContentsMargins(8, 5, 8, 5);
+    layout->setSpacing(3);
+
+    auto *row = new QGridLayout;
+    m_controlsLayout = row;
+    row->setContentsMargins(0, 0, 0, 0);
+    row->setSpacing(4);
+    row->setColumnStretch(0, 1);
+
     auto *query = new SearchQueryEdit(this);
     m_query = query;
     query->setObjectName(QStringLiteral("NddMarkdownSearchQuery"));
-    query->setPlaceholderText(tr("在预览中查找"));
+    query->setPlaceholderText(tr("在预览中查找…"));
     query->setAccessibleName(tr("预览搜索词"));
-    query->setMinimumWidth(40);
+    query->setMinimumWidth(36);
+    query->setMinimumHeight(26);
     query->multiline = [this]() { m_notice = tr("多行查询仅使用第一行"); updateUi(); };
-    row->addWidget(query, 1);
-    m_case = new QCheckBox(tr("区分大小写"), this);
-    m_case->setObjectName(QStringLiteral("NddMarkdownSearchCase"));
-    row->addWidget(m_case);
-    layout->addLayout(row);
-    auto *actions = new QHBoxLayout;
+    row->addWidget(query, 0, 0);
+
     m_count = new QLabel(QStringLiteral("0/0"), this);
     m_count->setObjectName(QStringLiteral("NddMarkdownSearchCount"));
-    actions->addWidget(m_count);
-    actions->addStretch();
-    auto button = [this, actions](const QString &text, const QString &name) {
+    m_count->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_count->setContentsMargins(4, 0, 4, 0);
+    row->addWidget(m_count, 0, 1);
+
+    m_case = new QCheckBox(tr("Aa"), this);
+    m_case->setObjectName(QStringLiteral("NddMarkdownSearchCase"));
+    m_case->setToolTip(tr("区分大小写"));
+    m_case->setAccessibleName(tr("区分大小写"));
+    m_case->setFocusPolicy(Qt::StrongFocus);
+    row->addWidget(m_case, 0, 2);
+
+    auto button = [this, row](const QString &text, const QString &name, int column) {
         auto *item = new QToolButton(this);
         item->setText(text);
         item->setObjectName(name);
-        actions->addWidget(item);
+        row->addWidget(item, 0, column);
         return item;
     };
-    m_previous = button(tr("上一处"), QStringLiteral("NddMarkdownSearchPrevious"));
-    m_next = button(tr("下一处"), QStringLiteral("NddMarkdownSearchNext"));
-    auto *close = button(tr("关闭"), QStringLiteral("NddMarkdownSearchClose"));
+    m_previous = button(tr("上一处"), QStringLiteral("NddMarkdownSearchPrevious"), 3);
+    m_next = button(tr("下一处"), QStringLiteral("NddMarkdownSearchNext"), 4);
+    m_close = button(tr("关闭"), QStringLiteral("NddMarkdownSearchClose"), 5);
     PreviewUi::setup(m_previous, PreviewUi::Symbol::Previous, tr("上一处（Shift+Enter）"));
     PreviewUi::setup(m_next, PreviewUi::Symbol::Next, tr("下一处（Enter）"));
-    PreviewUi::setup(close, PreviewUi::Symbol::Close, tr("关闭搜索（Esc）"));
-    layout->addLayout(actions);
+    PreviewUi::setup(m_close, PreviewUi::Symbol::Close, tr("关闭搜索（Esc）"));
+    layout->addLayout(row);
+
     m_message = new QLabel(this);
     m_message->setObjectName(QStringLiteral("NddMarkdownSearchMessage"));
     m_message->setTextFormat(Qt::PlainText);
     m_message->setWordWrap(true);
+    m_message->setContentsMargins(2, 0, 2, 0);
     layout->addWidget(m_message);
     connect(query, &QLineEdit::textChanged, this, [this](const QString &text) {
         m_notice.clear();
@@ -171,7 +186,7 @@ PreviewSearch::PreviewSearch(QWidget *parent) : QWidget(parent)
     connect(m_case, &QCheckBox::toggled, this, [this]() { m_notice.clear(); restart(false); });
     connect(m_previous, &QToolButton::clicked, this, [this]() { navigate(-1); });
     connect(m_next, &QToolButton::clicked, this, [this]() { navigate(1); });
-    connect(close, &QToolButton::clicked, this, &PreviewSearch::closeSearch);
+    connect(m_close, &QToolButton::clicked, this, &PreviewSearch::closeSearch);
     for (auto *child : findChildren<QWidget *>()) child->installEventFilter(this);
     hide();
     updateUi();
@@ -183,6 +198,43 @@ PreviewSearch::~PreviewSearch()
     disconnect(m_destroyConnection);
     disconnect(m_scrollConnection);
     stop();
+}
+
+void PreviewSearch::resizeEvent(QResizeEvent *event)
+{
+    QWidget::resizeEvent(event);
+    updateControlLayout();
+}
+
+void PreviewSearch::updateControlLayout()
+{
+    // Keep enough room to type even when the complete match count grows. The
+    // two-row fallback also keeps a narrow Dock from expanding during a search.
+    const auto margins = layout()->contentsMargins();
+    int singleRowWidth = margins.left() + margins.right() + 5 * m_controlsLayout->spacing()
+        + qMax(100, m_query->minimumSizeHint().width());
+    for (QWidget *control : {static_cast<QWidget *>(m_count), static_cast<QWidget *>(m_case),
+                            static_cast<QWidget *>(m_previous), static_cast<QWidget *>(m_next),
+                            static_cast<QWidget *>(m_close)}) {
+        singleRowWidth += qMax(control->minimumWidth(), control->sizeHint().width());
+    }
+    const bool compact = width() < singleRowWidth;
+    if (compact == m_compactControls)
+        return;
+    m_compactControls = compact;
+    for (QWidget *control : {static_cast<QWidget *>(m_query), static_cast<QWidget *>(m_count),
+                            static_cast<QWidget *>(m_case), static_cast<QWidget *>(m_previous),
+                            static_cast<QWidget *>(m_next), static_cast<QWidget *>(m_close)}) {
+        m_controlsLayout->removeWidget(control);
+    }
+    m_controlsLayout->addWidget(m_query, 0, 0, 1, compact ? 5 : 1);
+    m_controlsLayout->addWidget(m_case, 0, compact ? 5 : 2, Qt::AlignRight);
+    m_controlsLayout->addWidget(m_count, compact ? 1 : 0, compact ? 0 : 1,
+                               1, compact ? 3 : 1);
+    m_controlsLayout->addWidget(m_previous, compact ? 1 : 0, 3);
+    m_controlsLayout->addWidget(m_next, compact ? 1 : 0, 4);
+    m_controlsLayout->addWidget(m_close, compact ? 1 : 0, 5, Qt::AlignRight);
+    m_count->setAlignment((compact ? Qt::AlignLeft : Qt::AlignRight) | Qt::AlignVCenter);
 }
 
 bool PreviewSearch::usable() const
@@ -552,11 +604,12 @@ void PreviewSearch::updateHighlights()
 void PreviewSearch::updateUi()
 {
     if (!m_open) return;
-    m_count->setText(m_searching ? tr("已找到 %1 · 计算中…").arg(m_matches.size())
+    m_count->setText(m_searching ? QStringLiteral("%1/…").arg(m_matches.size())
         : QStringLiteral("%1/%2").arg(m_current + 1).arg(m_matches.size()));
     m_previous->setEnabled(!m_searching && usable() && !m_matches.isEmpty());
     m_next->setEnabled(m_previous->isEnabled());
     QStringList messages;
+    if (m_searching) messages.append(tr("已找到 %1 · 计算中…").arg(m_matches.size()));
     if (!usable()) messages.append(tr("没有可搜索的预览，请先刷新"));
     else if (m_status.activeEditor == m_editor && m_status.displayedEditor == m_editor &&
              m_status.displayedVersion == m_version && m_status.contentVersion != m_version)
@@ -567,4 +620,5 @@ void PreviewSearch::updateUi()
     if (!m_notice.isEmpty()) messages.append(m_notice);
     m_message->setText(messages.join(QStringLiteral(" · ")));
     m_message->setVisible(!messages.isEmpty());
+    updateControlLayout();
 }

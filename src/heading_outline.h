@@ -5,6 +5,8 @@
 #include <QWidget>
 
 class QLabel;
+class QMenu;
+class QToolButton;
 class QTreeWidget;
 class QTreeWidgetItem;
 
@@ -19,6 +21,7 @@ public:
     void setCurrentBlock(int blockPosition);
     const QVector<HeadingRecord> &headings() const { return m_headings; }
     int currentHeading() const { return m_currentHeading; }
+    void populatePopupMenu(QMenu *menu);
 
 signals:
     void headingActivated(const HeadingRecord &heading);
@@ -26,9 +29,11 @@ signals:
 private:
     void saveExpansion();
     void updateMarker();
+    void updateExpandCollapseButton();
 
     QTreeWidget *m_tree = nullptr;
     QLabel *m_state = nullptr;
+    QToolButton *m_expandCollapseButton = nullptr;
     QVector<HeadingRecord> m_headings;
     QVector<QTreeWidgetItem *> m_items;
     QVector<QString> m_expansionKeys;

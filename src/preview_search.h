@@ -9,6 +9,7 @@
 #include <QWidget>
 
 class QCheckBox;
+class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QTextDocument;
@@ -43,6 +44,7 @@ signals:
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void resizeEvent(QResizeEvent *event) override;
 
 private:
     void restart(bool keepAnchor);
@@ -50,6 +52,7 @@ private:
     void scan(quint64 generation);
     void navigate(int direction);
     void updateUi();
+    void updateControlLayout();
     void rememberCurrent();
     void clearHighlights();
     QString contextAt(int position) const;
@@ -61,6 +64,9 @@ private:
     QLabel *m_message = nullptr;
     QToolButton *m_previous = nullptr;
     QToolButton *m_next = nullptr;
+    QToolButton *m_close = nullptr;
+    QGridLayout *m_controlsLayout = nullptr;
+    bool m_compactControls = false;
     QPointer<QTextEdit> m_view;
     QPointer<QTextDocument> m_document;
     QPointer<QWidget> m_editor;
