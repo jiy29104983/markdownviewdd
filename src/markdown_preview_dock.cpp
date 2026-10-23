@@ -44,6 +44,7 @@
 #include <QTextEdit>
 #include <QTextFrame>
 #include <QTextFragment>
+#include <QTextLayout>
 #include <QTextTable>
 #include <QtMath>
 #include <QTimer>
@@ -59,6 +60,144 @@ constexpr int kLayoutSyncDelayMs = 32;
 constexpr auto kStyleRevision = "_markdownview_font_style_revision";
 constexpr auto kDocumentRevision = "_markdownview_font_document_revision";
 constexpr int kCodeFormatProperty = QTextFormat::UserProperty + 2;
+
+class StatusDotWidget final : public QWidget
+{
+public:
+    explicit StatusDotWidget(QWidget *parent) : QWidget(parent)
+    {
+        setFixedSize(8, 8);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+    }
+    int kind = 0; // 0 = neutral, 1 = synced, 2 = pending/paused, 3 = error
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        QColor color;
+        switch (kind) {
+        case 1:
+            color = QColor(46, 160, 67);
+            break;
+        case 2:
+            color = QColor(210, 153, 34);
+            break;
+        case 3:
+            color = QColor(218, 54, 51);
+            break;
+        default:
+            color = PreviewUi::mix(palette().color(QPalette::Base),
+                                   palette().color(QPalette::Text), 0.38);
+            break;
+        }
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(color);
+        painter.drawEllipse(QRectF(0.5, 0.5, 7.0, 7.0));
+    }
+};
+
+class ViewportDecoratorWidget final : public QWidget
+{
+public:
+    explicit ViewportDecoratorWidget(QTextEdit *edit)
+        : QWidget(edit->viewport()), m_edit(edit)
+    {
+        setObjectName(QStringLiteral("NddMarkdownViewportDecorator"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setAttribute(Qt::WA_TranslucentBackground);
+        setFocusPolicy(Qt::NoFocus);
+        // QTextEdit scrolls viewport children along with its document. Keep this
+        // overlay in viewport coordinates before painting the new visible blocks.
+        const auto updatePosition = [this]() {
+            if (m_edit) {
+                setGeometry(m_edit->viewport()->rect());
+                update();
+            }
+        };
+        connect(edit->verticalScrollBar(), &QScrollBar::valueChanged,
+                this, updatePosition);
+        connect(edit->horizontalScrollBar(), &QScrollBar::valueChanged,
+                this, updatePosition);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (!m_edit || !m_edit->document() || !m_edit->isVisible()) {
+            return;
+        }
+        QTextDocument *doc = m_edit->document();
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing);
+        const QPalette pal = m_edit->palette();
+        const QColor ruleColor = PreviewUi::subtleBorder(pal);
+        const QColor quoteBarColor = PreviewUi::mix(
+            pal.color(QPalette::Highlight), pal.color(QPalette::Mid), 0.30);
+        const int hScroll = m_edit->horizontalScrollBar()
+            ? m_edit->horizontalScrollBar()->value() : 0;
+        const int viewportHeight = height();
+        const int viewportWidth = width();
+        const qreal docMargin = doc->documentMargin();
+
+        // A hit in the outer document margin can resolve to the end of the
+        // laid-out region while a large document is still laying out lazily.
+        const QScrollBar *vertical = m_edit->verticalScrollBar();
+        QTextBlock block = vertical->value() == vertical->minimum()
+            ? doc->begin() : m_edit->cursorForPosition(QPoint(0, 0)).block();
+        if (block.previous().isValid()) {
+            block = block.previous();
+        }
+
+        for (; block.isValid(); block = block.next()) {
+            if (!block.isVisible() || !block.layout() || block.layout()->lineCount() == 0) {
+                continue;
+            }
+            QTextCursor startCursor(block);
+            const QRect topRect = m_edit->cursorRect(startCursor);
+            if (topRect.top() > viewportHeight + 32) {
+                break;
+            }
+            QTextCursor endCursor(block);
+            endCursor.movePosition(QTextCursor::EndOfBlock);
+            const QRect bottomRect = m_edit->cursorRect(endCursor);
+            if (bottomRect.bottom() < -32) {
+                continue;
+            }
+
+            const QTextBlockFormat fmt = block.blockFormat();
+            const int headingLevel = fmt.headingLevel();
+            const int quoteLevel = fmt.property(QTextFormat::BlockQuoteLevel).toInt();
+
+            if (quoteLevel > 0) {
+                painter.setPen(Qt::NoPen);
+                painter.setBrush(quoteBarColor);
+                for (int q = 1; q <= quoteLevel; ++q) {
+                    const qreal barX = docMargin + (q - 1) * 12.0 + 2.0 - hScroll;
+                    const qreal barTop = topRect.top() - 2.0;
+                    const qreal barHeight = qMax(6.0, qreal(bottomRect.bottom() - topRect.top() + 4.0));
+                    painter.drawRoundedRect(QRectF(barX, barTop, 3.2, barHeight), 1.5, 1.5);
+                }
+            }
+
+            if (headingLevel == 1 || headingLevel == 2) {
+                const qreal leftX = qMax(4.0, docMargin + fmt.leftMargin() - hScroll);
+                const qreal rightX = qMax(leftX + 20.0, qreal(viewportWidth - 12));
+                const qreal lineY = bottomRect.bottom() + 3.5;
+                QColor divider = ruleColor;
+                if (headingLevel == 1) {
+                    divider = PreviewUi::mix(ruleColor, pal.color(QPalette::Text), 0.15);
+                }
+                painter.setPen(QPen(divider, 1.0));
+                painter.drawLine(QPointF(leftX, lineY), QPointF(rightX, lineY));
+            }
+        }
+    }
+
+private:
+    QPointer<QTextEdit> m_edit;
+};
 
 qreal headingRatio(int level)
 {
@@ -92,18 +231,29 @@ void applyFrameStyle(QTextFrame *frame, const QPalette &palette)
     if (QTextTable *table = dynamic_cast<QTextTable *>(frame)) {
         QTextTableFormat format = table->format();
         format.setBorder(1.0);
-        format.setBorderBrush(palette.brush(QPalette::Midlight));
-        format.setCellPadding(6.0);
+        format.setBorderStyle(QTextFrameFormat::BorderStyle_Solid);
+        format.setBorderCollapse(true);
+        format.setBorderBrush(PreviewUi::subtleBorder(palette));
+        format.setCellPadding(7.0);
         format.setCellSpacing(0.0);
         table->setFormat(format);
+
+        const QColor headerBg = PreviewUi::mix(
+            palette.color(QPalette::AlternateBase),
+            palette.color(QPalette::Text),
+            PreviewUi::isDark(palette) ? 0.08 : 0.05);
+        const QColor stripeBg = PreviewUi::mix(
+            palette.color(QPalette::Base),
+            palette.color(QPalette::AlternateBase),
+            0.45);
 
         for (int row = 0; row < table->rows(); ++row) {
             for (int column = 0; column < table->columns(); ++column) {
                 QTextTableCell cell = table->cellAt(row, column);
                 QTextTableCellFormat cellFormat = cell.format().toTableCellFormat();
                 cellFormat.setBackground(row == 0
-                    ? palette.brush(QPalette::AlternateBase)
-                    : palette.brush(QPalette::Base));
+                    ? QBrush(headerBg)
+                    : (row % 2 == 1 ? palette.brush(QPalette::Base) : QBrush(stripeBg)));
                 cell.setFormat(cellFormat);
             }
         }
@@ -223,16 +373,21 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     layout->setSpacing(0);
 
     auto *toolbar = new QWidget(container);
+    toolbar->setObjectName(QStringLiteral("NddMarkdownToolbar"));
     auto *toolbarLayout = new QHBoxLayout(toolbar);
-    toolbarLayout->setContentsMargins(10, 4, 10, 4);
+    toolbarLayout->setContentsMargins(8, 4, 8, 4);
 
     m_dockOwner = qobject_cast<QMainWindow *>(parent);
     auto *title = new QWidget(this);
     title->setObjectName(QStringLiteral("NddMarkdownTitleBar"));
     auto *titleLayout = new QHBoxLayout(title);
-    titleLayout->setContentsMargins(10, 2, 4, 2);
-    titleLayout->setSpacing(4);
+    titleLayout->setContentsMargins(10, 3, 4, 3);
+    titleLayout->setSpacing(6);
     auto *caption = new QLabel(tr("预览"), title);
+    caption->setObjectName(QStringLiteral("NddMarkdownTitleCaption"));
+    QFont captionFont = caption->font();
+    captionFont.setWeight(QFont::DemiBold);
+    caption->setFont(captionFont);
     caption->setAttribute(Qt::WA_TransparentForMouseEvents);
     titleLayout->addWidget(caption);
     m_documentLabel = new QLabel(title);
@@ -274,12 +429,17 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     refreshButton->setObjectName(QStringLiteral("NddMarkdownRefreshButton"));
     PreviewUi::setup(refreshButton, PreviewUi::Symbol::Refresh, tr("立即刷新当前文档"));
     refreshLayout->addWidget(refreshButton);
+    auto *refreshDivider = new QFrame(refreshGroup);
+    refreshDivider->setObjectName(QStringLiteral("NddMarkdownRefreshDivider"));
+    refreshDivider->setFrameShape(QFrame::VLine);
+    refreshDivider->setFixedWidth(1);
+    refreshLayout->addWidget(refreshDivider);
     m_modeButton = new QToolButton(refreshGroup);
     m_modeButton->setObjectName(QStringLiteral("NddMarkdownRefreshMode"));
     m_modeButton->setAccessibleName(tr("刷新模式"));
     m_modeButton->setToolTip(tr("选择当前窗口的刷新模式"));
     m_modeButton->setFocusPolicy(Qt::StrongFocus);
-    m_modeButton->setMinimumHeight(28);
+    m_modeButton->setMinimumSize(28, 28);
     m_modeButton->setPopupMode(QToolButton::InstantPopup);
     auto *modeMenu = new QMenu(m_modeButton);
     auto *modeGroup = new QActionGroup(modeMenu);
@@ -298,7 +458,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     refreshLayout->addWidget(m_modeButton);
     toolbarLayout->addWidget(refreshGroup);
     toolbarLayout->setSpacing(4);
-    toolbarLayout->addSpacing(8);
+    toolbarLayout->addSpacing(4);
 
     m_syncButton = new QToolButton(toolbar);
     m_syncButton->setText(tr("同步滚动"));
@@ -309,6 +469,13 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_syncButton->setChecked(true);
     toolbarLayout->addWidget(m_syncButton);
     toolbarLayout->addStretch();
+
+    m_outlineButton = new QToolButton(toolbar);
+    m_outlineButton->setObjectName(QStringLiteral("NddMarkdownOutlineToggle"));
+    PreviewUi::setup(m_outlineButton, PreviewUi::Symbol::Outline, tr("切换大纲（窄面板下弹出章节菜单）"));
+    m_outlineButton->setCheckable(true);
+    m_outlineButton->setChecked(true);
+    toolbarLayout->addWidget(m_outlineButton);
 
     m_layoutSyncTimer = new QTimer(this);
     m_layoutSyncTimer->setSingleShot(true);
@@ -342,9 +509,13 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_browser->installEventFilter(this);
     m_browser->viewport()->installEventFilter(this);
     auto *statusRow = new QWidget(container);
+    statusRow->setObjectName(QStringLiteral("NddMarkdownStatusRow"));
     auto *statusLayout = new QHBoxLayout(statusRow);
-    statusRow->setFixedHeight(30);
-    statusLayout->setContentsMargins(8, 4, 8, 4);
+    statusRow->setFixedHeight(28);
+    statusLayout->setContentsMargins(10, 2, 8, 2);
+    statusLayout->setSpacing(6);
+    m_statusDot = new StatusDotWidget(statusRow);
+    statusLayout->addWidget(m_statusDot);
     m_statusLabel = new QLabel(tr("没有活动文档"), statusRow);
     m_statusLabel->setObjectName(QStringLiteral("NddMarkdownPreviewStatusLabel"));
     m_statusLabel->setTextFormat(Qt::PlainText);
@@ -352,11 +523,12 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_statusLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
     m_statusLabel->setTextInteractionFlags(Qt::TextSelectableByMouse |
                                          Qt::TextSelectableByKeyboard);
-    statusLayout->addWidget(m_statusLabel);
+    statusLayout->addWidget(m_statusLabel, 1);
     m_errorRow = new QWidget(container);
     m_errorRow->setObjectName(QStringLiteral("NddMarkdownErrorRow"));
     auto *errorLayout = new QHBoxLayout(m_errorRow);
-    errorLayout->setContentsMargins(10, 2, 10, 2);
+    errorLayout->setContentsMargins(10, 4, 10, 4);
+    errorLayout->setSpacing(6);
     m_errorLabel = new QLabel(m_errorRow);
     m_errorLabel->setWordWrap(true);
     m_errorLabel->setTextFormat(Qt::PlainText);
@@ -364,10 +536,12 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     auto *retryButton = new QToolButton(m_errorRow);
     retryButton->setObjectName(QStringLiteral("NddMarkdownRetryButton"));
     retryButton->setText(tr("重试"));
+    retryButton->setMinimumSize(28, 24);
     retryButton->setFocusPolicy(Qt::StrongFocus);
     errorLayout->addWidget(retryButton);
     auto *detailsButton = new QToolButton(m_errorRow);
     detailsButton->setText(tr("详情"));
+    detailsButton->setMinimumSize(28, 24);
     detailsButton->setFocusPolicy(Qt::StrongFocus);
     detailsButton->setObjectName(QStringLiteral("NddMarkdownStatusDetails"));
     errorLayout->addWidget(detailsButton);
@@ -383,6 +557,7 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
 
     m_splitter = new QSplitter(Qt::Horizontal, container);
     m_splitter->setObjectName(QStringLiteral("NddMarkdownOutlineSplitter"));
+    m_splitter->setHandleWidth(1);
     m_splitter->setChildrenCollapsible(false);
     m_outline = new HeadingOutline(m_splitter);
     m_previewContainer = new QWidget(m_splitter);
@@ -398,7 +573,27 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
     m_splitter->handle(1)->installEventFilter(this);
     layout->addWidget(m_splitter, 1);
     layout->addWidget(statusRow);
-    statusLayout->addWidget(m_feedbackLabel);
+    statusLayout->addWidget(m_feedbackLabel, 1);
+    m_zoomResetButton = new QToolButton(statusRow);
+    m_zoomResetButton->setObjectName(QStringLiteral("NddMarkdownZoomReset"));
+    m_zoomResetButton->setToolTip(tr("点击重置预览缩放为 100%"));
+    m_zoomResetButton->setAccessibleName(tr("重置预览缩放"));
+    m_zoomResetButton->setMinimumSize(28, 20);
+    m_zoomResetButton->setFocusPolicy(Qt::StrongFocus);
+    m_zoomResetButton->hide();
+    statusLayout->addWidget(m_zoomResetButton);
+    connect(m_zoomResetButton, &QToolButton::clicked, this, [this]() {
+        if (qAbs(m_zoom - 1.0) <= 0.005) {
+            return;
+        }
+        const double ratio = m_nativeTextEdit
+            ? barRatio(m_nativeTextEdit->verticalScrollBar()) : 0.0;
+        m_zoom = 1.0;
+        ++m_styleRevision;
+        updateZoomBadge();
+        emit nativeZoomChanged(1.0);
+        restyleNativePreview(ratio);
+    });
     m_headingTimer = new QTimer(this);
     m_headingTimer->setSingleShot(true);
     m_headingTimer->setInterval(kLayoutSyncDelayMs);
@@ -427,6 +622,23 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         updateResponsiveLayout();
         if (show) explainCompactOutline();
         m_layoutSyncTimer->start();
+    });
+    connect(m_outlineButton, &QToolButton::clicked, this, [this]() {
+        if (m_compactOutline) {
+            {
+                const QSignalBlocker blocker(m_outlineButton);
+                m_outlineButton->setChecked(false);
+            }
+            auto *popup = new QMenu(this);
+            popup->setObjectName(QStringLiteral("NddMarkdownOutlinePopup"));
+            m_outline->populatePopupMenu(popup);
+            connect(popup, &QMenu::aboutToHide, popup, &QObject::deleteLater);
+            popup->popup(m_outlineButton->mapToGlobal(QPoint(0, m_outlineButton->height())));
+            return;
+        }
+        if (m_outlineVisibleAction) {
+            m_outlineVisibleAction->setChecked(!m_outlineVisibleAction->isChecked());
+        }
     });
     auto *positionMenu = settingsMenu->addMenu(tr("大纲位置：左侧(&P)"));
     m_outlinePositionMenu = positionMenu;
@@ -531,6 +743,9 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         }
         if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
             m_nativeTextEdit->viewport()->update();
+            if (m_viewportDecorator) {
+                m_viewportDecorator->update();
+            }
         }
         emit previewScrollRangeChanged();
     });
@@ -542,6 +757,12 @@ MarkdownPreviewDock::MarkdownPreviewDock(QWidget *parent)
         }
         if (m_browser) {
             applyDocumentStyle(m_browser);
+        }
+        if (m_statusDot) {
+            m_statusDot->update();
+        }
+        if (m_viewportDecorator) {
+            m_viewportDecorator->update();
         }
         m_search->updateHighlights();
     });
@@ -613,6 +834,7 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
         m_contentLayout->addWidget(previewWindow);
         m_nativePreview = previewWindow;
         m_nativeTextEdit = textEdit;
+        m_nativeTextEdit->setFrameShape(QFrame::NoFrame);
         m_nativeTextEdit->viewport()->installEventFilter(this);
         m_nativeTextEdit->verticalScrollBar()->installEventFilter(this);
         m_nativeTextEdit->horizontalScrollBar()->installEventFilter(this);
@@ -623,6 +845,8 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
             previewWindow, &QObject::destroyed,
             this, &MarkdownPreviewDock::handleNativePreviewDestroyed);
     }
+
+    ensureViewportDecorator();
 
     if (m_hasPreservedScrollRatio && m_preservedScrollEditor != editor) {
         m_preservedScrollEditor = nullptr;
@@ -646,8 +870,45 @@ bool MarkdownPreviewDock::adoptNativePreview(QWidget *previewWindow,
     restyleNativePreview(previousRatio);
     m_browser->hide();
     previewWindow->show();
+    if (m_viewportDecorator && m_nativeTextEdit) {
+        m_viewportDecorator->setGeometry(m_nativeTextEdit->viewport()->rect());
+        m_viewportDecorator->raise();
+        m_viewportDecorator->show();
+        m_viewportDecorator->update();
+    }
     Diagnostics::write(this, QStringLiteral("native MarkdownView embedded in dock"));
     return true;
+}
+
+void MarkdownPreviewDock::ensureViewportDecorator()
+{
+    if (!m_nativeTextEdit || !m_nativeTextEdit->viewport()) {
+        return;
+    }
+    if (m_viewportDecorator && m_viewportDecorator->parentWidget() == m_nativeTextEdit->viewport()) {
+        m_viewportDecorator->setGeometry(m_nativeTextEdit->viewport()->rect());
+        m_viewportDecorator->raise();
+        return;
+    }
+    delete m_viewportDecorator;
+    m_viewportDecorator = new ViewportDecoratorWidget(m_nativeTextEdit.data());
+    m_viewportDecorator->setGeometry(m_nativeTextEdit->viewport()->rect());
+    m_viewportDecorator->show();
+    m_viewportDecorator->raise();
+}
+
+void MarkdownPreviewDock::updateZoomBadge()
+{
+    if (!m_zoomResetButton) {
+        return;
+    }
+    const int percent = qRound(m_zoom * 100.0);
+    if (percent == 100 || !qIsFinite(m_zoom) || m_zoom <= 0.0) {
+        m_zoomResetButton->hide();
+        return;
+    }
+    m_zoomResetButton->setText(QStringLiteral("%1%").arg(percent));
+    m_zoomResetButton->show();
 }
 
 void MarkdownPreviewDock::invalidatePreview()
@@ -694,6 +955,7 @@ QByteArray MarkdownPreviewDock::htmlSnapshotFor(
 
 void MarkdownPreviewDock::handleNativePreviewDestroyed()
 {
+    m_viewportDecorator = nullptr;
     disconnect(m_nativeScrollConnection);
     disconnect(m_nativeScrollRangeConnection);
     disconnect(m_nativeHorizontalActionConnection);
@@ -716,8 +978,12 @@ void MarkdownPreviewDock::showMessage(const QString &title,
     m_browser->show();
     m_currentFilePath.clear();
     m_browser->document()->setDefaultStyleSheet(loadStyleSheet());
-    m_browser->setHtml(QStringLiteral("<h3>%1</h3><p>%2</p>")
-                           .arg(title.toHtmlEscaped(), message.toHtmlEscaped()));
+    m_browser->setHtml(
+        QStringLiteral("<div class=\"ndd-empty-wrap\">"
+                       "<h3 class=\"ndd-empty-title\">%1</h3>"
+                       "<p class=\"ndd-empty-desc\">%2</p>"
+                       "</div>")
+            .arg(title.toHtmlEscaped(), message.toHtmlEscaped()));
 }
 
 void MarkdownPreviewDock::setDocumentInfo(const QString &filePath,
@@ -741,13 +1007,30 @@ void MarkdownPreviewDock::setRefreshStatus(const QString &status,
     m_statusDetails = details;
     m_errorLabel->setText(status.section(QChar(0xff1a), 0, 0));
     m_errorRow->setVisible(failed);
+    if (failed) {
+        m_statusKind = 3;
+    } else if (status.contains(QStringLiteral("待刷新")) ||
+               status.contains(QStringLiteral("暂停")) ||
+               status.contains(QStringLiteral("正在"))) {
+        m_statusKind = 2;
+    } else if (status.contains(QStringLiteral("已更新")) ||
+               status.contains(QStringLiteral("已同步"))) {
+        m_statusKind = 1;
+    } else {
+        m_statusKind = 0;
+    }
+    if (auto *dot = static_cast<StatusDotWidget *>(m_statusDot)) {
+        dot->kind = m_statusKind;
+        dot->update();
+    }
 }
 
 void MarkdownPreviewDock::setRefreshMode(RefreshMode mode)
 {
     m_autoMode->setChecked(mode == RefreshMode::Automatic);
     m_manualMode->setChecked(mode == RefreshMode::Manual);
-    m_modeButton->setText(mode == RefreshMode::Automatic ? tr("自动") : tr("手动"));
+    m_modeButton->setText(mode == RefreshMode::Automatic
+        ? tr("自动 ▾") : tr("手动 ▾"));
 }
 
 void MarkdownPreviewDock::updateChrome()
@@ -758,19 +1041,67 @@ void MarkdownPreviewDock::updateChrome()
         isFloating() ? tr("停靠回主窗口") : tr("浮动窗口"));
     m_floatButton->setEnabled(!m_dockOwner.isNull());
     if (!m_dockOwner) m_floatButton->setToolTip(tr("当前宿主没有可用的主窗口停靠区域"));
+
+    const QPalette pal = palette();
+    const bool dark = PreviewUi::isDark(pal);
+    const QColor border = PreviewUi::subtleBorder(pal);
+    const QColor chromeBg = PreviewUi::mix(
+        pal.color(QPalette::Window), pal.color(QPalette::Base), dark ? 0.25 : 0.45);
+    const QColor titleBg = PreviewUi::mix(
+        pal.color(QPalette::Window), pal.color(QPalette::Base), dark ? 0.12 : 0.20);
+    const QColor hoverBg = PreviewUi::mix(
+        pal.color(QPalette::Base), pal.color(QPalette::Text), dark ? 0.14 : 0.08);
+    const QColor checkedBg = PreviewUi::mix(
+        pal.color(QPalette::Base), pal.color(QPalette::Highlight), dark ? 0.24 : 0.14);
+    const QColor checkedBorder = PreviewUi::mix(
+        border, pal.color(QPalette::Highlight), 0.65);
+    const QColor mutedText = PreviewUi::mix(
+        pal.color(QPalette::WindowText), pal.color(QPalette::Base), 0.35);
+    const QColor errorBg = PreviewUi::mix(
+        pal.color(QPalette::Base), QColor(218, 54, 51), dark ? 0.20 : 0.10);
+    const QColor errorBorder = PreviewUi::mix(
+        border, QColor(218, 54, 51), 0.55);
+
     const QString chromeStyle = QStringLiteral(
-        "QToolButton { border: 1px solid transparent; border-radius: 4px; padding: 3px; }"
-        "QToolButton:hover, QToolButton:pressed { background: palette(midlight); }"
-        "QToolButton:checked { background: palette(alternate-base); border-color: palette(highlight); }"
+        "QWidget#NddMarkdownTitleBar { background: %1; border-bottom: 1px solid %2; }"
+        "QWidget#NddMarkdownToolbar { background: %3; border-bottom: 1px solid %2; }"
+        "QWidget#NddMarkdownStatusRow { background: %3; border-top: 1px solid %2; }"
+        "QWidget#NddMarkdownSearch { background: %3; border-bottom: 1px solid %2; }"
+        "QWidget#NddMarkdownErrorRow { background: %8; border-bottom: 1px solid %9; }"
+        "QWidget#NddMarkdownRefreshGroup { background: palette(base); border: 1px solid %2; border-radius: 5px; }"
+        "QFrame#NddMarkdownRefreshDivider { background: %2; color: %2; border: none; margin: 4px 0px; }"
+        "QLabel#NddMarkdownPreviewDocumentLabel, QLabel#NddMarkdownPreviewStatusLabel { color: %7; }"
+        "QToolButton { border: 1px solid transparent; border-radius: 5px; padding: 3px; }"
+        "QToolButton::menu-indicator { image: none; width: 0px; }"
+        "QToolButton:hover, QToolButton:pressed { background: %4; }"
+        "QToolButton:checked { background: %5; border-color: %6; }"
         "QToolButton:focus { border-color: palette(highlight); }"
-        "QWidget#NddMarkdownRefreshGroup { border: 1px solid palette(mid); border-radius: 4px; }"
-        "QWidget#NddMarkdownTitleBar { border-bottom: 1px solid palette(midlight); }");
-    // Re-polish only chrome: touching the Dock stylesheet also re-polishes the
-    // native QTextEdit and can reset its palette and reading position.
+        "QToolButton#NddMarkdownZoomReset { padding: 1px 6px; border: 1px solid %2; border-radius: 4px; background: palette(base); }"
+        "QLineEdit#NddMarkdownSearchQuery { border: 1px solid %2; border-radius: 4px; padding: 2px 6px; background: palette(base); }"
+        "QLineEdit#NddMarkdownSearchQuery:focus { border-color: palette(highlight); }"
+        "QCheckBox#NddMarkdownSearchCase { spacing: 3px; padding: 2px 6px; border: 1px solid transparent; border-radius: 4px; }"
+        "QCheckBox#NddMarkdownSearchCase:hover { background: %4; }"
+        "QCheckBox#NddMarkdownSearchCase:checked { background: %5; border-color: %6; }")
+        .arg(titleBg.name(), border.name(), chromeBg.name(), hoverBg.name(),
+             checkedBg.name(), checkedBorder.name(), mutedText.name(),
+             errorBg.name(), errorBorder.name());
+
+    // Re-polish only chrome: touching the Dock or splitter stylesheet also
+    // re-polishes the native QTextEdit and can reset its palette and reading position.
     for (auto *chrome : m_chromeWidgets) {
         chrome->setStyleSheet(QString());
-        chrome->setPalette(palette());
+        chrome->setPalette(pal);
         chrome->setStyleSheet(chromeStyle);
+    }
+    if (m_outline) {
+        if (auto *outlineHeader = m_outline->findChild<QWidget *>(QStringLiteral("NddMarkdownOutlineHeader"))) {
+            outlineHeader->setPalette(pal);
+            outlineHeader->setStyleSheet(
+                QStringLiteral("QWidget#NddMarkdownOutlineHeader { background: %1; border-bottom: 1px solid %2; }"
+                               "QToolButton { border: 1px solid transparent; border-radius: 4px; padding: 2px; }"
+                               "QToolButton:hover { background: %3; }")
+                    .arg(chromeBg.name(), border.name(), hoverBg.name()));
+        }
     }
 }
 
@@ -785,7 +1116,15 @@ void MarkdownPreviewDock::updateResponsiveLayout()
     if (!m_outline) return;
     if (width() < 440) m_compactOutline = true;
     else if (width() >= 500) m_compactOutline = false;
-    m_outline->setVisible(m_outlineWanted && !m_compactOutline);
+    const bool outlineShown = m_outlineWanted && !m_compactOutline;
+    m_outline->setVisible(outlineShown);
+    if (m_outlineButton) {
+        const QSignalBlocker blocker(m_outlineButton);
+        m_outlineButton->setChecked(outlineShown);
+        m_outlineButton->setToolTip(m_compactOutline
+            ? tr("弹出章节导航菜单（当前面板较窄已折叠侧栏）")
+            : (outlineShown ? tr("隐藏大纲侧栏") : tr("显示大纲侧栏")));
+    }
     m_syncButton->setToolButtonStyle(width() < 380 ? Qt::ToolButtonIconOnly : Qt::ToolButtonTextBesideIcon);
     m_documentLabel->setText(m_documentLabel->fontMetrics().elidedText(
         m_documentName, Qt::ElideRight, qMax(0, m_documentLabel->width())));
@@ -852,6 +1191,7 @@ void MarkdownPreviewDock::setReadingFont(const QFont &font, qreal zoom)
     m_bodyFont = font;
     m_codeFontFamily = markdownCodeFontFamily(font.family());
     m_zoom = zoom;
+    updateZoomBadge();
     ++m_styleRevision;
     refreshDocumentStyle(m_previewEditor.data(), m_previewContentVersion);
 }
@@ -957,18 +1297,20 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
             blockFormat.hasProperty(QTextFormat::BlockCodeLanguage);
         const qreal points = bodyFont.pointSizeF() * headingRatio(headingLevel);
         if (headingLevel > 0) {
-            blockFormat.setTopMargin(12.0);
-            blockFormat.setBottomMargin(6.0);
+            blockFormat.setTopMargin(headingLevel <= 2 ? 16.0 : 12.0);
+            blockFormat.setBottomMargin(headingLevel <= 2 ? 8.0 : 6.0);
+            // Recompute from semantic quote level so all headings align with the
+            // left reading edge while preserving surrounding quote indentation.
+            blockFormat.setLeftMargin(12.0 * qMax(0, quoteLevel));
+        } else if (!codeBlock) {
+            blockFormat.setLineHeight(128.0, QTextBlockFormat::ProportionalHeight);
+            if (blockFormat.bottomMargin() < 6.0) {
+                blockFormat.setBottomMargin(7.0);
+            }
         }
         if (quoteLevel > 0) {
             blockFormat.setLeftMargin(12.0 * quoteLevel);
             blockFormat.setBackground(colors.brush(QPalette::AlternateBase));
-        }
-        if (headingLevel > 0) {
-            // Recompute from semantic levels, so refresh/theme/zoom never
-            // accumulate indentation. Keep the surrounding quote's margin.
-            blockFormat.setLeftMargin(12.0 * qMax(0, quoteLevel) +
-                12.0 * (headingLevel - 1) * m_zoom);
         }
         if (codeBlock) {
             blockFormat.setNonBreakableLines(!m_wrapCode);
@@ -1042,6 +1384,9 @@ bool MarkdownPreviewDock::applyDocumentStyle(QTextEdit *textEdit)
     document->setProperty(kStyleRevision, QVariant::fromValue(m_styleRevision));
     document->setProperty(kDocumentRevision, document->revision());
     textEdit->viewport()->update();
+    if (m_viewportDecorator && textEdit == m_nativeTextEdit) {
+        m_viewportDecorator->update();
+    }
     return true;
 }
 
@@ -1075,6 +1420,7 @@ bool MarkdownPreviewDock::handleNativeWheel(QObject *watched, QEvent *event)
     const qreal zoom = points / m_bodyFont.pointSizeF();
     if (qIsFinite(zoom) && zoom > 0.0 && qIsFinite(points * 2.0) && m_zoom != zoom) {
         m_zoom = zoom;
+        updateZoomBadge();
         ++m_styleRevision;
         emit nativeZoomChanged(zoom);
         restyleNativePreview(ratio);
@@ -1201,7 +1547,12 @@ void MarkdownPreviewDock::connectNativeScrollBar(QScrollBar *scrollBar)
     }
 
     m_headingScrollConnection = connect(scrollBar, &QAbstractSlider::valueChanged,
-        this, [this]() { m_headingTimer->start(); });
+        this, [this]() {
+            m_headingTimer->start();
+            if (m_viewportDecorator) {
+                m_viewportDecorator->update();
+            }
+        });
     m_nativeScrollConnection = connect(
         scrollBar, &QAbstractSlider::actionTriggered, this,
         [this, scrollBar](int) {
@@ -1323,6 +1674,10 @@ bool MarkdownPreviewDock::eventFilter(QObject *watched, QEvent *event)
     }
     if (event && m_nativeTextEdit && watched == m_nativeTextEdit->viewport() &&
         event->type() == QEvent::Resize) {
+        if (m_viewportDecorator) {
+            m_viewportDecorator->setGeometry(m_nativeTextEdit->viewport()->rect());
+            m_viewportDecorator->update();
+        }
         m_layoutSyncTimer->start();
         m_headingTimer->start();
     }

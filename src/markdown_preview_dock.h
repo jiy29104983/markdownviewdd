@@ -140,8 +140,11 @@ private:
     QTextBrowser *m_browser = nullptr;
     QLayout *m_contentLayout = nullptr;
     QLabel *m_documentLabel = nullptr;
+    QWidget *m_statusDot = nullptr;
     QLabel *m_statusLabel = nullptr;
     QLabel *m_feedbackLabel = nullptr;
+    QToolButton *m_zoomResetButton = nullptr;
+    QToolButton *m_outlineButton = nullptr;
     QToolButton *m_modeButton = nullptr;
     QAction *m_autoMode = nullptr;
     QAction *m_manualMode = nullptr;
@@ -153,6 +156,7 @@ private:
     bool m_outlineWanted = true;
     bool m_compactOutline = false;
     bool m_updatingChrome = false;
+    int m_statusKind = 0;
     QList<QWidget *> m_chromeWidgets;
     QString m_documentName;
     QString m_documentDetails;
@@ -160,9 +164,12 @@ private:
     QLabel *m_errorLabel = nullptr;
     void updateChrome();
     void updateResponsiveLayout();
+    void updateZoomBadge();
+    void ensureViewportDecorator();
     QString m_statusDetails;
     bool m_previewIsCurrent = false;
     QToolButton *m_syncButton = nullptr;
+    QPointer<QWidget> m_viewportDecorator;
     QPointer<QWidget> m_nativePreview;
     QPointer<QTextEdit> m_nativeTextEdit;
     QPointer<QWidget> m_previewEditor;

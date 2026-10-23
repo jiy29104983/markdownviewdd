@@ -183,10 +183,40 @@ private slots:
     void themeAndZoom();
     void wideTableNavigation();
     void resizeUpdatesHighlights();
+    void narrowSearchKeepsQueryAndCountReadable();
     void longDocument_data();
     void longDocument();
     void screenshots();
 };
+
+void PreviewSearchTest::narrowSearchKeepsQueryAndCountReadable()
+{
+    QTextEdit view;
+    QWidget editor;
+    view.setPlainText(QStringLiteral("a ").repeated(10000));
+    PreviewSearch search;
+    QFont searchFont = search.font();
+    searchFont.setPixelSize(18);
+    search.setFont(searchFont);
+    search.setSnapshot(&view, &editor, 1);
+    search.resize(320, 100);
+    search.openSearch();
+    setQuery(&search, QStringLiteral("a"));
+    QTRY_VERIFY(!search.isSearching());
+    QCOMPARE(search.matchCount(), 10000);
+    auto *count = search.findChild<QLabel *>(QStringLiteral("NddMarkdownSearchCount"));
+    auto *close = search.findChild<QToolButton *>(QStringLiteral("NddMarkdownSearchClose"));
+    QTRY_VERIFY(query(&search)->width() >= 100);
+    QCOMPARE(search.width(), 320);
+    QVERIFY(count->width() >= count->sizeHint().width());
+    QVERIFY(close->geometry().bottom() > query(&search)->geometry().bottom());
+    QVERIFY(search.rect().contains(close->geometry()));
+    QCOMPARE(count->text(), QStringLiteral("1/10000"));
+
+    search.resize(640, 100);
+    QTRY_VERIFY(qAbs(close->geometry().center().y() - query(&search)->geometry().center().y()) <= 1);
+    QVERIFY(count->width() >= count->sizeHint().width());
+}
 
 void PreviewSearchTest::matching_data()
 {
