@@ -116,11 +116,15 @@ void applyFrameStyle(QTextFrame *frame, const QPalette &palette)
     }
 }
 
-QString decodeHtmlAttribute(const QString &value)
+QString decodeQtHtmlAttribute(QString value)
 {
-    QTextDocument document;
-    document.setHtml(QStringLiteral("<span>%1</span>").arg(value));
-    return document.toPlainText();
+    // QTextDocument::toHtml() escapes these four characters in attributes.
+    // Decode only that serialization, without HTML text whitespace folding;
+    // ampersands must be last so a literal entity in a filename stays literal.
+    return value.replace(QStringLiteral("&quot;"), QStringLiteral("\""))
+        .replace(QStringLiteral("&gt;"), QStringLiteral(">"))
+        .replace(QStringLiteral("&lt;"), QStringLiteral("<"))
+        .replace(QStringLiteral("&amp;"), QStringLiteral("&"));
 }
 
 QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *context)
@@ -130,8 +134,10 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
     }
 
     QString html = CodeBlockTools::htmlForExport(document);
+    // Qt writes src first. Do not scan later attributes: alt/title text may
+    // itself contain something resembling a src attribute.
     const QRegularExpression imageSourcePattern(
-        QStringLiteral("(<img\\b[^>]*\\bsrc\\s*=\\s*)([\\\"'])([^\\\"']+)\\2"),
+        QStringLiteral("(<img\\s+src\\s*=\\s*)(?:\"([^\"]*)\"|'([^']*)')"),
         QRegularExpression::CaseInsensitiveOption);
     QList<QPair<int, QPair<int, QString>>> replacements;
     QStringList missingResources;
@@ -140,7 +146,8 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
     QRegularExpressionMatchIterator matches = imageSourcePattern.globalMatch(html);
     while (matches.hasNext()) {
         const QRegularExpressionMatch match = matches.next();
-        const QString source = decodeHtmlAttribute(match.captured(3));
+        const int sourceCapture = match.capturedStart(2) >= 0 ? 2 : 3;
+        const QString source = decodeQtHtmlAttribute(match.captured(sourceCapture));
         const QUrl sourceUrl(source);
         if (!sourceUrl.scheme().isEmpty() &&
             sourceUrl.scheme().compare(QStringLiteral("file"), Qt::CaseInsensitive) != 0) {
@@ -170,8 +177,8 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
         const QString dataUrl = QStringLiteral("data:%1;base64,%2")
             .arg(mimeType, QString::fromLatin1(imageBytes.toBase64()));
         replacements.append(qMakePair(
-            match.capturedStart(3),
-            qMakePair(match.capturedLength(3), dataUrl)));
+            match.capturedStart(sourceCapture),
+            qMakePair(match.capturedLength(sourceCapture), dataUrl)));
         embeddedBytes += imageBytes.size();
     }
 
@@ -184,7 +191,8 @@ QByteArray portableHtmlSnapshot(const QTextDocument *document, const QObject *co
         const QString comment = QStringLiteral(
             "\n<!-- markdownview-export: local images not embedded: %1 -->\n")
             .arg(missingResources.join(QStringLiteral(", "))
-                .replace(QStringLiteral("--"), QStringLiteral("- -")));
+                .toHtmlEscaped()
+                .replace(QStringLiteral("--"), QStringLiteral("&#45;&#45;")));
         const int bodyEnd = html.lastIndexOf(QStringLiteral("</body>"), -1,
                                              Qt::CaseInsensitive);
         html.insert(bodyEnd >= 0 ? bodyEnd : html.size(), comment);
@@ -1281,7 +1289,8 @@ void MarkdownPreviewDock::emitPreviewScrollRatio(QScrollBar *scrollBar)
 
 void MarkdownPreviewDock::openLink(const QUrl &url)
 {
-    if (url.path().isEmpty() && !url.fragment().isEmpty()) {
+    if (url.isRelative() && url.authority().isEmpty() && url.path().isEmpty() &&
+        !url.hasQuery() && !url.fragment().isEmpty()) {
         if (m_nativeTextEdit && m_nativePreview && m_nativePreview->isVisible()) {
             if (!scrollNativeToAnchor(url.fragment())) {
                 showLinkFailure(url, tr("页内锚点不存在"));

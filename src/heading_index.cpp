@@ -66,6 +66,8 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
     static const QRegularExpression closing(QStringLiteral("(?:^|[ \\t]+)#+[ \\t]*$"));
     static const QRegularExpression fence(QStringLiteral("^ {0,3}(`{3,}|~{3,})(.*)$"));
     static const QRegularExpression setext(QStringLiteral("^ {0,3}(=+|-+)[ \\t]*$"));
+    static const QRegularExpression thematicBreak(QStringLiteral(
+        "^ {0,3}(?:(?:\\*[ \\t]*){3,}|(?:-[ \\t]*){3,}|(?:_[ \\t]*){3,})$"));
     static const QRegularExpression quote(QStringLiteral("^ {0,3}>[ \\t]?"));
     static const QRegularExpression list(QStringLiteral("^ {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \\t]+"));
     QVector<SourceHeading> candidates;
@@ -145,8 +147,21 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
             }
             const auto listMatch = list.match(line);
             if (listMatch.hasMatch()) {
+                const bool isThematicBreak = thematicBreak.match(line).hasMatch();
                 listIndent += listMatch.capturedLength();
                 line.remove(0, listMatch.capturedLength());
+                // This mapper tracks quotes outside a list, not alternating
+                // container stacks. Continuing after an unhandled inner
+                // container can miss both a heading and a code fence, then
+                // accept a same-named heading inside that code as its source.
+                // Keep every source target invalid for unsupported nesting.
+                // Spaced thematic breaks, including those inside a list item,
+                // are not nested lists ("- - -" and "- * * *").
+                if (quote.match(line).hasMatch() ||
+                    (!isThematicBreak && !thematicBreak.match(line).hasMatch() &&
+                     list.match(line).hasMatch())) {
+                    return false;
+                }
             }
         }
         const QString trimmed = line.trimmed();

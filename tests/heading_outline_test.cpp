@@ -165,6 +165,9 @@ private slots:
     void sourceMapping_data();
     void sourceMapping();
     void sourceMappingFailsClosed();
+    void nestedContainersFailClosed_data();
+    void nestedContainersFailClosed();
+    void unsupportedContainersOnlyNavigatePreview();
     void mappingEdgeCases_data();
     void mappingEdgeCases();
     void imageTableLayoutAndAllLevels();
@@ -232,6 +235,65 @@ void HeadingOutlineTest::sourceMappingFailsClosed()
     QVERIFY(mapHeadingSource(&records, QStringLiteral("~~~\n# fake\n~~~\n\n# A\n\n## A")));
     QCOMPARE(records.first().sourceLine, 4);
     QCOMPARE(records.last().sourceLine, 6);
+}
+
+void HeadingOutlineTest::nestedContainersFailClosed_data()
+{
+    QTest::addColumn<QString>("markdown");
+    QTest::newRow("list-quote-closed-fence") << QStringLiteral(
+        "- > # A\n- > ```\n  > # A\n  > ```\n");
+    QTest::newRow("list-quote-unclosed-fence") << QStringLiteral(
+        "- > # A\n- > ```\n  > # A");
+    QTest::newRow("ordered-list-quote") << QStringLiteral(
+        "1. > # A\n2. > ```\n   > # A\n   > ```\n");
+    QTest::newRow("quote-list-quote") << QStringLiteral(
+        "> - > # A\n> - > ```\n>   > # A\n>   > ```\n");
+    QTest::newRow("nested-list") << QStringLiteral(
+        "- - # A\n\n```\n# A\n```\n");
+}
+
+void HeadingOutlineTest::nestedContainersFailClosed()
+{
+    QFETCH(QString, markdown);
+    QWidget editor;
+    QTextDocument document;
+    document.setMarkdown(markdown);
+    auto records = renderedHeadings(&document, &editor, 1);
+    // The same text in the code block is not another rendered heading.
+    QCOMPARE(records.size(), 1);
+    QCOMPARE(records.first().text, QStringLiteral("A"));
+    // Failed remapping must also discard source locations from a prior pass.
+    records.first().sourceLine = 0;
+    records.first().sourceOffset = 0;
+    QVERIFY(!mapHeadingSource(&records, markdown));
+    QCOMPARE(records.first().sourceLine, -1);
+    QCOMPARE(records.first().sourceOffset, -1);
+    // Preview navigation retains its valid rendered heading and identity.
+    QCOMPARE(records.first().editor.data(), &editor);
+    QCOMPARE(records.first().version, quint64(1));
+    QVERIFY(records.first().blockPosition >= 0);
+}
+
+void HeadingOutlineTest::unsupportedContainersOnlyNavigatePreview()
+{
+    const QString padding = QStringLiteral("Paragraph before the heading.\n\n").repeated(40);
+    Fixture f(padding + QStringLiteral("- > # A\n- > ```\n  > # A\n  > ```\n\n") + padding);
+    QVERIFY(QMetaObject::invokeMethod(f.controller.get(), "setSyncScrolling", Q_ARG(bool, false)));
+    QCOMPARE(f.outline->headings().size(), 1);
+    const HeadingRecord target = f.outline->headings().first();
+    QCOMPARE(target.sourceLine, -1);
+    const int renders = f.adapter.renders;
+    const int sourceScroll = f.editor->verticalScrollBar()->value();
+    f.activate(0);
+    QTextCursor previewCursor(f.preview()->document());
+    previewCursor.setPosition(target.blockPosition);
+    QTRY_VERIFY(f.preview()->viewport()->rect().contains(f.preview()->cursorRect(previewCursor).center()));
+    QVERIFY(f.preview()->verticalScrollBar()->value() > 0);
+    QVERIFY(f.dock->hasNavigationTarget());
+    QCOMPARE(f.adapter.navigations, 0);
+    QCOMPARE(f.editor->verticalScrollBar()->value(), sourceScroll);
+    QCOMPARE(f.adapter.renders, renders);
+    QVERIFY(!f.dock->findChild<QLabel *>(QStringLiteral("NddMarkdownLinkFeedback"))->text().isEmpty());
 }
 
 void HeadingOutlineTest::hierarchyAndIndependentSelection()
@@ -487,6 +549,16 @@ void HeadingOutlineTest::mappingEdgeCases_data()
     QTest::newRow("atx-closing-escape") << QStringLiteral("## **粗体** 与 `代码` ###\n\n## 转义 \\*星号\\*\n") << QVector<int>{0, 2};
     QTest::newRow("fence-longer-close") << QStringLiteral("````md\n# 假标题\n```\n# 仍是假标题\n`````\n\n# 真标题\n") << QVector<int>{6};
     QTest::newRow("quote-and-list") << QStringLiteral("> # 引用标题\n>\n> 内容\n\n- ## 列表标题\n\n# 正文标题\n") << QVector<int>{0, 4, 6};
+    QTest::newRow("quote-containing-list") << QStringLiteral(
+        "> - # A\n> - ```\n>   # A\n>   ```\n\n# Tail\n") << QVector<int>{0, 5};
+    QTest::newRow("spaced-dash-thematic-break") << QStringLiteral(
+        "# A\n\n- - -\n\n# B\n") << QVector<int>{0, 4};
+    QTest::newRow("spaced-star-thematic-break") << QStringLiteral(
+        "# A\n\n* * *\n\n# B\n") << QVector<int>{0, 4};
+    QTest::newRow("list-item-star-thematic-break") << QStringLiteral(
+        "# A\n\n- * * *\n\n# B\n") << QVector<int>{0, 4};
+    QTest::newRow("list-item-dash-thematic-break") << QStringLiteral(
+        "# A\n\n* - - -\n\n# B\n") << QVector<int>{0, 4};
     QTest::newRow("indented-code") << QStringLiteral("    # 代码内容\n\n# 真标题\n") << QVector<int>{2};
     QTest::newRow("link-inline") << QStringLiteral("## [链接](https://example.invalid) 与 ~~删除~~\n") << QVector<int>{0};
     QTest::newRow("quote-fence-container-end") << QStringLiteral("> ```\n> code\n\n# Real heading\n") << QVector<int>{3};
