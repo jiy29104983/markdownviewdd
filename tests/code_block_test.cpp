@@ -119,19 +119,25 @@ struct Fixture
     QTextEdit *preview() { return adapter.cache.value(tabs->currentWidget()).preview; }
 };
 CodeBlockTools *tools(Fixture &f) { return f.dock->findChild<CodeBlockTools *>(); }
-QToolButton *copyButton(Fixture &f, int ordinal = 0)
+QPointer<QToolButton> copyButton(Fixture &f, int ordinal = 0)
 {
-    for (int attempt = 0; attempt < 2; ++attempt) {
-        const auto buttons = f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode"));
-        for (auto i = buttons.crbegin(); i != buttons.crend(); ++i) {
-            if ((*i)->property("codeBlockOrdinal").toInt() == ordinal && (*i)->parentWidget()->isEnabled())
-                return *i;
-        }
-        QTest::qWait(25);
+    // Layout creates and retires buttons asynchronously; callers wait for their
+    // required state without processing events inside this lookup.
+    if (!f.preview())
+        return nullptr;
+    const auto buttons = f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode"));
+    for (auto i = buttons.crbegin(); i != buttons.crend(); ++i) {
+        if ((*i)->property("codeBlockOrdinal").toInt() == ordinal &&
+            (*i)->parentWidget() && (*i)->parentWidget()->isEnabled())
+            return *i;
     }
     return nullptr;
 }
-QString feedback(Fixture &f) { return copyButton(f)->accessibleDescription(); }
+QString feedback(Fixture &f)
+{
+    const auto button = copyButton(f);
+    return button ? button->accessibleDescription() : QString();
+}
 }
 
 class CodeBlockTest final : public QObject
@@ -243,9 +249,8 @@ void CodeBlockTest::clipboardAndKeyboard()
     QCOMPARE(code->records().size(), 2);
     QString copied;
     code->setClipboardWriter([&](const QString &text) { copied = text; return true; });
-    auto *button = copyButton(f);
-    QVERIFY(button);
-    QTRY_VERIFY(button->isVisible());
+    QPointer<QToolButton> button;
+    QTRY_VERIFY((button = copyButton(f)) && button->isVisible());
     button->setFocus();
     QTest::keyClick(button, Qt::Key_Space);
     QCOMPARE(copied, QStringLiteral("  a\tb\n\n[]*\n"));
@@ -280,7 +285,7 @@ void CodeBlockTest::manualAndCacheIdentity()
     const int renders = f.adapter.renders;
     QVERIFY(code->copyBlock(0));
     QCOMPARE(copied, QStringLiteral("A old\n"));
-    QVERIFY(feedback(f).contains(QStringLiteral("当前预览")));
+    QTRY_VERIFY(feedback(f).contains(QStringLiteral("当前预览")));
     QCOMPARE(f.adapter.reads, reads);
     QCOMPARE(f.adapter.renders, renders);
     f.add(QStringLiteral("```\nB\n```"));
@@ -329,11 +334,12 @@ void CodeBlockTest::failureAndInvalidation()
     auto *code = tools(f);
     code->setClipboardWriter([](const QString &) { return false; });
     QVERIFY(!code->copyBlock(0));
-    QVERIFY(feedback(f).contains(QStringLiteral("失败")));
+    QTRY_VERIFY(feedback(f).contains(QStringLiteral("失败")));
     f.adapter.readable = false;
     f.refresh();
     QVERIFY(!code->records().first().reliable);
-    QVERIFY(!copyButton(f)->isEnabled());
+    QPointer<QToolButton> button;
+    QTRY_VERIFY((button = copyButton(f)) && !button->isEnabled());
     QVERIFY(!code->copyBlock(0));
     f.adapter.readable = true;
     f.refresh();
@@ -470,10 +476,10 @@ void CodeBlockTest::attachedButtonsFollowLayout()
 {
     Fixture f(QStringLiteral("```cpp\nfirst\n```\n\nparagraph\n\n```python\nsecond\n```"));
     auto *code = tools(f);
-    auto *first = copyButton(f, 0);
-    auto *second = copyButton(f, 1);
-    QVERIFY(first && second);
-    QTRY_VERIFY(first->isVisible() && second->isVisible());
+    QPointer<QToolButton> first;
+    QPointer<QToolButton> second;
+    QTRY_VERIFY((first = copyButton(f, 0)) && (second = copyButton(f, 1)) &&
+                first->isVisible() && second->isVisible());
     QString copied;
     code->setClipboardWriter([&](const QString &text) { copied = text; return true; });
     QTest::mouseClick(second, Qt::LeftButton);
@@ -492,17 +498,18 @@ void CodeBlockTest::attachedButtonsFollowLayout()
     const int oldRight = first->parentWidget()->geometry().right();
     f.window.resize(1400, 650);
     f.window.resizeDocks({f.dock}, {720}, Qt::Horizontal);
-    QTRY_VERIFY(first->parentWidget()->geometry().right() > oldRight);
+    QTRY_VERIFY((first = copyButton(f, 0)) && first->parentWidget() &&
+                first->parentWidget()->geometry().right() > oldRight);
     const qreal margin = cursor.blockFormat().topMargin();
     f.dock->setReadingFont(QFont(QStringLiteral("monospace"), 14), 1.25);
-    QTest::qWait(50);
+    QTRY_VERIFY((first = copyButton(f, 0)) && first->isVisible());
     QCOMPARE(cursor.blockFormat().topMargin(), margin);
     QCOMPARE(CodeBlockTools::htmlForExport(f.preview()->document()).count(QStringLiteral("first")), 1);
     QPointer<QToolButton> old = first;
     f.refresh();
     if (old)
         QVERIFY(!old->isVisible() && !old->isEnabled());
-    QTRY_VERIFY(copyButton(f)->isVisible());
+    QTRY_VERIFY((first = copyButton(f, 0)) && first->isVisible());
     f.editor->setPlainText(QStringLiteral("ordinary paragraph\n\nanother paragraph"));
     f.refresh();
     QVERIFY(tools(f)->records().isEmpty());
@@ -516,17 +523,17 @@ void CodeBlockTest::attachedButtonsVirtualized()
     for (int i = 0; i < 100; ++i)
         source += QStringLiteral("```cpp\nline %1\n```\n\n").arg(i);
     Fixture f(source);
-    QTest::qWait(80);
-    QVERIFY(copyButton(f, 0));
+    QPointer<QToolButton> initial;
+    QTRY_VERIFY((initial = copyButton(f, 0)) && initial->isVisible());
     QVERIFY(f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode")).size() < 12);
-    QPointer<QToolButton> initial = copyButton(f, 0);
     f.preview()->verticalScrollBar()->setValue(f.preview()->verticalScrollBar()->maximum());
     QVERIFY(!initial || !initial->isVisible());
-    QTRY_VERIFY(copyButton(f, 99));
+    QPointer<QToolButton> last;
+    QTRY_VERIFY((last = copyButton(f, 99)) && last->isVisible());
     QVERIFY(!copyButton(f, 0));
     QString copied;
     tools(f)->setClipboardWriter([&](const QString &text) { copied = text; return true; });
-    QTest::mouseClick(copyButton(f, 99), Qt::LeftButton);
+    QTest::mouseClick(last, Qt::LeftButton);
     QCOMPARE(copied, QStringLiteral("line 99\n"));
     QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
     QVERIFY(f.preview()->findChildren<QToolButton *>(QStringLiteral("NddMarkdownCopyCode")).size() < 12);

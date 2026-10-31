@@ -66,8 +66,17 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
     static const QRegularExpression closing(QStringLiteral("(?:^|[ \\t]+)#+[ \\t]*$"));
     static const QRegularExpression fence(QStringLiteral("^ {0,3}(`{3,}|~{3,})(.*)$"));
     static const QRegularExpression setext(QStringLiteral("^ {0,3}(=+|-+)[ \\t]*$"));
+    static const QRegularExpression thematicBreak(QStringLiteral(
+        "^ {0,3}(?:(?:\\*[ \\t]*){3,}|(?:-[ \\t]*){3,}|(?:_[ \\t]*){3,})$"));
     static const QRegularExpression quote(QStringLiteral("^ {0,3}>[ \\t]?"));
     static const QRegularExpression list(QStringLiteral("^ {0,3}(?:[-+*]|[0-9]{1,9}[.)])[ \\t]+"));
+    // Recognize ordinary URI/email autolinks before rejecting raw HTML. The
+    // email subset starts with an alphanumeric character so declarations and
+    // comments cannot be mistaken for links (for example, <!DOCTYPE@x>).
+    static const QRegularExpression autolink(QStringLiteral(
+        "^<(?:[A-Za-z][A-Za-z0-9+.-]{1,31}:[^\\x00-\\x20<>]*|"
+        "[A-Za-z0-9][A-Za-z0-9.!#$%&'*+/=?^_`{|}~-]*@"
+        "[A-Za-z0-9](?:[A-Za-z0-9.-]*[A-Za-z0-9])?)>"));
     QVector<SourceHeading> candidates;
     QChar fenceChar;
     int fenceLength = 0;
@@ -81,7 +90,6 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
     int lineNumber = 0;
     int scalarOffset = 0;
     int start = 0;
-    bool htmlBlock = false;
     while (start < source.size()) {
         int end = start;
         while (end < source.size() && source.at(end) != QLatin1Char('\n') &&
@@ -145,8 +153,18 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
             }
             const auto listMatch = list.match(line);
             if (listMatch.hasMatch()) {
+                const bool isThematicBreak = thematicBreak.match(line).hasMatch();
                 listIndent += listMatch.capturedLength();
                 line.remove(0, listMatch.capturedLength());
+                // This scanner only tracks quotes outside a list. An inner
+                // quote/list can hide both a real heading and its code fence,
+                // then leave a same-named code line as a plausible candidate.
+                // Reject unsupported stacks instead of assigning a source line.
+                if (quote.match(line).hasMatch() ||
+                    (!isThematicBreak && !thematicBreak.match(line).hasMatch() &&
+                     list.match(line).hasMatch())) {
+                    return false;
+                }
             }
         }
         const QString trimmed = line.trimmed();
@@ -167,11 +185,13 @@ bool mapHeadingSource(QVector<HeadingRecord> *headings, const QString &source)
             paragraph.clear();
         } else if (trimmed.isEmpty()) {
             paragraph.clear();
-            htmlBlock = false;
-        } else if (htmlBlock || trimmed.startsWith(QLatin1Char('<'))) {
-            // Raw HTML containers are deliberately not guessed as Markdown.
-            htmlBlock = true;
-            paragraph.clear();
+        } else if (trimmed.startsWith(QLatin1Char('<')) &&
+                   !line.startsWith(QStringLiteral("    ")) && !line.startsWith(QLatin1Char('\t')) &&
+                   !autolink.match(trimmed).hasMatch()) {
+            // Raw HTML blocks have different closing rules; script/style and
+            // comments can continue across blank lines. Without parsing those
+            // rules, even a matching heading sequence can point into HTML.
+            return false;
         } else {
             const auto heading = atx.match(line);
             const auto underline = setext.match(line);
