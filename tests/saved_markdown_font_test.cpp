@@ -240,40 +240,39 @@ void SavedMarkdownFontTest::headingIndentationSurvivesRestyling()
     };
     auto check = [&]() {
         const int bodyLeft = left(QStringLiteral("Body"));
-        QCOMPARE(left(QStringLiteral("H1")), bodyLeft);
-        int previous = bodyLeft;
-        for (int level = 2; level <= 6; ++level) {
-            const int current = left(QStringLiteral("H%1").arg(level));
-            QVERIFY(current > previous);
-            previous = current;
+        for (int level = 1; level <= 6; ++level) {
+            QCOMPARE(left(QStringLiteral("H%1").arg(level)), bodyLeft);
         }
         QCOMPARE(left(QStringLiteral("Setext heading")), left(QStringLiteral("H2")));
         QVERIFY(left(QStringLiteral("Quoted heading")) >= left(QStringLiteral("H2")));
+        QVERIFY(left(QStringLiteral("Quote")) > bodyLeft);
         QCOMPARE(edit->toPlainText(), plainText);
     };
     check();
-    const int initialLeft = left(QStringLiteral("H6"));
+    const int initialQuoteLeft = left(QStringLiteral("Quote"));
     for (int i = 0; i < 3; ++i) {
         QPalette colors = fixture.dock()->palette();
         colors.setColor(QPalette::Text, i % 2 ? Qt::black : Qt::darkBlue);
         fixture.dock()->setPalette(colors);
         QCoreApplication::processEvents();
         check();
-        QCOMPARE(left(QStringLiteral("H6")), initialLeft);
+        QCOMPARE(left(QStringLiteral("Quote")), initialQuoteLeft);
     }
     wheel(edit, 360);
     check();
-    QVERIFY(left(QStringLiteral("H6")) > initialLeft);
+    QCOMPARE(left(QStringLiteral("Quote")), initialQuoteLeft);
     fixture.refresh();
     check();
     fixture.controller.restoreHostFontSize();
     check();
-    QCOMPARE(left(QStringLiteral("H6")), initialLeft);
+    QCOMPARE(left(QStringLiteral("Quote")), initialQuoteLeft);
     QByteArray html;
     QVERIFY(fixture.exportHtml(&html));
     QTextEdit exported;
     exported.setHtml(QString::fromUtf8(html));
-    QVERIFY(exported.document()->find(QStringLiteral("H6")).blockFormat().leftMargin() >
+    QCOMPARE(exported.document()->find(QStringLiteral("H6")).blockFormat().leftMargin(),
+             exported.document()->find(QStringLiteral("H2")).blockFormat().leftMargin());
+    QVERIFY(exported.document()->find(QStringLiteral("Quote")).blockFormat().leftMargin() >
         exported.document()->find(QStringLiteral("H2")).blockFormat().leftMargin());
 }
 

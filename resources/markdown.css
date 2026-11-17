@@ -1,21 +1,21 @@
 body {
-    font-family: "Segoe UI", "Microsoft YaHei UI", sans-serif;
+    font-family: "Segoe UI", "Microsoft YaHei UI", "PingFang SC", sans-serif;
     font-size: 10.5pt;
-    line-height: 1.55;
+    line-height: 1.65;
     color: @text@;
     background-color: @base@;
-    margin: 20px 24px 40px 24px;
+    margin: 22px 26px 40px 26px;
 }
 
 h1, h2, h3, h4, h5, h6 {
     font-weight: 600;
-    margin-top: 1.2em;
+    margin-top: 1.3em;
     margin-bottom: 0.55em;
 }
 
 h1, h2 {
     border-bottom: 1px solid @midlight@;
-    padding-bottom: 0.3em;
+    padding-bottom: 0.32em;
 }
 
 p, ul, ol, blockquote, pre, table {
@@ -24,25 +24,26 @@ p, ul, ol, blockquote, pre, table {
 }
 
 code, pre {
-    font-family: Consolas, "Cascadia Mono", monospace;
+    font-family: "Cascadia Mono", Consolas, "JetBrains Mono", monospace;
     background-color: @alternate-base@;
 }
 
 pre {
     border: 1px solid @midlight@;
-    padding: 10px;
+    padding: 12px 14px;
     white-space: pre-wrap;
 }
 
 code {
-    padding: 1px 4px;
+    padding: 2px 5px;
 }
 
 blockquote {
-    border-left: 4px solid @mid@;
+    border-left: 4px solid @link@;
+    background-color: @alternate-base@;
     color: @mid@;
     margin-left: 0;
-    padding-left: 12px;
+    padding: 8px 14px;
 }
 
 table {
@@ -51,7 +52,7 @@ table {
 
 th, td {
     border: 1px solid @midlight@;
-    padding: 6px 10px;
+    padding: 7px 12px;
 }
 
 th {
@@ -66,4 +67,25 @@ a {
 
 img {
     max-width: 100%;
+}
+
+.ndd-empty-wrap {
+    margin-top: 36px;
+    padding: 18px 20px;
+    background-color: @alternate-base@;
+    border: 1px solid @midlight@;
+}
+
+.ndd-empty-title {
+    font-size: 12pt;
+    font-weight: 600;
+    color: @text@;
+    margin-top: 0;
+    margin-bottom: 8px;
+}
+
+.ndd-empty-desc {
+    color: @mid@;
+    margin-top: 0;
+    margin-bottom: 0;
 }
