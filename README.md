@@ -6,7 +6,7 @@ markdownview-- 是 [notepad--](https://gitee.com/cxasm/notepad--) 的 Markdown �
 
 适用于 **notepad-- v3.8.3 · Windows x64**，采用 **GPL-3.0-or-later** 许可。
 
-[下载插件](https://github.com/jiy29104983/markdownviewdd/releases) · [v0.2.10 版本说明](docs/releases/v0.2.10.md) · [使用指南](docs/usage.md) · [问题反馈](https://github.com/jiy29104983/markdownviewdd/issues)
+[下载插件](https://github.com/jiy29104983/markdownviewdd/releases) · [v0.2.11 版本说明](docs/releases/v0.2.11.md) · [使用指南](docs/usage.md) · [问题反馈](https://github.com/jiy29104983/markdownviewdd/issues)
 
 [![notepad-- 中的 Markdown 编辑区、侧栏预览与标题大纲](docs/images/markdown-preview.png)](docs/images/markdown-preview.png)
 
@@ -54,7 +54,7 @@ Notepad--/
     └── markdownviewdd.dll
 ```
 
-发布包同时提供 SHA256 校验文件，校验方法见[版本说明](docs/releases/v0.2.10.md)。图片与完整文档可在[项目主页](https://github.com/jiy29104983/markdownviewdd#readme)在线查看。
+发布包同时提供 SHA256 校验文件，校验方法见[版本说明](docs/releases/v0.2.11.md)。图片与完整文档可在[项目主页](https://github.com/jiy29104983/markdownviewdd#readme)在线查看。
 
 ## 常用操作
 
